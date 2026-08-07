@@ -8,11 +8,13 @@ export function ConfirmDialog() {
   const dialog = useStore((s) => s.confirm);
   const cancelConfirm = useStore((s) => s.cancelConfirm);
 
-  const cancelRef = useRef<HTMLButtonElement>(null);
+  const actionRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!dialog) return;
-    cancelRef.current?.focus();
+    // The primary action is pre-selected, so Enter proceeds (deletes) instead
+    // of cancelling; Escape always backs out.
+    actionRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") cancelConfirm();
     };
@@ -40,6 +42,7 @@ export function ConfirmDialog() {
           {dialog.options.map((option, i) => (
             <button
               key={i}
+              ref={i === 0 ? actionRef : undefined}
               className={option.danger ? "danger" : "primary"}
               onClick={() => choose(option.onSelect)}
             >
@@ -50,7 +53,7 @@ export function ConfirmDialog() {
             </button>
           ))}
           {dialog.cancelLabel && (
-            <button ref={cancelRef} className="secondary" onClick={cancelConfirm}>
+            <button className="secondary" onClick={cancelConfirm}>
               {dialog.cancelLabel}
             </button>
           )}
