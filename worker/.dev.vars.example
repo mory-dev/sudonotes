@@ -1,0 +1,5 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit the real values —
+# in production these are set with `wrangler secret put <NAME>`.
+DEEPSEEK_API_KEY="sk-local-placeholder"
+TURNSTILE_SECRET="1x0000000000000000000000000000000AA"
+DEVICE_TOKEN_SECRET="local-development-only"

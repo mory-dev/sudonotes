@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sudonotes-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 }
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "LIMITER", "class_name": "Limiter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Limiter"] }],
+  "vars": {
+    // Origins allowed to call the API from a browser. Anything else is refused
+    // before Turnstile is even consulted.
+    "ALLOWED_ORIGINS": "https://app.sudonotes.com,https://sudonotes.com",
+    // The only models a caller may ask for.
+    "ALLOWED_MODELS": "deepseek-chat",
+    "UPSTREAM_URL": "https://api.deepseek.com/chat/completions",
+    // Ceilings. Requests are counted per rolling hour; spend is capped per UTC day.
+    "DEVICE_HOURLY_LIMIT": "60",
+    "IP_HOURLY_LIMIT": "120",
+    "DAILY_BUDGET_MICRO_USD": "5000000",
+    // DeepSeek list price in micro-dollars per million tokens, used to charge the
+    // daily budget. Update these when upstream pricing moves.
+    "INPUT_MICRO_USD_PER_MTOK": "270000",
+    "OUTPUT_MICRO_USD_PER_MTOK": "1100000",
+    // Hard caps on a single call.
+    "MAX_REQUEST_BYTES": "32768",
+    "MAX_OUTPUT_TOKENS": "1024",
+    "UPSTREAM_TIMEOUT_MS": "30000"
+  }
+  // Secrets — set with `wrangler secret put <NAME>`, never here:
+  //   DEEPSEEK_API_KEY     provider key
+  //   TURNSTILE_SECRET     Turnstile widget secret, for browser callers
+  //   DEVICE_TOKEN_SECRET  HMAC key for desktop device tokens
+}
