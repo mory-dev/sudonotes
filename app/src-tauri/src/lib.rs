@@ -141,14 +141,28 @@ fn open_vault(path: String, app: tauri::AppHandle, state: State<AppState>) -> Re
     Ok(resolved)
 }
 
-#[tauri::command]
-fn get_ai_settings(app: tauri::AppHandle) -> Result<ai::AiSettings> {
-    ai::settings(&app)
+/// The root of the open vault. AI settings live inside it, so each vault
+/// carries its own answer to "may this content leave the machine?".
+fn vault_root(state: &State<AppState>) -> Result<PathBuf> {
+    with_vault(state, |open| Ok(open.vault.root.clone()))
 }
 
 #[tauri::command]
-fn set_ai_settings(app: tauri::AppHandle, enabled: bool) -> Result<ai::AiSettings> {
-    ai::save_settings(&app, enabled)
+fn get_ai_settings(state: State<AppState>) -> Result<ai::AiSettings> {
+    // Before a vault is open there is nothing to read; report the defaults
+    // rather than an error, so the setup screen can still show the toggle.
+    Ok(match vault_root(&state) {
+        Ok(root) => ai::settings(&root),
+        Err(_) => ai::AiSettings {
+            enabled: true,
+            configured: true,
+        },
+    })
+}
+
+#[tauri::command]
+fn set_ai_settings(state: State<AppState>, enabled: bool) -> Result<ai::AiSettings> {
+    ai::save_settings(&vault_root(&state)?, enabled)
 }
 
 #[tauri::command]
@@ -163,6 +177,9 @@ async fn analyze_note(
     state: State<'_, AppState>,
 ) -> Result<ai::AnalysisResult> {
     let input = ai_input(&state, &id)?;
+    if !ai::settings(&vault_root(&state)?).enabled {
+        return Err("AI assistance is turned off for this vault".to_string());
+    }
     ai::analyze(&app, &input).await
 }
 
@@ -173,8 +190,9 @@ async fn analyze_note(
 async fn suggest_title(
     content: String,
     app: tauri::AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<String> {
-    if !ai::settings(&app)?.configured {
+    if !ai::settings(&vault_root(&state)?).enabled {
         return Ok(String::new());
     }
     ai::suggest_title(&app, &content).await
@@ -187,8 +205,8 @@ async fn auto_tag_note(
     state: State<'_, AppState>,
 ) -> Result<Vec<String>> {
     let input = ai_input(&state, &id)?;
-    let settings = ai::settings(&app)?;
-    let additions = if settings.configured {
+    // A vault with AI switched off never sends its notes anywhere, whoever asked.
+    let additions = if ai::settings(&vault_root(&state)?).enabled {
         ai::tags(&app, &input)
             .await
             .unwrap_or_else(|_| ai::local_tags(&input))

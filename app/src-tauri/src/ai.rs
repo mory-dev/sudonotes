@@ -3,17 +3,22 @@
 //! user's machine.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::models;
+use crate::vault::INDEX_DIR;
 
-const SETTINGS_FILE: &str = "ai-settings.json";
+/// Per-vault, so two vaults can disagree about whether AI is on. Never holds a
+/// credential — the provider key lives on the server.
+const SETTINGS_FILE: &str = "settings.json";
+/// The device id, which is not a secret and is not vault-specific.
+const DEVICE_FILE: &str = "device.txt";
 const DEFAULT_ANALYZER_MODEL: &str = "deepseek-chat";
-const PROXY_URL: &str = "https://sudonotes.com/api/v1/chat/completions";
+const API_BASE: &str = "https://sudonotes.com/api/v1";
 
 const TAG_VOCABULARY: &[&str] = &[
     "feedback",
@@ -62,42 +67,77 @@ pub struct NoteInput {
     pub model: Option<String>,
 }
 
-fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("could not locate app config: {e}"))?;
-    fs::create_dir_all(&dir).map_err(|e| format!("could not create app config: {e}"))?;
-    Ok(dir.join(SETTINGS_FILE))
+fn settings_path(root: &Path) -> PathBuf {
+    root.join(INDEX_DIR).join(SETTINGS_FILE)
 }
 
-fn proxy_url() -> String {
-    std::env::var("SUDONOTES_API_URL")
+fn api_base() -> String {
+    std::env::var("SUDONOTES_API_BASE")
         .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| PROXY_URL.to_string())
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| API_BASE.to_string())
 }
 
-pub fn settings(app: &AppHandle) -> Result<AiSettings, String> {
-    let enabled = fs::read_to_string(settings_path(app)?)
+/// A vault's AI preference. A missing or unreadable file means defaults, never
+/// an error — the settings file is optional and the vault must still open.
+pub fn settings(root: &Path) -> AiSettings {
+    let enabled = fs::read_to_string(settings_path(root))
         .ok()
         .and_then(|raw| serde_json::from_str::<AiSettings>(&raw).ok())
         .map(|value| value.enabled)
         .unwrap_or(true);
-    Ok(AiSettings {
+    AiSettings {
         enabled,
         configured: true,
-    })
+    }
 }
 
-pub fn save_settings(app: &AppHandle, enabled: bool) -> Result<AiSettings, String> {
+pub fn save_settings(root: &Path, enabled: bool) -> Result<AiSettings, String> {
     let next = AiSettings {
         enabled,
         configured: true,
     };
+    let path = settings_path(root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+    }
     let raw = serde_json::to_string_pretty(&next).map_err(|e| e.to_string())?;
-    fs::write(settings_path(app)?, raw).map_err(|e| e.to_string())?;
+    fs::write(path, raw).map_err(|e| e.to_string())?;
     Ok(next)
+}
+
+/// This install's device id, minted on first use and cached on disk.
+///
+/// It is an identity, not a credential: it exists so the server can rate-limit
+/// per install rather than per IP. Failing to get one is not an error — the
+/// request simply goes out without it and is limited by IP instead.
+async fn device_token(app: &AppHandle) -> Option<String> {
+    let path = app.path().app_config_dir().ok()?.join(DEVICE_FILE);
+    if let Some(existing) = fs::read_to_string(&path).ok().filter(|t| !t.trim().is_empty()) {
+        return Some(existing.trim().to_string());
+    }
+
+    let minted = reqwest::Client::new()
+        .post(format!("{}/device", api_base()))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json::<Value>()
+        .await
+        .ok()?
+        .get("device")
+        .and_then(Value::as_str)
+        .map(str::to_string)?;
+
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(&path, &minted);
+    Some(minted)
 }
 
 fn json_content(value: Value) -> Result<Value, String> {
@@ -118,9 +158,12 @@ fn json_content(value: Value) -> Result<Value, String> {
     serde_json::from_str(cleaned).map_err(|e| format!("invalid DeepSeek JSON: {e}"))
 }
 
-async fn complete(_app: &AppHandle, system: &str, prompt: &str) -> Result<Value, String> {
-    let response = reqwest::Client::new()
-        .post(proxy_url())
+async fn complete(app: &AppHandle, system: &str, prompt: &str) -> Result<Value, String> {
+    let mut request = reqwest::Client::new().post(format!("{}/chat/completions", api_base()));
+    if let Some(device) = device_token(app).await {
+        request = request.header("X-Sudonotes-Device", device);
+    }
+    let response = request
         .json(&json!({
             "model": DEFAULT_ANALYZER_MODEL,
             "temperature": 0.1,

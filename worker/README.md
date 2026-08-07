@@ -83,7 +83,7 @@ Copy `.dev.vars.example` to `.dev.vars` and run:
 npx wrangler dev
 ```
 
-Point the desktop app at it with `SUDONOTES_API_URL=http://localhost:8787/api/v1/chat/completions`.
+Point the desktop app at it with `SUDONOTES_API_BASE=http://localhost:8787/api/v1`.
 
 ## Tests
 

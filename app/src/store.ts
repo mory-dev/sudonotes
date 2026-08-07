@@ -3,6 +3,7 @@ import { create } from "zustand";
 import {
   api,
   type AiSettings,
+  type AnalysisResult,
   type ChildPrompt,
   type DraftPrompt,
   type NoteDetail,
@@ -11,6 +12,26 @@ import {
 } from "./api";
 
 const SAVE_DEBOUNCE_MS = 500;
+
+/** Auto-tagging costs a network round trip, and saves are frequent. The debounce
+ *  above is not enough on its own: a note must carry some substance, must have
+ *  changed by more than a typo since it was last tagged, and must not have been
+ *  tagged in the last minute. */
+const AUTO_TAG_MIN_CHARS = 80;
+const AUTO_TAG_MIN_DELTA = 200;
+const AUTO_TAG_COOLDOWN_MS = 60_000;
+
+/** Per note: when it was last auto-tagged and how long it was at the time. */
+const tagged = new Map<string, { at: number; length: number }>();
+
+function shouldAutoTag(id: string, body: string): boolean {
+  const length = body.trim().length;
+  if (length < AUTO_TAG_MIN_CHARS) return false;
+  const last = tagged.get(id);
+  if (!last) return true;
+  if (Date.now() - last.at < AUTO_TAG_COOLDOWN_MS) return false;
+  return Math.abs(length - last.length) >= AUTO_TAG_MIN_DELTA;
+}
 
 /** Debounced-save bookkeeping. The note id travels with the pending body so a
  *  save can never land on the wrong note after the user switches away. */
@@ -104,6 +125,12 @@ interface AppState {
   aiReachable: boolean | null;
   /** Records the outcome of an AI call so the UI can stop claiming it works. */
   noteAiResult: (ok: boolean) => void;
+  /** The last review of the open note, or null. Only ever set by `analyze`. */
+  analysis: AnalysisResult | null;
+  analyzing: boolean;
+  /** Review the open note. Explicit: this is the one AI call the user asks for. */
+  analyze: () => Promise<void>;
+  clearAnalysis: () => void;
 
   openVault: (path: string) => Promise<void>;
   restoreVault: () => Promise<void>;
@@ -174,14 +201,36 @@ export const useStore = create<AppState>((set, get) => ({
   pastedText: "",
   aiSettings: { enabled: true, configured: true },
   aiReachable: null,
+  analysis: null,
+  analyzing: false,
+
+  analyze: async () => {
+    const active = get().active;
+    if (!active || get().analyzing) return;
+    // Review what is on disk, not a half-typed buffer.
+    await get().flushSave();
+    set({ analyzing: true, analysis: null });
+    try {
+      const analysis = await api.analyzeNote(active.id);
+      get().noteAiResult(true);
+      // The note may have been switched while the request was in flight.
+      if (get().active?.id === active.id) set({ analysis });
+    } catch (e) {
+      get().noteAiResult(false);
+      set({ error: message(e) });
+    } finally {
+      set({ analyzing: false });
+    }
+  },
+
+  clearAnalysis: () => set({ analysis: null }),
 
   noteAiResult: (ok) => {
     if (get().aiReachable === ok) return;
     set({ aiReachable: ok });
     if (!ok) {
       set({
-        notice:
-          "AI features are unreachable — the sudonotes API is not deployed yet. Falling back to local behaviour.",
+        notice: "AI is unreachable right now — tagging is falling back to a local pass.",
       });
     }
   },
@@ -239,8 +288,12 @@ export const useStore = create<AppState>((set, get) => ({
   openVault: async (path) => {
     try {
       const resolved = await api.openVault(path);
-      set({ vaultPath: resolved, active: null, backlinks: [], error: null });
+      // Tagging history is keyed by note id, which only means anything within
+      // one vault, and AI settings are stored per vault.
+      tagged.clear();
+      set({ vaultPath: resolved, active: null, backlinks: [], analysis: null, error: null });
       await get().refresh();
+      await get().loadAiSettings();
     } catch (e) {
       set({ error: message(e) });
     }
@@ -267,7 +320,7 @@ export const useStore = create<AppState>((set, get) => ({
   select: async (id) => {
     await get().flushSave();
     if (!id) {
-      set({ active: null, backlinks: [], children: [] });
+      set({ active: null, backlinks: [], children: [], analysis: null });
       return;
     }
     try {
@@ -282,6 +335,7 @@ export const useStore = create<AppState>((set, get) => ({
         children,
         scrollTo: null,
         find: null,
+        analysis: null,
         dirty: false,
         docVersion: get().docVersion + 1,
         error: null,
@@ -426,7 +480,9 @@ export const useStore = create<AppState>((set, get) => ({
       ) {
         await get().rename(title);
       }
-      if (get().aiSettings.enabled) {
+      if (get().aiSettings.enabled && shouldAutoTag(write.id, write.body)) {
+        // Recorded before the call, so a burst of saves cannot fire twice.
+        tagged.set(write.id, { at: Date.now(), length: write.body.trim().length });
         void api
           .autoTagNote(write.id)
           .then((tags) => {

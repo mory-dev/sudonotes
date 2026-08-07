@@ -20,8 +20,13 @@ A vault is just a directory:
 <vault>/
   prompts/**.md
   ideas/**.md
-  .sudonotes/index.db     # search index — safe to delete, rebuilds on launch
+  .sudonotes/index.db        # search index — a cache, rebuilt on launch
+  .sudonotes/settings.json   # whether AI is on for this vault
 ```
+
+Deleting `.sudonotes/` costs you nothing but the index and that one preference,
+which returns to its default of on. Your notes are the `.md` files; nothing else
+in the vault is load-bearing. No credentials are ever written there.
 
 Each note is Markdown with a small YAML frontmatter block (`id`, `title`, `tags`, `created`, `updated`). Edit them in any editor you like; sudonotes picks up external changes automatically.
 

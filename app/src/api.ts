@@ -88,6 +88,18 @@ export interface AiSettings {
   configured: boolean;
 }
 
+/** A review of one note against the model it targets. */
+export interface AnalysisResult {
+  fit: "excellent" | "good" | "uncertain" | "poor" | "not_applicable";
+  fitReason: string;
+  issues: string[];
+  refinements: string[];
+  refinedText: string | null;
+  suggestedTags: string[];
+  /** Model IDs that might suit the prompt better. */
+  alternatives: string[];
+}
+
 export interface SearchHit {
   id: string;
   title: string;
@@ -108,6 +120,8 @@ export const api = {
   setAiSettings: (enabled: boolean) => invoke<AiSettings>("set_ai_settings", { enabled }),
   modelCatalog: (force = false) => invoke<ModelCatalog>("model_catalog", { force }),
   autoTagNote: (id: string) => invoke<string[]>("auto_tag_note", { id }),
+  /** A full review of a note. Explicit — never fired automatically. */
+  analyzeNote: (id: string) => invoke<AnalysisResult>("analyze_note", { id }),
   /** A brief LLM title for content; empty when no model is configured. */
   suggestTitle: (content: string) => invoke<string>("suggest_title", { content }),
   suggestVaultPath: () => invoke<string>("suggest_vault_path"),

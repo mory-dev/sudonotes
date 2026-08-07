@@ -937,6 +937,69 @@ code {
   color: var(--muted);
 }
 
+.ai-analyze {
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.ai-analyze:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ai-analyze:disabled {
+  color: var(--muted);
+}
+
+.ai-result {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-fit {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ai-fit-excellent,
+.ai-fit-good {
+  color: var(--idea);
+}
+
+.ai-fit-poor {
+  color: var(--danger);
+}
+
+.ai-result-head {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ai-list {
+  margin: 0;
+  padding-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
 .secondary.danger:hover {
   border-color: var(--danger);
   color: var(--danger);
