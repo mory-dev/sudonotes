@@ -7,6 +7,7 @@ mod split;
 mod vault;
 mod watcher;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -44,6 +45,8 @@ struct NoteDetail {
     position: Option<u32>,
     /// Project folder this idea is linked to, if any.
     project: Option<String>,
+    /// Per-bubble model assignment for idea notes: bubble first line -> model.
+    models: BTreeMap<String, String>,
     created: String,
     updated: String,
     body: String,
@@ -644,10 +647,11 @@ fn read_note(id: String, state: State<AppState>) -> Result<NoteDetail> {
             tags: fm.tags,
             summary: fm.summary,
             model: fm.model,
-            collection: fm.source,
-            position: fm.position,
-            project: fm.project,
-            created: fm.created,
+                collection: fm.source,
+                position: fm.position,
+                project: fm.project,
+                models: fm.models,
+                created: fm.created,
             updated: fm.updated,
             body: note.body,
             path: path.to_string_lossy().to_string(),
@@ -838,6 +842,47 @@ fn update_model(id: String, model: Option<String>, state: State<AppState>) -> Re
         note.frontmatter.model = model
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+    })
+}
+
+/// Assign the model a bubble's prompt targets, keyed by the bubble's first
+/// line. An empty model clears the assignment. Returns the updated map so the
+/// editor can keep its copy in step.
+#[tauri::command]
+fn set_bubble_model(
+    id: String,
+    key: String,
+    model: String,
+    state: State<AppState>,
+) -> Result<BTreeMap<String, String>> {
+    with_vault(&state, |open| {
+        let path = open
+            .index
+            .path_of(&id)
+            .map_err(|e| err("lookup failed", e))?
+            .ok_or("note not found")?;
+        let note_type = open
+            .vault
+            .type_of(&path)
+            .ok_or("note is outside the vault")?;
+        let content = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
+        let mut note = Note::parse(&content, &title_from_path(&path));
+
+        let key = key.trim().to_string();
+        let model = model.trim().to_string();
+        if model.is_empty() {
+            note.frontmatter.models.remove(&key);
+        } else {
+            note.frontmatter.models.insert(key, model);
+        }
+        note.frontmatter.updated = note::now_rfc3339();
+        note.write_to(&path)
+            .map_err(|e| err("could not write note", e))?;
+        open.index
+            .upsert(note_type, &path, &note, file_mtime(&path))
+            .map_err(|e| err("could not index note", e))?;
+
+        Ok(note.frontmatter.models)
     })
 }
 
@@ -1244,6 +1289,7 @@ pub fn run() {
             reorder_children,
             write_note,
             update_model,
+            set_bubble_model,
             rename_note,
             update_note,
             delete_note,

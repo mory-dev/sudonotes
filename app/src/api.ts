@@ -43,6 +43,8 @@ export interface NoteDetail extends NoteMeta {
   model: string | null;
   position: number | null;
   project: string | null;
+  /** Per-bubble model assignment for idea notes: bubble first line -> model. */
+  models: Record<string, string>;
   created: string;
   body: string;
   path: string;
@@ -124,6 +126,9 @@ export const api = {
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),
+  /** Assign the model a bubble's prompt targets, keyed by its first line. */
+  setBubbleModel: (id: string, key: string, model: string) =>
+    invoke<Record<string, string>>("set_bubble_model", { id, key, model }),
   renameNote: (id: string, title: string) => invoke<void>("rename_note", { id, title }),
   updateNote: (
     id: string,

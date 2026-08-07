@@ -119,6 +119,8 @@ interface AppState {
   pasteIntoCollection: (text: string) => Promise<void>;
   queueSave: (id: string, body: string) => void;
   updateModel: (model: string | null) => Promise<void>;
+  /** Assign a model to the bubble whose first line is `key`. */
+  setBubbleModel: (key: string, model: string | null) => Promise<void>;
   flushSave: () => Promise<void>;
   rename: (title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -375,6 +377,18 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await api.updateModel(active.id, model);
       set({ active: { ...active, model } });
+      await get().refresh();
+    } catch (e) {
+      set({ error: message(e) });
+    }
+  },
+
+  setBubbleModel: async (key, model) => {
+    const active = get().active;
+    if (!active) return;
+    try {
+      const models = await api.setBubbleModel(active.id, key, model ?? "");
+      set({ active: { ...active, models } });
       await get().refresh();
     } catch (e) {
       set({ error: message(e) });
