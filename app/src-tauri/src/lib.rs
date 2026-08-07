@@ -88,10 +88,6 @@ fn err(context: &str, e: impl std::fmt::Display) -> String {
     format!("{context}: {e}")
 }
 
-/// Read a simple `KEY=VALUE` .env file so a locally stored API token is picked
-/// up without the OS credential store. Looks in the working dir, its parent,
-/// the app config dir, and the home dir; missing or invalid lines are skipped
-/// and existing environment variables always win.
 /// Run `f` against the currently open vault.
 fn with_vault<T>(state: &State<AppState>, f: impl FnOnce(&mut OpenVault) -> Result<T>) -> Result<T> {
     let mut guard = state.open.lock().map_err(|e| err("vault lock poisoned", e))?;
