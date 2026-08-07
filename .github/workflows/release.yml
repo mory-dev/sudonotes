@@ -1,0 +1,103 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # Lets a release be rehearsed without cutting a tag.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            name: macOS (Apple silicon)
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            name: macOS (Intel)
+          - platform: ubuntu-22.04
+            args: ""
+            name: Linux
+          - platform: windows-latest
+            args: ""
+            name: Windows
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install Tauri system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libxdo-dev libssl-dev patchelf
+
+      - run: npm ci
+        working-directory: app
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing is optional so a fork, or this repo before the certificates
+          # are bought, still produces working (if unsigned) installers.
+          # Set these and the same build becomes a signed, notarized one.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: sudonotes ${{ github.ref_name }}
+          releaseBody: |
+            See the [changelog](https://sudonotes.com/changelog).
+
+            Installers below are **unsigned** unless the release notes say
+            otherwise — Windows SmartScreen and macOS Gatekeeper will warn.
+            Verify against `checksums.txt` before installing.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false
+          args: ${{ matrix.args }}
+
+  checksums:
+    name: checksums
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Publish SHA-256 sums for the draft's assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p assets && cd assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*' || exit 0
+          sha256sum * > checksums.txt
+          gh release upload "$TAG" checksums.txt --repo "$GITHUB_REPOSITORY" --clobber
