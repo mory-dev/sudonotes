@@ -8,6 +8,8 @@
   --accent: #7aa2f7;
   --accent-soft: rgba(122, 162, 247, 0.14);
   --selection: rgba(122, 162, 247, 0.28);
+  /* Very light, neutral gray for highlighted text (drag selection). */
+  --selection-bg: rgba(170, 176, 186, 0.22);
   --danger: #f7768e;
 
   /* Prompts read blue, ideas read green, everywhere in the app. */
@@ -34,6 +36,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Highlighted text selection across the app: a subtle neutral gray. */
+::selection {
+  background: var(--selection-bg);
 }
 
 /* Thin, minimal scrollbars throughout. */
@@ -842,6 +849,7 @@ code {
 }
 
 .project-icon.placeholder {
+  flex: none;
   display: grid;
   place-items: center;
   font-size: 13px;
@@ -849,7 +857,6 @@ code {
   color: var(--type-color);
   background: var(--type-soft);
 }
-
 .project-text {
   display: flex;
   flex-direction: column;
@@ -1070,6 +1077,7 @@ kbd {
 }
 
 .note-project-icon.placeholder {
+  flex: none;
   display: grid;
   place-items: center;
   font-size: 9px;
@@ -1535,7 +1543,6 @@ kbd {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 24px;
 }
 
 /* Simple find-in-file bar, overlaid on the editor like a browser's. */
@@ -2209,6 +2216,51 @@ kbd {
   padding: 9px;
   color: var(--muted);
   font-size: 11px;
+}
+
+/* Hover menu above an idea bubble: pick the model that bubble's prompt targets.
+   Absolute within .editor-wrap so it tracks the bubble at any UI zoom level. */
+.bubble-model-menu {
+  position: absolute;
+  z-index: 30;
+  width: 230px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  transform: translateY(-100%);
+}
+
+.bubble-model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bubble-model-row .model-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.bubble-model-copy {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bubble-model-copy:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .card-actions {

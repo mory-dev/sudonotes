@@ -36,13 +36,13 @@ export function AiPanel() {
           checked={settings.enabled}
           onChange={(event) => void save(event.target.checked)}
         />
-        <span>Enable cloud analysis &amp; tagging</span>
+        <span>Enable prompt refinements &amp; tagging</span>
       </label>
 
       {tip && (
         <p className="ai-tip">
           Analyzes prompt/model fit, suggests refinements, and auto-tags notes. Runs through
-          the sudonotes API — free while costs stay reasonable with DeepSeek.
+          the sudonotes API.
         </p>
       )}
     </section>
