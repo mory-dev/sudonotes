@@ -113,13 +113,16 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Ctrl +/- scales the whole UI; the choice persists between sessions.
+  // Ctrl +/- scales the whole UI; the choice persists between sessions. The
+  // app is designed at 14px, but the size most people end up settling on is a
+  // couple of steps smaller — start there instead of at 100%.
   useEffect(() => {
-    const KEY = "sudonotes.fontScale";
+    const KEY = "sudonotes.fontScale.v2";
+    const DEFAULT_SCALE = 0.8;
     const apply = (scale: number) => {
       document.documentElement.style.zoom = String(scale);
     };
-    apply(Number(localStorage.getItem(KEY)) || 1);
+    apply(Number(localStorage.getItem(KEY)) || DEFAULT_SCALE);
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -127,7 +130,7 @@ export default function App() {
         return;
       }
       event.preventDefault();
-      const current = Number(localStorage.getItem(KEY)) || 1;
+      const current = Number(localStorage.getItem(KEY)) || DEFAULT_SCALE;
       let next = current;
       if (event.key === "0") next = 1;
       else if (event.key === "+" || event.key === "=") next = Math.min(1.6, current + 0.1);
