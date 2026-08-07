@@ -5,25 +5,39 @@
 //! without the note ever being committed. The vault copy stays canonical — the
 //! mirror is rewritten on every save.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, SystemTime};
 
 use base64::Engine;
 use serde::Serialize;
+use walkdir::WalkDir;
 
 /// Cap on favicon size, so a stray large file cannot bloat the payload.
 const MAX_ICON_BYTES: u64 = 512 * 1024;
 
-/// Where project icons usually live, best first.
+/// Where project icons usually live, best first. A shallow scan of the project
+/// root (below) catches any other layout.
 const ICON_CANDIDATES: &[&str] = &[
     "public/favicon.svg",
     "public/favicon.ico",
     "public/favicon.png",
+    "public/apple-touch-icon.png",
     "public/logo.svg",
     "public/logo.png",
     "static/favicon.svg",
     "static/favicon.ico",
     "static/favicon.png",
+    "app/public/favicon.svg",
+    "app/public/favicon.ico",
+    "app/public/favicon.png",
     "app/favicon.ico",
+    "app/favicon.svg",
+    "app/favicon.png",
+    "web/public/favicon.svg",
+    "frontend/public/favicon.svg",
+    "client/public/favicon.svg",
     "src/favicon.svg",
     "src/assets/favicon.svg",
     "assets/favicon.svg",
@@ -36,6 +50,36 @@ const ICON_CANDIDATES: &[&str] = &[
     "icon.svg",
     "icon.png",
 ];
+
+/// Folders never worth scanning for an icon — they are large and unlikely to
+/// hold one, and pruning them keeps the fallback scan cheap.
+const SKIP_DIRS: &[&str] = &[
+    ".git",
+    ".svn",
+    ".hg",
+    ".idea",
+    ".vscode",
+    ".next",
+    ".nuxt",
+    ".cargo",
+    ".cache",
+    ".venv",
+    "venv",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    "__pycache__",
+    "coverage",
+];
+
+/// How often a linked project's icon is re-checked on disk, so an icon dropped
+/// in later shows up on its own without re-scanning on every call.
+const ICON_CACHE_TTL: Duration = Duration::from_secs(30);
+
+static ICON_CACHE: OnceLock<Mutex<HashMap<PathBuf, (Option<String>, SystemTime)>>> =
+    OnceLock::new();
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,34 +103,98 @@ pub fn describe(path: &Path) -> ProjectInfo {
             .to_string(),
         exists: path.is_dir(),
         is_git_repo: path.join(".git").exists(),
-        icon: find_icon(path),
+        icon: cached_icon(path),
     }
 }
 
-/// First recognisable icon in the project, as a data URI.
+/// The project's icon, cached briefly so repeated list/project lookups stay
+/// cheap; once the TTL passes the folder is re-scanned, so an icon added later
+/// is picked up without any manual step.
+fn cached_icon(root: &Path) -> Option<String> {
+    let cache = ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let Ok(mut guard) = cache.lock() else {
+        return find_icon(root);
+    };
+    let now = SystemTime::now();
+    if let Some((icon, checked)) = guard.get(root) {
+        if now.duration_since(*checked).is_ok_and(|age| age < ICON_CACHE_TTL) {
+            return icon.clone();
+        }
+    }
+    let icon = find_icon(root);
+    guard.insert(root.to_path_buf(), (icon.clone(), now));
+    icon
+}
+
+/// First recognisable icon in the project, as a data URI. Known locations are
+/// checked first; if none match, a shallow scan (a few levels, skipping heavy
+/// folders) looks for anything icon-shaped and stops at the first hit.
 fn find_icon(root: &Path) -> Option<String> {
     for candidate in ICON_CANDIDATES {
-        let path = root.join(candidate);
-        let Ok(meta) = std::fs::metadata(&path) else {
-            continue;
-        };
-        if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_ICON_BYTES {
-            continue;
+        if let Some(uri) = encode_icon(&root.join(candidate)) {
+            return Some(uri);
         }
-        let Ok(bytes) = std::fs::read(&path) else {
-            continue;
-        };
-        let mime = match path.extension().and_then(|e| e.to_str()) {
-            Some("svg") => "image/svg+xml",
-            Some("png") => "image/png",
-            Some("ico") => "image/x-icon",
-            Some("jpg") | Some("jpeg") => "image/jpeg",
-            _ => continue,
-        };
-        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-        return Some(format!("data:{mime};base64,{encoded}"));
+    }
+
+    let walker = WalkDir::new(root)
+        .max_depth(4)
+        .into_iter()
+        .filter_entry(|entry| {
+            if entry.depth() > 0 && entry.file_type().is_dir() {
+                let name = entry.file_name().to_string_lossy();
+                !SKIP_DIRS.iter().any(|skip| name.eq_ignore_ascii_case(skip))
+            } else {
+                true
+            }
+        });
+    for entry in walker.filter_map(Result::ok) {
+        if entry.file_type().is_file() && is_icon_name(&entry.file_name().to_string_lossy()) {
+            if let Some(uri) = encode_icon(&entry.path()) {
+                return Some(uri);
+            }
+        }
     }
     None
+}
+
+/// Does a file name look like a project icon? (favicon.*, logo*, icon*,
+/// apple-touch-icon*, …)
+fn is_icon_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let Some((stem, ext)) = lower.rsplit_once('.') else {
+        return false;
+    };
+    if !matches!(ext, "svg" | "png" | "ico" | "jpg" | "jpeg") {
+        return false;
+    }
+    stem.starts_with("favicon")
+        || stem.starts_with("logo")
+        || stem.starts_with("icon")
+        || stem == "apple-touch-icon"
+        || stem == "apple-touch-icon-precomposed"
+}
+
+/// Read an icon file and base64-encode it as a `data:` URI, or `None` when the
+/// path is missing, too large, or not a supported image type.
+fn encode_icon(path: &Path) -> Option<String> {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return None;
+    };
+    if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_ICON_BYTES {
+        return None;
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return None;
+    };
+    let mime = match path.extension().and_then(|e| e.to_str()) {
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("ico") => "image/x-icon",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        _ => return None,
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Some(format!("data:{mime};base64,{encoded}"))
 }
 
 /// The file an idea is mirrored to inside its project.
@@ -212,6 +320,52 @@ mod tests {
         let info = describe(&dir);
         assert_eq!(info.name, dir.file_name().unwrap().to_str().unwrap());
         assert!(info.icon.unwrap().starts_with("data:image/svg+xml;base64,"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn finds_icons_under_app_public() {
+        let dir = temp_dir("app-public");
+        std::fs::create_dir_all(dir.join("app/public")).unwrap();
+        std::fs::write(dir.join("app/public/favicon.svg"), "<svg/>").unwrap();
+
+        let info = describe(&dir);
+        assert!(info.icon.unwrap().starts_with("data:image/svg+xml;base64,"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scans_shallowly_for_icons() {
+        let dir = temp_dir("shallow");
+        std::fs::create_dir_all(dir.join("web/src/ui")).unwrap();
+        std::fs::write(dir.join("web/src/ui/favicon.png"), b"png").unwrap();
+
+        assert!(find_icon(&dir).is_some());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ignores_heavy_folders() {
+        let dir = temp_dir("heavy");
+        std::fs::create_dir_all(dir.join("node_modules/pkg")).unwrap();
+        std::fs::write(dir.join("node_modules/pkg/logo.svg"), "<svg/>").unwrap();
+
+        assert!(find_icon(&dir).is_none());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn picks_up_an_icon_added_later() {
+        let dir = temp_dir("later");
+        assert!(find_icon(&dir).is_none());
+
+        std::fs::create_dir_all(dir.join("public")).unwrap();
+        std::fs::write(dir.join("public/favicon.svg"), "<svg/>").unwrap();
+        assert!(find_icon(&dir).is_some());
 
         std::fs::remove_dir_all(&dir).ok();
     }
