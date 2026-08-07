@@ -84,7 +84,7 @@ function NoteRow({ note, drag }: { note: NoteMeta; drag?: NoteDragHandlers }) {
       <button
         className={classes}
         draggable={!!drag}
-        title={`${note.summary ?? note.title}\nMiddle-click to delete`}
+        data-tooltip={`${note.summary ?? note.title}\nMiddle-click to delete`}
         onClick={() => void select(note.id)}
         onAuxClick={onAuxClick}
         onDragStart={(event) => {
@@ -107,15 +107,29 @@ function NoteRow({ note, drag }: { note: NoteMeta; drag?: NoteDragHandlers }) {
       >
         {note.project ? (
           note.icon ? (
-            <img className="note-project-icon" src={note.icon} alt="" title={note.project} />
+            <img className="note-project-icon" src={note.icon} alt="" data-tooltip={note.project} />
           ) : (
-            <span className="note-project-icon placeholder" title={note.project}>
+            <span className="note-project-icon placeholder" data-tooltip={note.project}>
               {projectInitial(note.project)}
             </span>
           )
+        ) : note.type === "idea" ? (
+          // Ideas mix linked and unlinked, so an unlinked one still needs the
+          // slot filled or its title steps left out of the column. A gray leaf
+          // reads as a draft that has not been pointed at a project yet.
+          <span className="note-project-icon unlinked" data-tooltip="No project linked">
+            <IdeaMark />
+          </span>
         ) : null}
-        {note.model ? <ProviderIcon provider={providerOf(note.model)} size={13} /> : null}
-        {note.title}
+        {/* The model icon stays on prompts; an idea's models belong to its
+            bubbles, shown as a badge on the bubble in the editor instead. */}
+        {note.type === "prompt" && note.model ? (
+          <ProviderIcon provider={providerOf(note.model)} size={13} />
+        ) : null}
+        <span className="note-title">{note.title}</span>
+        {note.type === "idea" && (note.bubbles ?? 0) > 0 && (
+          <span className="count">{note.bubbles}</span>
+        )}
       </button>
     </li>
   );
@@ -245,7 +259,7 @@ function Section({
         </span>
         <button
           className="icon-button"
-          title={`New ${noteType}`}
+          data-tooltip={`New ${noteType}`}
           onClick={() => void create(noteType, "")}
         >
           +
@@ -300,6 +314,9 @@ export function Sidebar() {
     [notes],
   );
 
+  const deleteBubbleAt = useStore((s) => s.deleteBubbleAt);
+  const requestConfirm = useStore((s) => s.requestConfirm);
+
   // The bubbles of the open idea, listed so each idea inside it can be jumped to.
   const ideaOutline = useMemo(
     () => (active?.type === "idea" ? paragraphOutline(active.body ?? "") : []),
@@ -329,8 +346,17 @@ export function Sidebar() {
                 <li key={index}>
                   <button
                     className="idea-outline-item"
-                    title={item.label}
+                    data-tooltip={`${item.label}
+Right-click to delete this bubble`}
                     onClick={() => scrollToPos(item.start)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      requestConfirm(
+                        `Delete the bubble "${item.label}"?`,
+                        () => deleteBubbleAt(item.start),
+                        "Delete",
+                      );
+                    }}
                   >
                     <span className="idea-outline-mark">{index + 1}</span>
                     <span className="idea-outline-label">{item.label}</span>
@@ -342,7 +368,7 @@ export function Sidebar() {
         )}
       </div>
 
-      <footer className="vault-path" title={vaultPath ?? ""}>
+      <footer className="vault-path" data-tooltip={vaultPath ?? ""}>
         <svg className="vault-shield" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M8 1.5 13.5 3.5v4c0 3.4-2.3 5.9-5.5 7-3.2-1.1-5.5-3.6-5.5-7v-4Z" />
           <path d="M5.5 8l1.7 1.7 3.3-3.4" />
