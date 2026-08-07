@@ -112,6 +112,11 @@ interface AppState {
   find: { query: string; index: number; move: boolean } | null;
   /** Number of matches, updated by the editor's find plugin. */
   findCount: number;
+  /** The idea bubble under the mouse, and the one holding the cursor, by their
+   *  heading text. The right panel shows whichever is live — hover wins, and
+   *  the cursor is what it falls back to when the mouse is elsewhere. */
+  hoverBubble: string | null;
+  cursorBubble: string | null;
   dirty: boolean;
   error: string | null;
   notice: string | null;
@@ -172,6 +177,10 @@ interface AppState {
   closeFind: () => void;
   setFindQuery: (query: string) => void;
   findMove: (dir: 1 | -1) => void;
+  /** Remove the bubble starting at `start` in the open idea's body. */
+  deleteBubbleAt: (start: number) => void;
+  setHoverBubble: (label: string | null) => void;
+  setCursorBubble: (label: string | null) => void;
   setError: (error: string | null) => void;
   setNotice: (notice: string | null) => void;
   loadAiSettings: () => Promise<void>;
@@ -194,6 +203,8 @@ export const useStore = create<AppState>((set, get) => ({
   scrollTo: null,
   find: null,
   findCount: 0,
+  hoverBubble: null,
+  cursorBubble: null,
   dirty: false,
   error: null,
   notice: null,
@@ -258,7 +269,43 @@ export const useStore = create<AppState>((set, get) => ({
   clearScroll: () => set({ scrollTo: null }),
   openFind: () => set({ find: { query: "", index: 0, move: false } }),
   closeFind: () => set({ find: null }),
-  setFindQuery: (query) => set({ find: { query, index: 0, move: false } }),
+  // `move: true` so typing scrolls to the first match as you go, the way an
+  // incremental find is expected to behave. Enter then advances from there.
+  setFindQuery: (query) => set({ find: { query, index: 0, move: true } }),
+  deleteBubbleAt: (start) => {
+    const active = get().active;
+    if (!active || active.type !== "idea") return;
+    const body = active.body ?? "";
+    if (start < 0 || start >= body.length) return;
+
+    // The bubble runs to the blank line that ends it; take that separator too so
+    // deleting does not leave a widening gap. Falls back to the end of the body
+    // for the last bubble.
+    const rest = body.slice(start);
+    const gap = /\n[ \t]*\n/.exec(rest);
+    let from = start;
+    const to = gap ? start + gap.index + gap[0].length : body.length;
+    if (!gap) {
+      // Last bubble: take the separator before it instead.
+      const before = /\n[ \t]*\n$/.exec(body.slice(0, start));
+      if (before) from -= before[0].length;
+    }
+
+    const next = body.slice(0, from) + body.slice(to);
+    set({
+      active: { ...active, body: next },
+      docVersion: get().docVersion + 1,
+    });
+    get().queueSave(active.id, next);
+  },
+
+  setHoverBubble: (label) => {
+    if (get().hoverBubble !== label) set({ hoverBubble: label });
+  },
+  setCursorBubble: (label) => {
+    if (get().cursorBubble !== label) set({ cursorBubble: label });
+  },
+
   findMove: (dir) => {
     const find = get().find;
     const count = get().findCount;
