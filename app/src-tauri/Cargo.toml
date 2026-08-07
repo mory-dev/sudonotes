@@ -1,6 +1,6 @@
 [package]
 name = "sudonotes"
-version = "0.1.0"
+version = "0.1.1"
 description = "A lightweight, local-first notebook for prompts and ideas"
 authors = ["sudonotes contributors"]
 edition = "2021"
