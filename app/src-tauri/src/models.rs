@@ -1,4 +1,9 @@
 //! Cached, provider-neutral model metadata from models.dev.
+//!
+//! The provider-agnostic `/models.json` endpoint lists each official model
+//! once (keyed `provider/model`), so a Claude or DeepSeek model shows up a
+//! single time rather than once per hosting provider (Bedrock, Azure,
+//! OpenRouter, …).
 
 use std::fs;
 use std::path::PathBuf;
@@ -8,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
-const CATALOG_URL: &str = "https://models.dev/api.json";
-const CACHE_NAME: &str = "models-cache.json";
+const CATALOG_URL: &str = "https://models.dev/models.json";
+const CACHE_NAME: &str = "models-cache-v2.json";
 const CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,48 +79,39 @@ fn has_image_input(value: &Value) -> bool {
 }
 
 fn parse_catalog(value: &Value) -> Vec<ModelInfo> {
-    let Some(providers) = value.as_object() else {
+    let Some(models) = value.as_object() else {
         return Vec::new();
     };
 
-    let mut models = Vec::new();
-    for (provider_id, provider) in providers {
-        let provider_name = provider
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(provider_id)
-            .to_string();
-        let Some(entries) = provider.get("models").and_then(Value::as_object) else {
+    let mut result = Vec::new();
+    for (id, model) in models {
+        let Some((provider, model_id)) = id.split_once('/') else {
             continue;
         };
-
-        for (model_id, model) in entries {
-            let id = format!("{provider_id}/{model_id}");
-            let name = model
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or(model_id)
-                .to_string();
-            models.push(ModelInfo {
-                id,
-                provider: provider_name.clone(),
-                model: model_id.clone(),
-                name,
-                context: number_field(model, "limit", "context"),
-                output: number_field(model, "limit", "output"),
-                reasoning: bool_field(model, "reasoning"),
-                vision: has_image_input(model),
-                tools: bool_field(model, "tool_call"),
-            });
-        }
+        let name = model
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or(id)
+            .to_string();
+        result.push(ModelInfo {
+            id: id.clone(),
+            provider: provider.to_string(),
+            model: model_id.to_string(),
+            name,
+            context: number_field(model, "limit", "context"),
+            output: number_field(model, "limit", "output"),
+            reasoning: bool_field(model, "reasoning"),
+            vision: has_image_input(model),
+            tools: bool_field(model, "tool_call"),
+        });
     }
 
-    models.sort_by(|a, b| {
+    result.sort_by(|a, b| {
         a.provider
             .cmp(&b.provider)
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    models
+    result
 }
 
 pub async fn list(app: &AppHandle, force: bool) -> Result<ModelCatalog, String> {
@@ -157,24 +153,21 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn normalizes_provider_models() {
+    fn parses_flat_model_catalog() {
         let value = json!({
-            "deepseek": {
-                "name": "DeepSeek",
-                "models": {
-                    "deepseek-chat": {
-                        "name": "DeepSeek Chat",
-                        "reasoning": false,
-                        "tool_call": true,
-                        "limit": {"context": 64000, "output": 8192},
-                        "modalities": {"input": ["text"], "output": ["text"]}
-                    }
-                }
+            "deepseek/deepseek-chat": {
+                "name": "DeepSeek Chat",
+                "reasoning": false,
+                "tool_call": true,
+                "limit": {"context": 64000, "output": 8192},
+                "modalities": {"input": ["text"], "output": ["text"]}
             }
         });
         let models = parse_catalog(&value);
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "deepseek/deepseek-chat");
+        assert_eq!(models[0].provider, "deepseek");
+        assert_eq!(models[0].model, "deepseek-chat");
         assert_eq!(models[0].context, Some(64000));
         assert!(models[0].tools);
         assert!(!models[0].vision);
