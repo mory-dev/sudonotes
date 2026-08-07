@@ -1,11 +1,31 @@
 /** Colored, recognizable marks for the LLM providers in the model catalog.
  *
- *  The glyphs are simplified hand-drawn approximations of each brand, not
- *  official artwork — fine for a local tool, worth replacing with vendor assets
- *  before any public release. Providers with no glyph fall back to a lettered
- *  tile in a deterministic brand-ish colour. */
+ *  The glyphs are the official brand paths shipped by simple-icons. Providers
+ *  it has no mark for fall back to a lettered tile in a deterministic
+ *  brand-ish colour. */
 
-import type { ReactNode } from "react";
+import {
+  siAlibabacloud,
+  siAnthropic,
+  siBaidu,
+  siDatabricks,
+  siDeepseek,
+  siGooglegemini,
+  siLmstudio,
+  siMeituan,
+  siMeta,
+  siMinimax,
+  siMistralai,
+  siMoonshotai,
+  siNvidia,
+  siOllama,
+  siOpenrouter,
+  siPerplexity,
+  siQwen,
+  siReplicate,
+  siSnowflake,
+  siXiaomi,
+} from "simple-icons";
 
 const PROVIDERS: Record<string, { color: string; short: string }> = {
   openai: { color: "#10a37f", short: "OpenAI" },
@@ -47,117 +67,49 @@ const PROVIDERS: Record<string, { color: string; short: string }> = {
   cerebras: { color: "#1e6fe5", short: "Cerebras" },
   replicate: { color: "#003cff", short: "Replicate" },
   databricks: { color: "#ff3621", short: "Databricks" },
+  // Official lab keys as listed by the models.dev /models.json catalog.
+  moonshotai: { color: "#6c5ce7", short: "Moonshot" },
+  zhipuai: { color: "#315efb", short: "Zhipu" },
+  xiaomi: { color: "#ff6900", short: "Xiaomi" },
+  meituan: { color: "#ffd100", short: "Meituan" },
+  poolside: { color: "#ff4e00", short: "Poolside" },
+  sakana: { color: "#ff4d00", short: "Sakana AI" },
+  sarvam: { color: "#d22030", short: "Sarvam" },
+  sdaia: { color: "#1cbf43", short: "SDAIA" },
+  deepreinforce: { color: "#7a4cff", short: "Deepreinforce" },
+  thinkingmachines: { color: "#111827", short: "Thinking Machines" },
 };
 
-/** Brand glyphs, drawn white on the provider's colour tile. */
-const GLYPHS: Record<string, ReactNode> = {
-  // Interlocking knot, reduced to its hexagonal skeleton.
-  openai: (
-    <g fill="none" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round">
-      <path d="M8 2.2 13 5.1v5.8L8 13.8 3 10.9V5.1Z" />
-      <path d="M8 2.2v5.8l5 2.9M8 8 3 10.9" />
-    </g>
-  ),
-  // Splayed "A" with the crossbar its logo is known for.
-  anthropic: (
-    <g fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round">
-      <path d="M3.2 13 8 3l4.8 10" />
-      <path d="M5.6 9.6h4.8" />
-    </g>
-  ),
-  // Gemini's four-pointed spark.
-  google: (
-    <path
-      fill="#fff"
-      d="M8 1.7c.5 3 2.8 5.3 5.8 5.8v1c-3 .5-5.3 2.8-5.8 5.8h-1C6.5 11.3 4.2 9 1.2 8.5v-1C4.2 7 6.5 4.7 7 1.7Z"
-    />
-  ),
-  // Whale silhouette.
-  deepseek: (
-    <g fill="none" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1.8 9.2c1.6-3 4.2-4.4 7-4.1 1.7.2 3 1.1 3.6 2.4l1.8-1.6-.4 3.2c-.9 2-3.1 3.2-5.9 3.1-2.8-.1-5-1.2-6.1-3Z" />
-      <circle cx="9.6" cy="7.6" r=".8" fill="#fff" stroke="none" />
-    </g>
-  ),
-  // Stacked band grid.
-  mistral: (
-    <g fill="#fff">
-      <rect x="2.5" y="3" width="2.6" height="10" />
-      <rect x="6.7" y="3" width="2.6" height="3.2" />
-      <rect x="10.9" y="3" width="2.6" height="3.2" />
-      <rect x="6.7" y="9.8" width="2.6" height="3.2" />
-      <rect x="10.9" y="9.8" width="2.6" height="3.2" />
-    </g>
-  ),
-  // Interlocking infinity loops.
-  meta: (
-    <path
-      fill="none"
-      stroke="#fff"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      d="M2.2 10.4c0-3 1.5-5.2 3.2-5.2 2.3 0 3.3 6 5.4 6 1.5 0 2.5-1.6 2.5-3.5S12.4 4.2 11 4.2C8.6 4.2 7 10.4 4.7 10.4c-1.4 0-2.5-1.1-2.5-2.6"
-    />
-  ),
-  xai: (
-    <g fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round">
-      <path d="M3.4 3.4 12.6 12.6M12.6 3.4 3.4 12.6" />
-    </g>
-  ),
-  microsoft: (
-    <g fill="#fff">
-      <rect x="2.6" y="2.6" width="5" height="5" />
-      <rect x="8.4" y="2.6" width="5" height="5" />
-      <rect x="2.6" y="8.4" width="5" height="5" />
-      <rect x="8.4" y="8.4" width="5" height="5" />
-    </g>
-  ),
-  // The smile arrow.
-  amazon: (
-    <g fill="none" stroke="#fff" strokeLinecap="round">
-      <path strokeWidth="1.6" d="M2.6 9.8c3.4 2.4 7.8 2.5 11.2.3" />
-      <path strokeWidth="1.5" d="M11.2 9.4l2.7.5-.6 2.6" />
-    </g>
-  ),
-  // Stylised eye.
-  nvidia: (
-    <g fill="none" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round">
-      <path d="M1.8 8c2-2.6 4-3.9 6.2-3.9 2.8 0 5 1.5 6.2 3.9-1.6 2.5-3.7 3.9-6.2 3.9S3.4 10.5 1.8 8Z" />
-      <circle cx="8" cy="8" r="1.7" fill="#fff" stroke="none" />
-    </g>
-  ),
-  // Layered chevrons.
-  perplexity: (
-    <g fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 2.4v11.2" />
-      <path d="M8 5.6 3.4 2.9v5.4L8 11M8 5.6l4.6-2.7v5.4L8 11" />
-    </g>
-  ),
-  // Concentric arcs.
-  cohere: (
-    <g fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round">
-      <path d="M11.6 4.6a4.6 4.6 0 1 0 0 6.8" />
-      <path d="M9.2 7.2a1.6 1.6 0 1 0 0 1.6" />
-    </g>
-  ),
-  moonshot: (
-    <path
-      fill="#fff"
-      d="M10.4 1.9a6.4 6.4 0 1 0 3.7 9.9A5.3 5.3 0 0 1 10.4 1.9Z"
-    />
-  ),
-  qwen: (
-    <g fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4.2 3.2 8 9.6l3.8-6.4" />
-      <path d="M2.4 9.6h5.2M8.4 9.6h5.2M8 9.6v3.4" />
-    </g>
-  ),
-  groq: (
-    <g fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12.2 5.2a4.8 4.8 0 1 0 .6 4.6" />
-      <path d="M13.2 8H8.6" />
-    </g>
-  ),
+/** Official brand marks, from the simple-icons package: one 24x24 path each,
+ *  drawn white on the provider's colour tile. These replace the hand-drawn
+ *  approximations this file used to carry.
+ *
+ *  Providers absent here have no mark in simple-icons — several vendors,
+ *  OpenAI and Microsoft among them, have asked for theirs not to be
+ *  redistributed — so they fall back to the lettered tile below rather than to
+ *  a guess at their logo. */
+const GLYPHS: Record<string, { path: string }> = {
+  anthropic: siAnthropic,
+  google: siGooglegemini,
+  deepseek: siDeepseek,
+  mistral: siMistralai,
+  meta: siMeta,
+  "meta-llama": siMeta,
+  openrouter: siOpenrouter,
+  perplexity: siPerplexity,
+  qwen: siQwen,
+  alibaba: siAlibabacloud,
+  nvidia: siNvidia,
+  minimax: siMinimax,
+  baidu: siBaidu,
+  snowflake: siSnowflake,
+  lmstudio: siLmstudio,
+  ollama: siOllama,
+  replicate: siReplicate,
+  databricks: siDatabricks,
+  moonshotai: siMoonshotai,
+  xiaomi: siXiaomi,
+  meituan: siMeituan,
 };
 
 /** The provider key for a model id like `deepseek/deepseek-chat`. */
@@ -223,6 +175,24 @@ export function providerName(provider: string): string {
   return PROVIDERS[key]?.short || provider;
 }
 
+function providerLabel(provider: string, fallbackKey: string): string {
+  const source = provider.trim() || fallbackKey || "?";
+  const cleaned = source
+    .replace(/^[^a-z0-9]+/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  const initials = cleaned
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return initials || (source[0] || "?").toUpperCase();
+}
+
 export function ProviderIcon({
   provider,
   size = 15,
@@ -230,27 +200,17 @@ export function ProviderIcon({
   provider: string;
   size?: number;
 }) {
-  const key = canonical(provider.toLowerCase());
+  const safeProvider = provider?.trim() || "";
+  const key = canonical(safeProvider.toLowerCase());
   const style = PROVIDERS[key] ?? { color: fallbackColor(key), short: "" };
-  const glyph = GLYPHS[key] ?? (key === "meta-llama" ? GLYPHS.meta : undefined);
-  const title = style.short || provider;
+  const glyph = GLYPHS[key];
+  const title = style.short || safeProvider || provider;
+  const label = providerLabel(safeProvider || style.short || key, key);
+  // simple-icons marks span the full 24-unit canvas, so drawn at the tile's own
+  // size they touch its edges and clip on its 4px corners. Inset them instead;
+  // the tile centres what it is given.
+  const glyphSize = Math.round(size * 0.72);
 
-  if (glyph) {
-    return (
-      <span
-        className="provider-icon"
-        style={{ width: size, height: size, background: style.color }}
-        title={title}
-      >
-        <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true">
-          {glyph}
-        </svg>
-      </span>
-    );
-  }
-
-  // No glyph for this provider — fall back to a lettered tile.
-  const label = (style.short || key || "?").replace(/^[\d._-]+/, "");
   return (
     <span
       className="provider-icon"
@@ -260,9 +220,39 @@ export function ProviderIcon({
         fontSize: Math.round(size * 0.55),
         background: style.color,
       }}
-      title={title}
+      data-tooltip={title}
     >
-      {(label.charAt(0) || "?").toUpperCase()}
+      {glyph ? (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          width={glyphSize}
+          height={glyphSize}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d={glyph.path} fill="#fff" />
+        </svg>
+      ) : (
+        label
+      )}
     </span>
   );
+}
+
+/** A provider mark rendered as raw HTML, for CodeMirror widgets that cannot
+ *  mount React components. */
+export function providerMarkHtml(provider: string, size = 13): string {
+  const safe = (provider ?? "").trim();
+  const key = canonical(safe.toLowerCase());
+  const style = PROVIDERS[key] ?? { color: fallbackColor(key), short: "" };
+  const glyph = GLYPHS[key];
+  const title = (style.short || safe || "?")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;");
+  const glyphSize = Math.round(size * 0.72);
+  const icon = glyph
+    ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" aria-hidden="true"><path d="${glyph.path}" fill="#fff"/></svg>`
+    : `<span class="provider-mark-fallback">${providerLabel(safe || style.short || key, key)}</span>`;
+  return `<span class="provider-mark" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.55)}px;background:${style.color}" data-tooltip="${title}">${icon}</span>`;
 }
