@@ -5,6 +5,7 @@
 //! is tolerated: missing keys are filled with defaults so that a plain `.md` file
 //! dropped into the vault by another editor still opens cleanly.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -50,6 +51,9 @@ pub struct Frontmatter {
     /// Absolute path of a software project this idea is linked to. The note is
     /// mirrored into that project's root so it can be worked on in place.
     pub project: Option<String>,
+    /// Per-bubble model assignment for idea notes: the first line of a bubble
+    /// maps to the model that bubble's prompt targets.
+    pub models: BTreeMap<String, String>,
     pub created: String,
     pub updated: String,
 }
@@ -84,6 +88,7 @@ impl Note {
                 source: None,
                 position: None,
                 project: None,
+                models: BTreeMap::new(),
                 created: now.clone(),
                 updated: now,
             },
@@ -138,6 +143,12 @@ impl Note {
                 .filter(|v| !v.is_empty())
         };
 
+        let models = fields
+            .iter()
+            .find(|(k, _)| k == "models")
+            .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, String>>(v).ok())
+            .unwrap_or_default();
+
         Note {
             frontmatter: Frontmatter {
                 id,
@@ -148,6 +159,7 @@ impl Note {
                 source: optional("source"),
                 position: optional("position").and_then(|v| v.parse().ok()),
                 project: optional("project"),
+                models,
                 created,
                 updated,
             },
@@ -180,6 +192,11 @@ impl Note {
         }
         if let Some(project) = &fm.project {
             extras.push_str(&format!("project: {}\n", quote(project)));
+        }
+        if !fm.models.is_empty() {
+            if let Ok(json) = serde_json::to_string(&fm.models) {
+                extras.push_str(&format!("models: {json}\n"));
+            }
         }
 
         format!(
@@ -500,6 +517,22 @@ mod tests {
         let src = "---\nid: abc\ntitle: T\ntags:\n  - alpha\n  - beta\ncreated: c\nupdated: u\n---\nx";
         let note = Note::parse(src, "fallback");
         assert_eq!(note.frontmatter.tags, vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn round_trips_bubble_models() {
+        let mut note = Note::new("Brainstorm", "First bubble.\n\nSecond bubble.\n".into());
+        note.frontmatter
+            .models
+            .insert("First bubble.".into(), "deepseek/deepseek-chat".into());
+        let reparsed = Note::parse(&note.to_markdown(), "fallback");
+        assert_eq!(
+            reparsed.frontmatter.models.get("First bubble.").map(String::as_str),
+            Some("deepseek/deepseek-chat")
+        );
+        // Notes without bubble models never emit the key.
+        let plain = Note::new("x", "y".into());
+        assert!(!plain.to_markdown().contains("models:"));
     }
 
     #[test]
