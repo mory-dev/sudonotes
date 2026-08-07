@@ -1,0 +1,22 @@
+[package]
+name = "sudonotes-core"
+version = "0.1.1"
+description = "The on-disk note format, shared by every sudonotes client"
+authors = ["sudonotes contributors"]
+edition = "2021"
+
+# Nothing here may touch the filesystem, the network, or Tauri. This crate is
+# the single definition of how a note is parsed, serialized and named, so that a
+# desktop app and a browser build writing into the same folder cannot drift
+# apart. Adding a dependency that does not build for wasm32 defeats the point.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ulid = "3.0.0"
+chrono = "0.4.45"
+
+# New ids need randomness and new notes need a clock. Natively both come from
+# the OS; in a browser they come from JavaScript, and getrandom will refuse to
+# build for wasm32 unless it is told which source to use.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }

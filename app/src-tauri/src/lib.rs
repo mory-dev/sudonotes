@@ -15,7 +15,7 @@ use serde::Serialize;
 use tauri::{Manager, State};
 
 use index::{file_mtime, Index, NoteMeta, SearchHit};
-use note::{filename_for, Note, NoteType};
+use note::{filename_for, Note, NoteType, WriteNote};
 use vault::{title_from_path, Vault};
 
 struct OpenVault {

@@ -5,7 +5,12 @@ use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
-use crate::note::{filename_for, NoteType};
+use crate::note::NoteType;
+
+// The naming rules are part of the on-disk contract, so they live in the shared
+// core; re-exported here because the rest of the app reaches for them via
+// `crate::vault`.
+pub use sudonotes_core::naming::{is_markdown, title_from_path};
 
 pub const INDEX_DIR: &str = ".sudonotes";
 pub const INDEX_FILE: &str = "index.db";
@@ -63,14 +68,10 @@ impl Vault {
     /// A free path for a new note, derived from its title.
     pub fn unique_path(&self, note_type: NoteType, title: &str) -> PathBuf {
         let dir = self.dir_for(note_type);
-        let stem = filename_for(title);
-        let mut candidate = dir.join(format!("{stem}.md"));
-        let mut n = 2;
-        while candidate.exists() {
-            candidate = dir.join(format!("{stem}-{n}.md"));
-            n += 1;
-        }
-        candidate
+        let stem = sudonotes_core::naming::unique_stem(title, |candidate| {
+            dir.join(format!("{candidate}.md")).exists()
+        });
+        dir.join(format!("{stem}.md"))
     }
 }
 
@@ -99,38 +100,9 @@ pub fn markdown_files_in(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-pub fn is_markdown(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("md"))
-}
-
-/// The file stem, used as a fallback title for files that arrived without
-/// frontmatter.
-pub fn title_from_path(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Untitled")
-        .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn recognizes_markdown_files() {
-        assert!(is_markdown(Path::new("a/b.md")));
-        assert!(is_markdown(Path::new("a/b.MD")));
-        // Atomic-write temp files must not be picked up by a scan.
-        assert!(!is_markdown(Path::new("a/b.md.tmp")));
-        assert!(!is_markdown(Path::new("a/b.txt")));
-    }
-
-    #[test]
-    fn derives_a_fallback_title() {
-        assert_eq!(title_from_path(Path::new("x/my-note.md")), "my-note");
-    }
 
     #[test]
     fn maps_paths_to_note_types() {

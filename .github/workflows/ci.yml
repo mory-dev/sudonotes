@@ -20,6 +20,8 @@ jobs:
       # Only the library tests run here. Building the bundled app needs the full
       # GTK/WebKit toolchain and is left to the release workflow.
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
@@ -30,7 +32,13 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev libxdo-dev libssl-dev patchelf
 
+      - run: cargo test --manifest-path core/Cargo.toml
       - run: cargo test --manifest-path app/src-tauri/Cargo.toml
+
+      # The whole point of the core crate is that a browser build can use it.
+      # If this stops compiling, that option has quietly been lost.
+      - name: Core still builds for the browser
+        run: cargo check --manifest-path core/Cargo.toml --target wasm32-unknown-unknown
 
   app:
     name: app front end

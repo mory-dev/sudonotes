@@ -3583,12 +3583,24 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sudonotes-core",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "ulid",
  "walkdir",
+]
+
+[[package]]
+name = "sudonotes-core"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "getrandom 0.4.3",
+ "serde",
+ "serde_json",
+ "ulid",
 ]
 
 [[package]]
