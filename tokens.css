@@ -1,0 +1,36 @@
+/* The single source of design tokens for sudonotes: the desktop app (app/src/App.css)
+   and the marketing site (site/src/styles/*) both import this file. The `:root` blocks
+   they used to maintain by hand had drifted — the site was missing `--selection`,
+   `--chrome-height` and the `--type-color`/`--type-soft` defaults — so they live here
+   instead. Keep every value in sync with what the app actually renders. */
+
+:root {
+  --bg: #16171a;
+  --panel: #1c1d21;
+  --panel-2: #232429;
+  --border: #2c2e34;
+  --text: #e4e5e9;
+  --text-2: #b6b9c2;
+  --muted: #8b8d96;
+  --accent: #7aa2f7;
+  --accent-soft: rgba(122, 162, 247, 0.14);
+  --selection: rgba(122, 162, 247, 0.28);
+  /* Very light, neutral gray for highlighted text (drag selection). */
+  --selection-bg: rgba(170, 176, 186, 0.22);
+  --danger: #f7768e;
+
+  /* Prompts read blue, ideas read green, everywhere in the app. */
+  --prompt: #7aa2f7;
+  --prompt-soft: rgba(122, 162, 247, 0.14);
+  --idea: #9ece6a;
+  --idea-soft: rgba(158, 206, 106, 0.14);
+
+  /* Default for anything not inside a [data-type] scope. */
+  --type-color: var(--accent);
+  --type-soft: var(--accent-soft);
+
+  --chrome-height: 34px;
+  --radius: 10px;
+
+  color-scheme: dark;
+}

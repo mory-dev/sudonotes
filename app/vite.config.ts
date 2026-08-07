@@ -16,6 +16,8 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
+    // The shared design tokens live at the repo root, outside app/.
+    fs: { allow: [".."] },
     // Bind IPv4 explicitly: with `false`, Vite listens on [::1] only, and the
     // Windows webview resolves localhost to 127.0.0.1 and gets a blank page.
     host: host || "127.0.0.1",
