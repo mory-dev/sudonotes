@@ -1,0 +1,119 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description: string;
+  /** Set on article-ish pages so the JSON-LD describes the right thing. */
+  type?: "website" | "article";
+}
+
+const { title, description, type = "website" } = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const og = new URL("/og.png", Astro.site).href;
+const path = Astro.url.pathname.replace(/\/$/, "") || "/";
+
+const nav = [
+  { href: "/features", label: "Features" },
+  { href: "/docs", label: "Docs", wide: false },
+  { href: "/open-source", label: "Open source", wide: true },
+  { href: "/roadmap", label: "Roadmap", wide: true },
+  { href: "/download", label: "Download" },
+];
+
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "sudonotes",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Windows, macOS, Linux",
+  description:
+    "A local-first notebook for the prompts and ideas behind what you build with AI. Plain Markdown, no account.",
+  url: "https://sudonotes.com",
+  license: "https://opensource.org/licenses/MIT",
+  isAccessibleForFree: true,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <meta property="og:type" content={type} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={og} />
+    <meta property="og:site_name" content="sudonotes" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <meta name="generator" content={Astro.generator} />
+    <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <nav class="site-nav">
+      <div class="page">
+        <a class="brand" href="/">
+          <svg width="17" height="17" viewBox="0 0 16 16" aria-hidden="true">
+            <rect
+              x="1.5"
+              y="1.5"
+              width="6"
+              height="6"
+              rx="1.6"
+              fill="var(--prompt-soft)"
+              stroke="var(--prompt)"
+              stroke-width="1.4"></rect>
+            <circle
+              cx="11"
+              cy="11"
+              r="3.4"
+              fill="var(--idea-soft)"
+              stroke="var(--idea)"
+              stroke-width="1.4"></circle>
+          </svg>
+          sudonotes
+        </a>
+        <div class="nav-links">
+          {
+            nav.map((item) => (
+              <a
+                href={item.href}
+                class={item.wide ? "nav-hide" : undefined}
+                aria-current={path === item.href ? "page" : undefined}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+        </div>
+      </div>
+    </nav>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="page">
+        <span>sudonotes — MIT licensed</span>
+        <a href="/docs/privacy">Privacy</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/roadmap">Roadmap</a>
+        <span class="spacer"></span>
+        <a href="https://github.com/mory-dev/sudonotes">GitHub</a>
+      </div>
+    </footer>
+  </body>
+</html>

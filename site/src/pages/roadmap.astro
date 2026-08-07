@@ -1,0 +1,139 @@
+---
+import Base from "../layouts/Base.astro";
+
+const items = [
+  {
+    state: "now",
+    title: "Deploy the AI proxy",
+    body: "The Worker is written and tested; it needs to go live on sudonotes.com with its secrets set. Until it does, AI features fall back to local tagging on every call.",
+  },
+  {
+    state: "next",
+    title: "Shared core, compiled to WebAssembly",
+    body: "Move note parsing, serialization, filename rules and paste splitting into a crate the desktop app and a browser build both call, so the two can never disagree about how a file is written.",
+  },
+  {
+    state: "next",
+    title: "Browser app on app.sudonotes.com",
+    body: "Connect to the same local vault where the browser allows it, import and export where it does not. See web vs. desktop for the shape of it.",
+  },
+  {
+    state: "next",
+    title: "Signed installers",
+    body: "Cross-platform CI, an Apple Developer account for notarization, and a Windows signing certificate — so downloads stop tripping Gatekeeper and SmartScreen.",
+  },
+  {
+    state: "later",
+    title: "Conflict handling on both sides",
+    body: "Fingerprint a note on open, re-check before writing, and offer reload / keep mine / save a copy. Needed before two programs share one folder.",
+  },
+  {
+    state: "later",
+    title: "Vim keybindings",
+    body: "Asked for early and often.",
+  },
+];
+
+const label = { now: "In progress", next: "Next", later: "Later" };
+---
+
+<Base
+  title="Roadmap — sudonotes"
+  description="What is being worked on in sudonotes, what comes next, and what is deliberately not being built yet."
+>
+  <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
+    <p class="eyebrow">Roadmap</p>
+    <h1>What is next</h1>
+    <p class="lede">
+      sudonotes is at v0.1.1. This is the honest order of work, not a wish list — items move here
+      only when they are actually being built.
+    </p>
+
+    <ul class="roadmap">
+      {
+        items.map((item) => (
+          <li class={`roadmap-item ${item.state}`}>
+            <span class="roadmap-state">{label[item.state as keyof typeof label]}</span>
+            <div>
+              <h3>{item.title}</h3>
+              <p>{item.body}</p>
+            </div>
+          </li>
+        ))
+      }
+    </ul>
+
+    <h2>Deliberately not planned</h2>
+    <ul>
+      <li><strong>Accounts.</strong> There is nothing to log in to and no reason to add one.</li>
+      <li><strong>Cloud sync.</strong> Your vault is a folder; put it in whatever already syncs your files.</li>
+      <li>
+        <strong>A mobile app.</strong> Not until the storage model has been proven by the browser
+        build. Shipping a fourth way to write to the same files would be a good way to lose data.
+      </li>
+    </ul>
+  </section>
+</Base>
+
+<style>
+  .roadmap {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .roadmap-item {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 16px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+
+  @media (max-width: 620px) {
+    .roadmap-item {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+  }
+
+  .roadmap-item h3 {
+    margin-bottom: 5px;
+  }
+
+  .roadmap-item p {
+    font-size: 14.5px;
+    color: var(--muted);
+  }
+
+  .roadmap-state {
+    align-self: start;
+    padding: 2px 9px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    justify-self: start;
+  }
+
+  .roadmap-item.now .roadmap-state {
+    color: var(--idea);
+    border-color: color-mix(in srgb, var(--idea) 45%, transparent);
+    background: var(--idea-soft);
+  }
+
+  .roadmap-item.next .roadmap-state {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: var(--accent-soft);
+  }
+</style>

@@ -1,0 +1,52 @@
+---
+/** The review panel after an explicit "Review this note". Mock data. */
+const { caption } = Astro.props;
+---
+
+<figure class="shot-figure">
+  <div class="shot" style="max-width:320px">
+    <div class="shot-chrome">
+      <div class="shot-dots">
+        <span class="shot-dot"></span><span class="shot-dot"></span><span class="shot-dot"></span>
+      </div>
+      <span class="shot-title">AI assistance</span>
+    </div>
+
+    <div class="shot-body one-col">
+      <aside class="shot-panel" data-type="prompt" style="border-left:0">
+        <div>
+          <div class="shot-panel-head">AI assistance</div>
+          <div class="shot-toggle">
+            <span class="shot-check">✓</span><span>Refinements &amp; tagging</span>
+          </div>
+          <div class="shot-button" style="margin-top:8px">Review this note</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <p class="shot-fit">Good fit</p>
+          <p class="shot-sub">
+            The task is extraction and grouping, which this model handles well at low temperature.
+          </p>
+
+          <div class="shot-panel-head" style="padding-bottom:2px">Issues</div>
+          <ul class="shot-bullets">
+            <li>"since {"{{last_tag}}"}" is never defined in the prompt</li>
+            <li>No output format is specified</li>
+          </ul>
+
+          <div class="shot-panel-head" style="padding-bottom:2px">Refinements</div>
+          <ul class="shot-bullets">
+            <li>Ask for a JSON array with title, area, user_visible</li>
+            <li>Say what to do when the diff is empty</li>
+          </ul>
+
+          <div class="shot-panel-head" style="padding-bottom:2px">Try instead</div>
+          <ul class="shot-bullets">
+            <li>anthropic/claude-haiku-4-5</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

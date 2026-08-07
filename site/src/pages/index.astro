@@ -1,0 +1,293 @@
+---
+import AppPreview from "../components/AppPreview.astro";
+import IdeaPreview from "../components/IdeaPreview.astro";
+import ReviewPreview from "../components/ReviewPreview.astro";
+import SearchPreview from "../components/SearchPreview.astro";
+import Base from "../layouts/Base.astro";
+import "../styles/preview.css";
+---
+
+<Base
+  title="sudonotes — organize your prompts and ideas"
+  description="A local-first notebook for the prompts you keep rewriting and the ideas behind them. Assign the right model to the right problem, iterate quickly, and keep everything as plain Markdown you own."
+>
+  <section class="hero page">
+    <p class="eyebrow">The essential tool for building with AI</p>
+    <h1>Organize your prompts and ideas.</h1>
+    <p class="lede">
+      The prompts you keep rewriting, the ideas that motivated them, and the models you send them
+      to — in one folder of plain Markdown files on your own machine. No account. No sync. No
+      lock-in.
+    </p>
+
+    <div class="actions">
+      <a class="button primary" href="/download">Get sudonotes</a>
+      <a class="button" href="https://github.com/mory-dev/sudonotes">View the source</a>
+    </div>
+
+    <p class="hero-meta muted">
+      Free and MIT licensed · Windows, macOS and Linux · ~20&nbsp;MB installer
+    </p>
+
+    <div class="hero-shot">
+      <AppPreview caption="A collection of prompts, each aimed at the model that suits it. Mock data." />
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="page split">
+      <div class="stack" style="gap:16px">
+        <p class="eyebrow">Stop repeating yourself</p>
+        <h2>You have written this prompt before.</h2>
+        <p class="lede">
+          Prompts scatter across chat histories, scratch files and half-abandoned docs. So the next
+          time you need one, you write it from scratch — slightly worse than last time, and you
+          spend the tokens finding that out.
+        </p>
+        <p class="lede">
+          sudonotes gives that work somewhere to live. A prompt you refine once stays refined. The
+          idea that produced it stays attached. Nothing is retyped because you could not find it.
+        </p>
+      </div>
+      <ul class="check-list">
+        <li><strong>Capture</strong> the prompt while it is still good.</li>
+        <li><strong>Refine</strong> it in place instead of rewriting it.</li>
+        <li><strong>Link</strong> it to the idea it came from with <code>[[wiki links]]</code>.</li>
+        <li><strong>Find</strong> it again in a keystroke, months later.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="page stack" style="gap:30px">
+      <div class="stack" style="gap:14px">
+        <p class="eyebrow">Brainstorm ideas</p>
+        <h2>Think in bubbles, then build.</h2>
+        <p class="lede">
+          An idea note is not one wall of text. Each paragraph becomes its own bubble you can jump
+          to, weigh, and point at a different model — because the thinking step and the drafting
+          step rarely want the same one.
+        </p>
+      </div>
+      <IdeaPreview caption="One idea, three bubbles, three models. Mock data." />
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="page split">
+      <div class="stack" style="gap:16px">
+        <p class="eyebrow">Assign the right model to the right problem</p>
+        <h2>Every prompt knows what it is for.</h2>
+        <p class="lede">
+          Tag a prompt — or a single bubble inside an idea — with the model it targets, picked from
+          a live catalog of context windows, output limits, reasoning, vision and tool support.
+        </p>
+        <p class="lede">
+          A collection shows the stack of models its prompts point at, so an orchestration is
+          legible at a glance rather than buried in the text.
+        </p>
+      </div>
+      <ReviewPreview caption="An explicit review of one prompt. Mock data." />
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="page split reverse">
+      <div class="stack" style="gap:16px">
+        <p class="eyebrow">Orchestrate and scale</p>
+        <h2>Paste a chain, get a pipeline.</h2>
+        <p class="lede">
+          Paste a multi-step prompt and sudonotes offers to split it into separate prompts, in
+          order, under one collection. Reorder them by dragging. Each step keeps its own model, its
+          own tags, and its own file.
+        </p>
+        <p class="lede">
+          Chains stop being one long blob you scroll through and start being something you can edit
+          a step at a time.
+        </p>
+      </div>
+      <div class="stack" style="gap:12px">
+        <div class="card">
+          <h3>Collections</h3>
+          <p>
+            A subfolder of prompts with a header note that indexes them. Ordinary directories on
+            disk — nothing proprietary.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Split preview</h3>
+          <p>
+            Nothing is written until you confirm the split, so a bad guess costs you a click rather
+            than a cleanup.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="page stack" style="gap:30px">
+      <div class="stack" style="gap:14px">
+        <p class="eyebrow">Iterate effectively and quickly</p>
+        <h2>Everything is one keystroke away.</h2>
+        <p class="lede">
+          Full-text search across every note, ranked so titles win over passing mentions.
+          <kbd>Ctrl K</kbd> from anywhere. Backlinks show you what depends on the note you are about
+          to change — before you change it.
+        </p>
+      </div>
+      <SearchPreview caption="Search over titles, bodies and tags. Mock data." />
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="page split">
+      <div class="stack" style="gap:16px">
+        <p class="eyebrow">Lead projects the right way</p>
+        <h2>Ideas that live next to the code.</h2>
+        <p class="lede">
+          Link an idea to a project folder and sudonotes mirrors it to an <code>IDEAS.md</code> in
+          that repository. The thinking travels with the work, where the next person — or the next
+          agent — will actually look for it.
+        </p>
+        <p class="lede">
+          It offers to add the mirror to <code>.gitignore</code> if you would rather keep it out of
+          version control. Your call, asked once.
+        </p>
+      </div>
+      <ul class="check-list">
+        <li><strong>Detects</strong> the project's icon and name automatically.</li>
+        <li><strong>Imports</strong> an existing <code>IDEAS.md</code> instead of overwriting it.</li>
+        <li><strong>Unlinks</strong> cleanly, with or without deleting the mirror.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="page stack" style="gap:26px">
+      <div class="stack" style="gap:14px">
+        <p class="eyebrow">Build something impactful</p>
+        <h2>It is just Markdown, in a folder you chose.</h2>
+        <p class="lede">
+          No database you cannot read, no export button you will need one day. A vault is
+          <code>prompts/</code> and <code>ideas/</code> full of <code>.md</code> files with a few
+          lines of YAML at the top. Edit them in any editor; sudonotes notices and reloads.
+        </p>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Yours on disk</h3>
+          <p>
+            Put the vault in Dropbox, in a git repo, on an encrypted volume. sudonotes has no
+            opinion and no server holding it.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Optional AI, on your terms</h3>
+          <p>
+            Tagging and review run through the sudonotes service with no API key of your own. One
+            switch per vault turns it off entirely.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Small and fast</h3>
+          <p>
+            Built with Tauri on your system's webview — a ~20&nbsp;MB installer instead of a
+            bundled browser.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Open source</h3>
+          <p>
+            MIT. Read exactly what leaves your machine, or build it yourself and change what you
+            disagree with.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band closer">
+    <div class="page stack" style="gap:20px; align-items:center; text-align:center">
+      <h2>Keep the prompts. Keep the thinking.</h2>
+      <p class="lede" style="max-width:52ch">
+        sudonotes is early and moving quickly. It is free, it is MIT, and your notes are files you
+        can walk away with at any time.
+      </p>
+      <div class="actions" style="justify-content:center">
+        <a class="button primary" href="/download">Get sudonotes</a>
+        <a class="button" href="/docs">Read the docs</a>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero {
+    padding-block: clamp(48px, 8vw, 88px) 0;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .hero h1 {
+    max-width: 16ch;
+  }
+
+  .hero .actions {
+    margin-top: 6px;
+  }
+
+  .hero-meta {
+    font-size: 13.5px;
+  }
+
+  .hero-shot {
+    margin-top: clamp(30px, 5vw, 54px);
+  }
+
+  .split {
+    display: grid;
+    gap: clamp(28px, 5vw, 56px);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+
+  @media (max-width: 860px) {
+    .split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .split.reverse > :first-child {
+      order: 2;
+    }
+  }
+
+  .check-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: 15px;
+    color: var(--muted);
+  }
+
+  .check-list li {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+
+  .check-list strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .closer {
+    background: linear-gradient(180deg, transparent, var(--accent-soft));
+  }
+</style>

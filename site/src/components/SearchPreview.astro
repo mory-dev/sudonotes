@@ -1,0 +1,44 @@
+---
+/** The command palette, mid-query. Mock data. */
+const { caption } = Astro.props;
+---
+
+<figure class="shot-figure">
+  <div class="shot">
+    <div class="shot-chrome">
+      <div class="shot-dots">
+        <span class="shot-dot"></span><span class="shot-dot"></span><span class="shot-dot"></span>
+      </div>
+      <span class="shot-title">Ctrl K</span>
+    </div>
+
+    <div class="shot-palette">
+      <div class="shot-palette-box">
+        <div class="shot-palette-input">
+          <span>changelog</span><span class="shot-caret"></span>
+        </div>
+        <div class="shot-hit active" data-type="prompt">
+          <span class="shot-mark"></span>
+          <span>Draft the changelog</span>
+          <span class="snippet">Write it in the voice of the <em>changelog</em> style guide…</span>
+        </div>
+        <div class="shot-hit" data-type="prompt">
+          <span class="shot-mark"></span>
+          <span>Changelog style guide</span>
+          <span class="snippet">One line per entry, present tense, no adjectives…</span>
+        </div>
+        <div class="shot-hit" data-type="idea">
+          <span class="shot-mark round"></span>
+          <span>Release ritual</span>
+          <span class="snippet">Tag, then the <em>changelog</em>, then the announcement…</span>
+        </div>
+        <div class="shot-hit" data-type="prompt">
+          <span class="shot-mark"></span>
+          <span>Group by surface</span>
+          <span class="snippet">Cluster entries into Editor, Search, Sync and Fixes…</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

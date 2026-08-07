@@ -1,0 +1,96 @@
+---
+import Base from "../layouts/Base.astro";
+
+/** Releases, newest first. Dates are the actual tag dates — nothing backdated. */
+const releases = [
+  {
+    version: "0.1.1",
+    date: "2026-08-08",
+    changes: [
+      "Idea bubbles get headers, heat bars and a copy action.",
+      "Per-bubble model assignment, stored in the note's frontmatter.",
+      "Project icons detected from common repository layouts.",
+      "Destructive actions confirm with Enter.",
+      "The UI starts at a smaller default zoom.",
+    ],
+  },
+  {
+    version: "0.1.0",
+    date: "2026-08-08",
+    changes: [
+      "First tagged release.",
+      "Prompts and ideas, collections, and splitting a paste into separate prompts.",
+      "Full-text search over the vault, and a command palette on Ctrl K.",
+      "Wiki links with a backlinks panel.",
+      "Project linking, mirroring an idea into a repository's IDEAS.md.",
+      "Model picker backed by a live catalog, and optional AI tagging.",
+    ],
+  },
+];
+---
+
+<Base
+  title="Changelog — sudonotes"
+  description="Release notes for sudonotes, newest first."
+>
+  <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
+    <p class="eyebrow">Changelog</p>
+    <h1>Releases</h1>
+    <p class="lede">
+      sudonotes is early. Versions move quickly and the format on disk is still settling — though
+      note files written by any version stay readable by every later one.
+    </p>
+
+    {
+      releases.map((release) => (
+        <article class="release">
+          <header>
+            <h2>v{release.version}</h2>
+            <time datetime={release.date}>
+              {new Date(release.date).toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </time>
+          </header>
+          <ul>
+            {release.changes.map((change) => (
+              <li>{change}</li>
+            ))}
+          </ul>
+        </article>
+      ))
+    }
+
+    <p class="muted" style="font-size:14px">
+      Full commit history is on <a href="https://github.com/mory-dev/sudonotes/commits/master">GitHub</a>.
+    </p>
+  </section>
+</Base>
+
+<style>
+  .release {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  .release header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .release h2 {
+    margin: 0;
+    font-size: 1.35rem;
+  }
+
+  .release time {
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+</style>

@@ -1,0 +1,65 @@
+---
+import Base from "../layouts/Base.astro";
+
+const repo = "https://github.com/mory-dev/sudonotes";
+---
+
+<Base
+  title="Open source — sudonotes"
+  description="sudonotes is MIT licensed. How the repository is laid out, how to build it, and how to contribute."
+>
+  <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
+    <p class="eyebrow">Open source</p>
+    <h1>MIT, all of it</h1>
+    <p class="lede">
+      The app, the AI proxy and this website are in one repository. Nothing about how your notes are
+      stored or what leaves your machine is hidden behind a service you cannot read.
+    </p>
+
+    <div class="actions">
+      <a class="button primary" href={repo}>github.com/mory-dev/sudonotes</a>
+      <a class="button" href={`${repo}/issues`}>Issues</a>
+    </div>
+
+    <h2>Layout</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Directory</th><th>What is in it</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>app/src</code></td><td>React front end. Every Tauri command is wrapped in one file, <code>api.ts</code>.</td></tr>
+          <tr><td><code>app/src-tauri/src</code></td><td>The Rust core: vault, note parsing, search index, splitting, project linking, file watching.</td></tr>
+          <tr><td><code>worker/</code></td><td>The Cloudflare Worker that holds the AI provider key and enforces the limits.</td></tr>
+          <tr><td><code>site/</code></td><td>This website. Astro, static output.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Building</h2>
+    <p>Requires Node.js, Rust, and the Tauri prerequisites for your platform.</p>
+    <pre><code>cd app && npm install && npm run tauri dev</code></pre>
+
+    <h2>Tests</h2>
+    <p>The Rust core and the Worker both have suites, and both are expected to stay green.</p>
+    <pre><code>cd app/src-tauri && cargo test</code></pre>
+    <pre><code>cd worker && npm test</code></pre>
+    <p>
+      The Worker suite stubs the network, so it needs no API key and makes no outbound request.
+    </p>
+
+    <h2>Contributing</h2>
+    <ul>
+      <li><strong>Match the surrounding code.</strong> Comments explain why, not what.</li>
+      <li><strong>Keep the diff to the change.</strong> Unrelated cleanups are their own commit.</li>
+      <li><strong>Cover behaviour that could regress silently</strong> — especially anything that writes to a user's files.</li>
+      <li><strong>Do not add a dependency</strong> without saying what it buys.</li>
+    </ul>
+
+    <div class="note">
+      The single hardest constraint in this project: a note's on-disk form is a contract. Two
+      programs will eventually be writing these files. Changing how frontmatter or filenames are
+      produced is never a small change.
+    </div>
+  </section>
+</Base>

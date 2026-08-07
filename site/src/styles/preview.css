@@ -1,0 +1,588 @@
+/* A recreation of the sudonotes window, built from the same design tokens the
+   app itself uses, so it stays sharp at any size and in any pixel density.
+   Everything inside is mock data. */
+
+.shot {
+  --shot-font: 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+  box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  font-size: var(--shot-font);
+  line-height: 1.5;
+}
+
+.shot-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.shot-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.shot-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.shot-title {
+  margin-inline: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+.shot-body {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 232px;
+  min-height: 430px;
+  background: var(--bg);
+}
+
+.shot-body.two-col {
+  grid-template-columns: 216px minmax(0, 1fr);
+}
+
+.shot-body.one-col {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .shot-body,
+  .shot-body.two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shot-side,
+  .shot-panel {
+    display: none;
+  }
+}
+
+/* sidebar ----------------------------------------------------------------- */
+
+.shot-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 10px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.shot-search {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.shot-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.shot-count {
+  padding: 0 5px;
+  border-radius: 20px;
+  background: var(--panel-2);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shot-plus {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.shot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shot-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shot-row.nested {
+  margin-left: 12px;
+  color: var(--muted);
+}
+
+.shot-row.active {
+  background: var(--type-soft, var(--accent-soft));
+  color: var(--type-color, var(--accent));
+}
+
+.shot-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.shot-group.active {
+  background: var(--type-soft, var(--accent-soft));
+  color: var(--type-color, var(--accent));
+}
+
+[data-type="prompt"] {
+  --type-color: var(--prompt);
+  --type-soft: var(--prompt-soft);
+}
+
+[data-type="idea"] {
+  --type-color: var(--idea);
+  --type-soft: var(--idea-soft);
+}
+
+.shot-mark {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid var(--type-color, var(--accent));
+}
+
+.shot-mark.filled {
+  background: var(--type-soft);
+}
+
+.shot-mark.round {
+  border-radius: 50%;
+}
+
+/* A tiny stack of provider chips, as the sidebar shows for a collection. */
+.shot-stack {
+  margin-left: auto;
+  display: flex;
+}
+
+.shot-chip {
+  width: 15px;
+  height: 15px;
+  margin-left: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--panel);
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  font-weight: 700;
+  color: #10131b;
+}
+
+.shot-chip:first-child {
+  margin-left: 0;
+}
+
+.chip-ds {
+  background: #6ea8fe;
+}
+.chip-oa {
+  background: #9ece6a;
+}
+.chip-an {
+  background: #e0a05a;
+}
+.chip-gm {
+  background: #b39ddb;
+}
+
+.shot-vault {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.shot-vault svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--idea);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* main -------------------------------------------------------------------- */
+
+.shot-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shot-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 18px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shot-titlebar h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shot-badge {
+  padding: 1px 7px;
+  border-radius: 20px;
+  border: 1px solid var(--type-color);
+  color: var(--type-color);
+  background: var(--type-soft);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.shot-content {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* A prompt card, as shown inside a collection. */
+.shot-card {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.shot-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shot-card-index {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.shot-card-title {
+  font-size: 12.5px;
+  font-weight: 560;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shot-model {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 3px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--panel-2);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.shot-card-body {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.62;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.shot-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.shot-tag {
+  padding: 1px 7px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* An idea bubble, with the model that block is aimed at. */
+.shot-bubble {
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--idea);
+  border-radius: 0 9px 9px 0;
+  background: var(--panel);
+  padding: 10px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shot-bubble-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 560;
+}
+
+.shot-bubble p {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.shot-heat {
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--idea) var(--heat, 40%), var(--border) var(--heat, 40%));
+}
+
+/* right panel ------------------------------------------------------------- */
+
+.shot-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 12px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  min-width: 0;
+}
+
+.shot-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.shot-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.shot-meta-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.shot-meta-row dt {
+  width: 58px;
+  flex: none;
+  color: var(--muted);
+}
+
+.shot-meta-row dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shot-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+}
+
+.shot-check {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  color: #10131b;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.shot-button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.shot-fit {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--idea);
+}
+
+.shot-panel ul.shot-bullets {
+  margin: 0;
+  padding-left: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.shot-panel .shot-sub {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* command palette --------------------------------------------------------- */
+
+.shot-palette {
+  padding: 26px 18px 30px;
+  background: var(--bg);
+  display: grid;
+  place-items: start center;
+}
+
+.shot-palette-box {
+  width: min(100%, 460px);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel);
+  overflow: hidden;
+  box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.9);
+}
+
+.shot-palette-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.shot-caret {
+  width: 1px;
+  height: 14px;
+  background: var(--accent);
+}
+
+.shot-hit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+
+.shot-hit.active {
+  background: var(--accent-soft);
+}
+
+.shot-hit em {
+  font-style: normal;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.shot-hit .snippet {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* caption ----------------------------------------------------------------- */
+
+figure.shot-figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+figure.shot-figure figcaption {
+  font-size: 13px;
+  color: var(--muted);
+}

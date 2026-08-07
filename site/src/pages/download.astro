@@ -1,0 +1,60 @@
+---
+import Base from "../layouts/Base.astro";
+
+const repo = "https://github.com/mory-dev/sudonotes";
+---
+
+<Base
+  title="Download sudonotes"
+  description="How to get sudonotes today: build it from source in a couple of commands. Signed installers for Windows, macOS and Linux are being prepared."
+>
+  <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
+    <p class="eyebrow">Download</p>
+    <h1>Get sudonotes</h1>
+
+    <div class="note warn">
+      <strong>There are no prebuilt installers yet.</strong> sudonotes is at v0.1.1 and the release
+      pipeline — cross-platform builds, code signing and macOS notarization — is not finished.
+      Rather than hand you an unsigned binary that your OS will warn you about, the honest answer
+      today is: build it from source. It takes two commands and about a minute.
+    </div>
+
+    <h2>Build it yourself</h2>
+    <p>
+      You need <a href="https://nodejs.org">Node.js</a>, <a href="https://rustup.rs">Rust</a>, and
+      the <a href="https://tauri.app/start/prerequisites/">Tauri system dependencies</a> for your
+      platform.
+    </p>
+
+    <pre><code>git clone https://github.com/mory-dev/sudonotes.git</code></pre>
+    <pre><code>cd sudonotes/app && npm install && npm run tauri build</code></pre>
+
+    <p>
+      The installer lands in <code>app/src-tauri/target/release/bundle/</code>. To run it in
+      development instead, use <code>npm run tauri dev</code>.
+    </p>
+
+    <h2>What you get</h2>
+    <ul>
+      <li><strong>Windows, macOS and Linux</strong> — one codebase, native builds.</li>
+      <li>
+        <strong>About 20&nbsp;MB.</strong> Tauri uses your system's webview rather than shipping a
+        browser.
+      </li>
+      <li><strong>No account.</strong> First launch asks you where to keep your vault. That is it.</li>
+    </ul>
+
+    <h2>When installers land</h2>
+    <p>
+      Signed builds need an Apple Developer account for notarization and a Windows signing
+      certificate; both cost money and take time to set up. Until they are in place, an unsigned
+      installer would trip SmartScreen and Gatekeeper — which is a worse first impression than a
+      clone and a build. Progress is on the <a href="/roadmap">roadmap</a>.
+    </p>
+
+    <div class="actions">
+      <a class="button primary" href={repo}>Open the repository</a>
+      <a class="button" href="/docs/vault-format">See what it writes to disk</a>
+    </div>
+  </section>
+</Base>

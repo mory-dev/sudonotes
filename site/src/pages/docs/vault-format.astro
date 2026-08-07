@@ -1,0 +1,91 @@
+---
+import Base from "../../layouts/Base.astro";
+---
+
+<Base
+  title="Vault format — sudonotes docs"
+  description="A sudonotes vault is a directory of Markdown files with a small YAML header. Here is the exact layout, the frontmatter fields, and what is safe to delete."
+  type="article"
+>
+  <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
+    <p class="eyebrow">Docs</p>
+    <h1>Vault format</h1>
+    <p class="lede">
+      A vault is a directory you choose. There is no proprietary container, and nothing here needs
+      sudonotes to be read.
+    </p>
+
+    <h2>Layout</h2>
+    <pre><code>&lt;vault&gt;/
+  prompts/**.md
+  ideas/**.md
+  .sudonotes/index.db        # search index — a cache, rebuilt on launch
+  .sudonotes/settings.json   # whether AI is on for this vault</code></pre>
+
+    <p>
+      Subdirectories of <code>prompts/</code> and <code>ideas/</code> are collections: a group of
+      notes with a header note that indexes them.
+    </p>
+
+    <h2>A note</h2>
+    <pre><code>---
+id: 01J8Z2K9Q4
+title: Draft the changelog
+tags: [docs, marketing]
+model: openai/gpt-5.2
+created: 2026-08-06T09:12:08Z
+updated: 2026-08-08T00:21:10Z
+---
+
+Write it in the voice of [[Changelog style guide]].
+One line per entry, present tense, no adjectives.</code></pre>
+
+    <p>
+      A file with no frontmatter still works — the filename becomes the title, and the header is
+      added the first time sudonotes writes to it. Drop existing Markdown into
+      <code>prompts/</code> and it will be picked up on the next scan.
+    </p>
+
+    <h2>Fields</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>id</strong></td><td>Stable identifier. Links and backlinks resolve through it.</td></tr>
+          <tr><td><strong>title</strong></td><td>Display name. Also what <code>[[links]]</code> match against.</td></tr>
+          <tr><td><strong>tags</strong></td><td>A short list, set by hand or by the optional AI pass.</td></tr>
+          <tr><td><strong>model</strong></td><td>The model this prompt targets, if any.</td></tr>
+          <tr><td><strong>models</strong></td><td>On ideas: a per-bubble map from the bubble's first line to a model.</td></tr>
+          <tr><td><strong>position</strong></td><td>Order within a collection.</td></tr>
+          <tr><td><strong>project</strong></td><td>The project folder a linked idea mirrors into.</td></tr>
+          <tr><td><strong>created</strong> / <strong>updated</strong></td><td>RFC 3339 timestamps.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>What is safe to delete</h2>
+    <p>
+      All of <code>.sudonotes/</code>. You lose the search index, which is rebuilt on the next
+      launch, and the AI preference for that vault, which returns to its default of on. Your notes
+      are the <code>.md</code> files; nothing else in the vault is load-bearing.
+    </p>
+    <p>
+      No credentials are ever written into a vault. The AI provider key lives on the server, not on
+      your machine and not in your notes.
+    </p>
+
+    <h2>Editing outside the app</h2>
+    <p>
+      The vault root is watched. Save a note from another editor and sudonotes reloads it — unless
+      you have unsaved changes to that same note open, in which case it leaves your buffer alone
+      rather than overwriting it.
+    </p>
+
+    <div class="note">
+      Because it is only files, a vault works fine inside a git repository, a synced folder, or an
+      encrypted volume. sudonotes has no opinion about where it lives.
+    </div>
+  </section>
+</Base>

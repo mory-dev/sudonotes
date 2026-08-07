@@ -1,0 +1,48 @@
+---
+import Base from "../../layouts/Base.astro";
+
+const pages = [
+  {
+    href: "/docs/vault-format",
+    title: "Vault format",
+    blurb: "Exactly what sudonotes writes to disk, and how to read it without sudonotes.",
+  },
+  {
+    href: "/docs/privacy",
+    title: "Privacy",
+    blurb: "What leaves your machine when AI is on, what does not, and how to turn it off.",
+  },
+  {
+    href: "/docs/web-vs-desktop",
+    title: "Web vs. desktop",
+    blurb: "The planned browser app, what it will and will not be able to do, and why.",
+  },
+];
+---
+
+<Base
+  title="Docs — sudonotes"
+  description="Documentation for sudonotes: the vault format on disk, what the optional AI sends, and how the planned browser app will differ from the desktop app."
+>
+  <section class="page" style="padding-block: clamp(44px, 7vw, 76px)">
+    <div class="prose">
+      <p class="eyebrow">Docs</p>
+      <h1>Documentation</h1>
+      <p class="lede">
+        Short and specific. If something here disagrees with the app, the app is right and this is a
+        bug — please <a href="https://github.com/mory-dev/sudonotes/issues">say so</a>.
+      </p>
+    </div>
+
+    <div class="grid" style="margin-top: 34px">
+      {
+        pages.map((page) => (
+          <a class="card" href={page.href} style="text-decoration:none; display:block">
+            <h3>{page.title}</h3>
+            <p>{page.blurb}</p>
+          </a>
+        ))
+      }
+    </div>
+  </section>
+</Base>
