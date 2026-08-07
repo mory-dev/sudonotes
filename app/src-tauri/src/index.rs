@@ -13,7 +13,7 @@ use serde::Serialize;
 use crate::note::{extract_links, Note, NoteType};
 use crate::vault::{title_from_path, Vault};
 
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteMeta {
@@ -35,6 +35,25 @@ pub struct NoteMeta {
     /// Favicon of the linked project, populated by the list command.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Blank-line separated groups in the body — the note's bubbles. Only
+    /// meaningful for ideas, where the sidebar shows it beside the title.
+    pub bubbles: u32,
+}
+
+/// The bubbles of a body: runs of non-blank lines, matching the boxes the
+/// editor draws and the "In this idea" outline.
+fn count_bubbles(body: &str) -> u32 {
+    let mut count = 0;
+    let mut in_group = false;
+    for line in body.lines() {
+        if line.trim().is_empty() {
+            in_group = false;
+        } else if !in_group {
+            in_group = true;
+            count += 1;
+        }
+    }
+    count
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,7 +109,8 @@ impl Index {
                  position   INTEGER,
                  created TEXT NOT NULL,
                  updated TEXT NOT NULL,
-                 mtime   INTEGER NOT NULL
+                 mtime   INTEGER NOT NULL,
+                 bubbles INTEGER NOT NULL DEFAULT 0
              );
              CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
                  id UNINDEXED,
@@ -168,7 +188,7 @@ impl Index {
 
     pub fn list(&self, note_type: Option<NoteType>) -> rusqlite::Result<Vec<NoteMeta>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, type, tags, collection, summary, updated, project, model, position FROM notes
+            "SELECT id, title, type, tags, collection, summary, updated, project, model, position, bubbles FROM notes
              WHERE (?1 IS NULL OR type = ?1)
              ORDER BY updated DESC",
         )?;
@@ -186,6 +206,7 @@ impl Index {
                 model: non_empty(r.get::<_, String>(8)?),
                 position: r.get(9)?,
                 icon: None,
+                bubbles: r.get(10)?,
             })
         })?;
         rows.collect()
@@ -268,7 +289,7 @@ impl Index {
     /// Notes whose body contains a `[[link]]` pointing at `title`.
     pub fn backlinks(&self, title: &str) -> rusqlite::Result<Vec<NoteMeta>> {
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT n.id, n.title, n.type, n.tags, n.collection, n.summary, n.updated, n.project, n.model, n.position
+            "SELECT DISTINCT n.id, n.title, n.type, n.tags, n.collection, n.summary, n.updated, n.project, n.model, n.position, n.bubbles
              FROM links l
              JOIN notes n ON n.id = l.src_id
              WHERE lower(l.target_title) = lower(?1)
@@ -287,6 +308,7 @@ impl Index {
                 model: non_empty(r.get::<_, String>(8)?),
                 position: r.get(9)?,
                 icon: None,
+                bubbles: r.get(10)?,
             })
         })?;
         rows.collect()
@@ -309,8 +331,8 @@ fn upsert_in(
     conn.execute("DELETE FROM links WHERE src_id = ?1", params![fm.id])?;
 
     conn.execute(
-        "INSERT INTO notes (id, path, type, title, tags, collection, summary, project, model, position, created, updated, mtime)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT INTO notes (id, path, type, title, tags, collection, summary, project, model, position, created, updated, mtime, bubbles)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             fm.id,
             key,
@@ -324,7 +346,8 @@ fn upsert_in(
             fm.position,
             fm.created,
             fm.updated,
-            mtime
+            mtime,
+            count_bubbles(&note.body)
         ],
     )?;
     conn.execute(
