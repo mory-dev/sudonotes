@@ -10,7 +10,7 @@ LLM prompts end up scattered across chat histories, scratch files, and half-aban
 - **Linked.** Wiki-style `[[links]]` with backlinks, so prompts and the ideas behind them stay connected.
 - **Open source.** MIT.
 
-Optional DeepSeek assistance can analyze prompt/model fit, suggest refinements, and add tags. It is disabled from network use until configured in the app; local tagging remains available without a key.
+AI assistance can analyze prompt/model fit, suggest refinements, and add tags. It is on by default and needs no API key of your own — requests go through the sudonotes API, which holds the provider key. Enabling it sends the note's content to that service; turn it off in the app and tagging falls back to a local keyword pass. Note bodies are never logged.
 
 ## Vault layout
 
@@ -47,7 +47,7 @@ cd app && npm run tauri build
 
 ## Status
 
-Early. The current milestone covers the core loop: capture, link, and search. Project-folder linking, AI-assisted prompt refinement, and vim keybindings are planned.
+Early. The core loop — capture, link, search — is in place, along with project-folder linking, collection splitting, and per-note model assignment. A browser build that connects to the same vault, and vim keybindings, are planned.
 
 ## License
 
