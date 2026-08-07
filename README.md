@@ -30,6 +30,20 @@ in the vault is load-bearing. No credentials are ever written there.
 
 Each note is Markdown with a small YAML frontmatter block (`id`, `title`, `tags`, `created`, `updated`). Edit them in any editor you like; sudonotes picks up external changes automatically.
 
+## Repository
+
+| Directory | What it is |
+| --- | --- |
+| `core/` | `sudonotes-core` — the note format: frontmatter, filenames, links, paste splitting. Pure Rust, no filesystem, and it compiles to WebAssembly so a browser build can share it. |
+| `app/` | The desktop app. React front end in `src/`, Tauri and the filesystem in `src-tauri/`. |
+| `worker/` | The Cloudflare Worker behind `sudonotes.com/api/*`, which holds the AI provider key. |
+| `site/` | sudonotes.com — Astro, static. |
+
+The split between `core/` and `app/src-tauri/` is deliberate and worth
+preserving: a vault is a folder that more than one program will eventually write
+into, and anything defining how a note is stored belongs in `core/` so those
+programs cannot disagree.
+
 ## Development
 
 Requires [Node.js](https://nodejs.org) and [Rust](https://rustup.rs), plus the [Tauri system dependencies](https://tauri.app/start/prerequisites/) for your platform.
@@ -41,7 +55,13 @@ cd app && npm install && npm run tauri dev
 Run the Rust tests:
 
 ```bash
-cd app/src-tauri && cargo test
+cargo test --manifest-path core/Cargo.toml && cargo test --manifest-path app/src-tauri/Cargo.toml
+```
+
+Check that the core still builds for the browser:
+
+```bash
+cargo check --manifest-path core/Cargo.toml --target wasm32-unknown-unknown
 ```
 
 Build a release installer:

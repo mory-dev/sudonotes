@@ -5,3 +5,4 @@ target/
 *.log
 .env
 IDEAS.md
+core/Cargo.lock
