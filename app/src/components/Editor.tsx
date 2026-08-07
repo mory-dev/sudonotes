@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -15,12 +15,14 @@ import {
   EditorView,
   keymap,
   ViewPlugin,
+  WidgetType,
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
 
 import { useStore } from "../store";
 import { tagHoverColor } from "../tagColors";
+import { ModelPicker } from "./ModelPicker";
 
 /** Split pasted text into clean paragraphs (separated by a single blank line)
  *  so an imported notepad-style file becomes distinct idea bubbles. */
@@ -159,6 +161,75 @@ const headings = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+/** The top-level bubbles of an idea note: each block group and whether it
+ *  starts with a heading. Shared by the bubble decorations, the heat bars,
+ *  Ctrl+A, and the hover menu's copy button. */
+function computeBubbles(state: EditorState): { from: number; to: number; heading: boolean }[] {
+  const doc = state.doc;
+  const runs: { from: number; to: number; heading: boolean; seeded: boolean }[] = [];
+  let run: { from: number; to: number; heading: boolean; seeded: boolean } | null = null;
+  const closeRun = () => {
+    if (run) {
+      runs.push(run);
+      run = null;
+    }
+  };
+  const top = syntaxTree(state).topNode;
+  for (let node = top.firstChild; node; node = node.nextSibling) {
+    const name = node.name;
+    const isHeading = name.startsWith("ATXHeading") || name.startsWith("SetextHeading");
+    const boxable =
+      isHeading ||
+      name === "Paragraph" ||
+      name === "BulletList" ||
+      name === "OrderedList" ||
+      name === "Blockquote";
+    if (!boxable) {
+      closeRun();
+      continue;
+    }
+    if (!run) {
+      run = { from: node.from, to: node.to, heading: isHeading, seeded: !isHeading };
+      continue;
+    }
+    if (isHeading) {
+      closeRun();
+      run = { from: node.from, to: node.to, heading: true, seeded: false };
+      continue;
+    }
+    const gapLines = doc.lineAt(node.from).number - doc.lineAt(run.to).number;
+    if ((run.heading && !run.seeded) || gapLines <= 1) {
+      run.seeded = true;
+      run.to = node.to;
+    } else {
+      closeRun();
+      run = { from: node.from, to: node.to, heading: false, seeded: true };
+    }
+  }
+  closeRun();
+  return runs;
+}
+
+/** Priority indicator for a bubble: a horizontal "volume" bar in the right
+ *  gutter (outside the bubble) whose width and colour fade from hot (high rank)
+ *  to cool (low rank) against the note's other bubbles. */
+class BubbleHeatWidget extends WidgetType {
+  constructor(readonly heat: number) {
+    super();
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-bubble-heat";
+    el.style.setProperty("--heat-hue", String(Math.round(220 - 205 * this.heat)));
+    el.style.setProperty("--heat-width", `${Math.round(14 + 36 * this.heat)}px`);
+    el.title = "Priority";
+    return el;
+  }
+  eq(other: BubbleHeatWidget) {
+    return other.heat === this.heat;
+  }
+}
+
 /** Wrap each idea in the note in a subtle box: a paragraph together with any
  *  list or quote that follows it directly forms one bubble. Only applied to
  *  idea notes; prompt children keep the bare editor. */
@@ -169,39 +240,7 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
 
   const builder = new RangeSetBuilder<Decoration>();
   const doc = view.state.doc;
-
-  // Group top-level blocks into bubbles: paragraphs, lists, and quotes merge
-  // as long as no blank line separates them; headings and code break a bubble.
-  const runs: { from: number; to: number }[] = [];
-  let run: { from: number; to: number } | null = null;
-  const top = syntaxTree(view.state).topNode;
-  for (let node = top.firstChild; node; node = node.nextSibling) {
-    const name = node.name;
-    const boxable =
-      name === "Paragraph" ||
-      name === "BulletList" ||
-      name === "OrderedList" ||
-      name === "Blockquote";
-    if (!boxable) {
-      if (run) {
-        runs.push(run);
-        run = null;
-      }
-      continue;
-    }
-    if (run) {
-      const gapLines = doc.lineAt(node.from).number - doc.lineAt(run.to).number;
-      if (gapLines > 1) {
-        runs.push(run);
-        run = { from: node.from, to: node.to };
-      } else {
-        run.to = node.to;
-      }
-    } else {
-      run = { from: node.from, to: node.to };
-    }
-  }
-  if (run) runs.push(run);
+  const runs = computeBubbles(view.state);
 
   for (const block of runs) {
     const firstLine = doc.lineAt(block.from);
@@ -212,6 +251,7 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
         "cm-para",
         n === firstLine.number ? "first" : "",
         n === lastLine.number ? "last" : "",
+        n === firstLine.number && block.heading ? "cm-bubble-header" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -222,6 +262,44 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
   }
   return builder.finish();
 }
+
+/** The priority heat bars, in their own plugin: a widget sharing its position
+ *  with a line decoration is not rendered, so the bars live apart from the
+ *  bubble boxes. */
+function buildHeatDecorations(view: EditorView): DecorationSet {
+  if (useStore.getState().active?.type !== "idea") {
+    return Decoration.none;
+  }
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+  const runs = computeBubbles(view.state);
+  const total = runs.length;
+  for (const [index, block] of runs.entries()) {
+    const firstLine = doc.lineAt(block.from);
+    const heat = total <= 1 ? 1 : 1 - index / (total - 1);
+    builder.add(
+      firstLine.from,
+      firstLine.from,
+      Decoration.widget({ widget: new BubbleHeatWidget(heat), side: 1 }),
+    );
+  }
+  return builder.finish();
+}
+
+const heatBars = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildHeatDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = buildHeatDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 const paragraphBoxes = ViewPlugin.fromClass(
   class {
@@ -248,6 +326,17 @@ function paraLineOf(target: EventTarget | null): HTMLElement | null {
   const node = target instanceof Node ? target : null;
   const el = node instanceof Element ? node : node?.parentElement;
   return el ? (el.closest(".cm-line.cm-para") as HTMLElement | null) : null;
+}
+
+/** The first line of the bubble a hovered line belongs to. */
+function bubbleFirstLine(line: HTMLElement): HTMLElement {
+  let first = line;
+  let prev = first.previousElementSibling;
+  while (prev instanceof HTMLElement && prev.classList.contains("cm-para")) {
+    first = prev;
+    prev = first.previousElementSibling;
+  }
+  return first;
 }
 
 class BubbleHover {
@@ -402,7 +491,8 @@ const theme = EditorView.theme(
     ".cm-scroller": {
       fontFamily: "var(--font-mono)",
       lineHeight: "1.7",
-      padding: "8px 0 40vh",
+      padding: "8px 24px 40vh",
+      position: "relative",
     },
     ".cm-content": { caretColor: "var(--accent)", maxWidth: "80ch" },
     ".cm-cursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },
@@ -414,12 +504,12 @@ const theme = EditorView.theme(
       cursor: "pointer",
     },
     ".cm-wikilink:hover": { backgroundColor: "var(--selection)" },
-    ".cm-heading1": { fontSize: "1.6em", fontWeight: 600 },
-    ".cm-heading2": { fontSize: "1.4em", fontWeight: 600 },
-    ".cm-heading3": { fontSize: "1.25em", fontWeight: 600 },
-    ".cm-heading4": { fontSize: "1.1em", fontWeight: 600 },
-    ".cm-heading5": { fontSize: "1em", fontWeight: 600 },
-    ".cm-heading6": { fontSize: "0.9em", fontWeight: 600 },
+    ".cm-heading1": { fontSize: "1.1em", fontWeight: 600 },
+    ".cm-heading2": { fontSize: "1.05em", fontWeight: 600 },
+    ".cm-heading3": { fontSize: "1em", fontWeight: 600 },
+    ".cm-heading4": { fontSize: "0.95em", fontWeight: 600 },
+    ".cm-heading5": { fontSize: "0.9em", fontWeight: 600 },
+    ".cm-heading6": { fontSize: "0.85em", fontWeight: 600 },
     ".cm-heading-mark": {
       color: "var(--muted)",
       opacity: 0.55,
@@ -443,6 +533,10 @@ const theme = EditorView.theme(
       borderBottomRightRadius: "8px",
       paddingBottom: "5px",
     },
+    ".cm-para.first.cm-bubble-header": {
+      background: "rgba(255,255,255,0.045)",
+      borderBottom: "1px solid rgba(255,255,255,0.08)",
+    },
     ".cm-para-hover": {
       backgroundColor: "var(--para-hover, rgba(255,255,255,0.06))",
       borderLeftColor: "rgba(255,255,255,0.18)",
@@ -450,6 +544,18 @@ const theme = EditorView.theme(
     },
     ".cm-para-hover.first": { borderTopColor: "rgba(255,255,255,0.18)" },
     ".cm-para-hover.last": { borderBottomColor: "rgba(255,255,255,0.18)" },
+    // Horizontal priority "volume" bar in the right gutter, anchored to the
+    // scroller (not the line) so it sits outside the bubble, clear of the
+    // scrollbar at the very edge.
+    ".cm-bubble-heat": {
+      position: "absolute",
+      right: "12px",
+      top: "auto",
+      width: "var(--heat-width)",
+      height: "3px",
+      borderRadius: "2px",
+      background: "hsl(var(--heat-hue) 70% 52%)",
+    },
     ".cm-find-match": {
       backgroundColor: "rgba(247, 168, 42, 0.2)",
       borderRadius: "2px",
@@ -459,7 +565,7 @@ const theme = EditorView.theme(
       outline: "1px solid rgba(247, 168, 42, 0.75)",
     },
     "&.cm-editor .cm-selectionBackground, ::selection": {
-      backgroundColor: "var(--selection)",
+      backgroundColor: "var(--selection-bg)",
     },
   },
   { dark: true },
@@ -482,6 +588,103 @@ export function Editor() {
   // Set while the document is being replaced from disk, so the change listener
   // does not queue a save of content the user did not type.
   const applying = useRef(false);
+
+  // The per-bubble model menu: where it is anchored and which bubble it is for.
+  // Coordinates are relative to .editor-wrap so the menu tracks the bubble at
+  // any UI zoom level (Ctrl +/-), not just at 100%.
+  const [bubbleMenu, setBubbleMenu] = useState<{
+    top: number;
+    left: number;
+    label: string;
+    below: boolean;
+    text: string;
+  } | null>(null);
+  const [copiedBubble, setCopiedBubble] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const hideTimer = useRef<number | null>(null);
+
+  const cancelHide = () => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  };
+  // A short grace period so moving from the bubble up to the menu (or across a
+  // heading in between) never makes the menu vanish before it is reached.
+  const scheduleHide = () => {
+    cancelHide();
+    hideTimer.current = window.setTimeout(() => setBubbleMenu(null), 250);
+  };
+
+  const copyBubble = () => {
+    if (!bubbleMenu) return;
+    void navigator.clipboard.writeText(bubbleMenu.text);
+    setCopiedBubble(true);
+    setTimeout(() => setCopiedBubble(false), 1200);
+  };
+
+  const onEditorMouseMove = (event: React.MouseEvent) => {
+    if (useStore.getState().active?.type !== "idea") {
+      setBubbleMenu(null);
+      return;
+    }
+    // Over the menu or its dropdown: keep it open.
+    if (menuRef.current?.contains(event.target as Node)) {
+      cancelHide();
+      return;
+    }
+    const line = paraLineOf(event.target);
+    if (!line) {
+      scheduleHide();
+      return;
+    }
+    const editor = view.current;
+    if (!editor) return;
+    const first = bubbleFirstLine(line);
+    const pos = editor.posAtDOM(first, 0);
+    const label = editor.state.doc.lineAt(pos).text.trim();
+    if (!label) {
+      scheduleHide();
+      return;
+    }
+    const bubble = computeBubbles(editor.state).find((b) => pos >= b.from && pos < b.to);
+    const text = bubble
+      ? editor.state.doc.sliceString(bubble.from, bubble.to)
+      : editor.state.doc.lineAt(pos).text;
+    cancelHide();
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const rect = first.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    // Absolute offsets are layout pixels that scale with the UI zoom (Ctrl +/-),
+    // so convert the visual viewport deltas back into that space first.
+    const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    // Just above the bubble, or just below it when there is no room up there.
+    const below = rect.top < 120;
+    const top = ((below ? rect.bottom : rect.top) - wrapRect.top) / zoom;
+    const left = (rect.left - wrapRect.left) / zoom;
+    setBubbleMenu((current) => {
+      if (
+        current &&
+        current.label === label &&
+        current.below === below &&
+        Math.abs(current.top - top) < 1 &&
+        Math.abs(current.left - left) < 1
+      ) {
+        return current;
+      }
+      return { top, left, label, below, text };
+    });
+  };
+
+  const onEditorMouseLeave = () => scheduleHide();
+
+  useEffect(() => {
+    return () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, []);
 
   // Hover tint for the idea bubbles, driven by the note's first tag color.
   const paraHover = useMemo(
@@ -508,6 +711,7 @@ export function Editor() {
           wikiLinks,
           headings,
           paragraphBoxes,
+          heatBars,
           bubbleHover,
           findPlugin,
           theme,
@@ -541,6 +745,24 @@ export function Editor() {
               {
                 key: "Mod-s",
                 run: () => (void useStore.getState().flushSave(), true),
+              },
+              {
+                // In an idea, select just the bubble the cursor is in; outside
+                // a bubble (e.g. a blank line) fall through to select-all.
+                key: "Mod-a",
+                run: (view) => {
+                  if (useStore.getState().active?.type !== "idea") return false;
+                  const head = view.state.selection.main.head;
+                  const bubble = computeBubbles(view.state).find(
+                    (b) => head >= b.from && head <= b.to && b.from !== b.to,
+                  );
+                  if (!bubble) return false;
+                  view.dispatch({
+                    selection: { anchor: bubble.from, head: bubble.to },
+                    scrollIntoView: true,
+                  });
+                  return true;
+                },
               },
             ]),
           ),
@@ -613,6 +835,7 @@ export function Editor() {
     if (!editor) return;
 
     activeId.current = active?.id ?? null;
+    setBubbleMenu(null);
     applying.current = true;
     editor.dispatch({
       changes: { from: 0, to: editor.state.doc.length, insert: active?.body ?? "" },
@@ -655,12 +878,51 @@ export function Editor() {
   }, [find]);
 
   return (
-    <div className="editor-wrap">
+    <div
+      ref={wrapRef}
+      className="editor-wrap"
+      onMouseMove={onEditorMouseMove}
+      onMouseLeave={onEditorMouseLeave}
+      onMouseDown={(event) => {
+        if (!menuRef.current?.contains(event.target as Node)) setBubbleMenu(null);
+      }}
+    >
       <div
         className="editor"
         ref={host}
         style={{ "--para-hover": paraHover } as React.CSSProperties}
       />
+
+      {bubbleMenu && active?.type === "idea" && (
+        <div
+          ref={menuRef}
+          className="bubble-model-menu"
+          style={{
+            top: bubbleMenu.top,
+            left: bubbleMenu.left,
+            transform: bubbleMenu.below ? "none" : "translateY(-100%)",
+          }}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+        >
+          <div className="bubble-model-row">
+            <ModelPicker
+              value={active.models?.[bubbleMenu.label] ?? ""}
+              onChange={(value) =>
+                void useStore.getState().setBubbleModel(bubbleMenu.label, value || null)
+              }
+            />
+            <button
+              className="bubble-model-copy"
+              title="Copy bubble"
+              onClick={copyBubble}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              {copiedBubble ? "✓" : "⧉"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {find && (
         <div className="find-bar" role="search">
