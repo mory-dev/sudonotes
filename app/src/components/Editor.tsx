@@ -725,6 +725,38 @@ function wrapSelection(view: EditorView): boolean {
   return true;
 }
 
+/** Backspace just after a `[[link]]` takes the brackets off and keeps the word.
+ *
+ *  A collapsed link is an atomic range, so the default binding treats the whole
+ *  `[[word]]` as one unit and deletes the word along with the markup — the
+ *  opposite of what backspacing at the end of a wrap is asking for. Undoing the
+ *  wrap is the useful move; a second press then deletes a character as usual. */
+function unwrapLinkBackspace(view: EditorView): boolean {
+  const { from, to } = view.state.selection.main;
+  if (from !== to) return false;
+
+  const line = view.state.doc.lineAt(from);
+  const offset = from - line.from;
+
+  WIKILINK.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = WIKILINK.exec(line.text))) {
+    // Only at the very end of the link: anywhere else backspace should behave
+    // normally, including inside the target text.
+    if (match.index + match[0].length !== offset) continue;
+
+    const inner = match[0].slice(2, -2);
+    const start = line.from + match.index;
+    view.dispatch({
+      changes: { from: start, to: start + match[0].length, insert: inner },
+      selection: { anchor: start + inner.length },
+      userEvent: "delete.unwrap",
+    });
+    return true;
+  }
+  return false;
+}
+
 const theme = EditorView.theme(
   {
     "&": { height: "100%", fontSize: "15px", backgroundColor: "transparent" },
@@ -1250,6 +1282,12 @@ export function Editor() {
               {
                 key: "[",
                 run: wrapSelection,
+              },
+              {
+                // Ahead of the default binding, which would take the linked
+                // word with the brackets.
+                key: "Backspace",
+                run: unwrapLinkBackspace,
               },
               {
                 key: "Mod-Enter",
