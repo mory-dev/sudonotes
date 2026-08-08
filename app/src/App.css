@@ -1099,6 +1099,13 @@ kbd {
   background: var(--panel-2);
 }
 
+/* The reorder drag runs on pointer events, so the cursor and text selection are
+   ours to set — the browser is not running a drag of its own here. */
+body.row-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
 /* Dragging to reorder: notes and buckets at the top of a section, prompts
    inside a bucket, and the bubbles of the open idea all read the same. */
 .note-item.dragging,

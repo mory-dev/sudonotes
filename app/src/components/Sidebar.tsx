@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { NoteMeta, NoteType } from "../api";
 import { useStore } from "../store";
@@ -19,11 +19,9 @@ function byPosition(a: NoteMeta, b: NoteMeta) {
 
 /** What `useListDrag` hands a row, plus the two flags that style it. */
 interface NoteDragHandlers {
-  draggable: boolean;
-  onDragStart: (event: React.DragEvent) => void;
-  onDragOver: (event: React.DragEvent) => void;
-  onDragEnd: () => void;
-  onDrop: (event: React.DragEvent) => void;
+  "data-drag-key": string;
+  "data-drag-list": string;
+  onPointerDown: (event: React.PointerEvent) => void;
   isDragging: boolean;
   isOver: boolean;
 }
@@ -32,35 +30,110 @@ interface NoteDragHandlers {
  *
  *  Three lists in this sidebar reorder — the top level of a section, the
  *  prompts inside a bucket, and the bubbles of the open idea — and they only
- *  differ in what a key means and what committing does. */
-function useListDrag(onCommit: (fromKey: string, toKey: string) => void) {
+ *  differ in what a key means and what committing does.
+ *
+ *  Pointer events rather than HTML5 drag-and-drop, for the same reason the
+ *  editor's bubble reorder uses them: the window hands drags to the native
+ *  layer, so a `dragstart` inside the webview never produces a usable drop and
+ *  leaves the cursor stuck on the "no drop" sign.
+ *
+ *  `listId` keeps a row from being dropped into a different list — prompts and
+ *  ideas are separate sections and reorder independently. */
+function useListDrag(listId: string, onCommit: (fromKey: string, toKey: string) => void) {
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
+  const drag = useRef<{
+    key: string;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    over: string | null;
+  } | null>(null);
+
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  useEffect(() => {
+    const finish = (commit: boolean) => {
+      const current = drag.current;
+      drag.current = null;
+      document.body.classList.remove("row-dragging");
+      setDragKey(null);
+      setOverKey(null);
+      if (!current?.moved) return;
+
+      // A drag ends with a click on whatever the pointer went down on, which
+      // would select the note the user was only moving. Swallow that one — but
+      // drop the listener shortly after either way, or a drag released outside
+      // the window (where no click follows) would eat the next real one.
+      const swallow = (event: MouseEvent) => {
+        event.stopPropagation();
+        window.removeEventListener("click", swallow, true);
+      };
+      window.addEventListener("click", swallow, true);
+      setTimeout(() => window.removeEventListener("click", swallow, true), 250);
+      if (commit && current.over && current.over !== current.key) {
+        commitRef.current(current.key, current.over);
+      }
+    };
+
+    const onMove = (event: PointerEvent) => {
+      const current = drag.current;
+      if (!current) return;
+
+      // A small threshold, so a plain click on a row never starts a drag.
+      if (
+        !current.moved &&
+        Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 4
+      ) {
+        return;
+      }
+      if (!current.moved) {
+        current.moved = true;
+        document.body.classList.add("row-dragging");
+        setDragKey(current.key);
+      }
+      event.preventDefault();
+
+      const under = document.elementFromPoint(event.clientX, event.clientY);
+      const row = under?.closest<HTMLElement>("[data-drag-key]");
+      const key =
+        row && row.dataset.dragList === listId && row.dataset.dragKey !== current.key
+          ? (row.dataset.dragKey ?? null)
+          : null;
+      current.over = key;
+      setOverKey(key);
+    };
+
+    const onUp = () => finish(true);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") finish(false);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [listId]);
 
   const rowProps = (key: string) => ({
-    draggable: true,
-    onDragStart: (event: React.DragEvent) => {
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", key);
-      setDragKey(key);
-    },
-    onDragOver: (event: React.DragEvent) => {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      setOverKey(key);
-    },
-    onDragEnd: () => {
-      setDragKey(null);
-      setOverKey(null);
-    },
-    onDrop: (event: React.DragEvent) => {
-      event.preventDefault();
-      // The dataTransfer payload survives across elements; dragKey is the
-      // fallback for browsers that clear it on drop.
-      const from = event.dataTransfer.getData("text/plain") || dragKey;
-      setDragKey(null);
-      setOverKey(null);
-      if (from && from !== key) onCommit(from, key);
+    "data-drag-key": key,
+    "data-drag-list": listId,
+    onPointerDown: (event: React.PointerEvent) => {
+      if (event.button !== 0) return;
+      drag.current = {
+        key,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false,
+        over: null,
+      };
     },
   });
 
@@ -136,14 +209,12 @@ function NoteRow({ note, drag }: { note: NoteMeta; drag?: NoteDragHandlers }) {
     <li data-type={note.type}>
       <button
         className={classes}
-        draggable={drag?.draggable ?? false}
+        data-drag-key={drag?.["data-drag-key"]}
+        data-drag-list={drag?.["data-drag-list"]}
         data-tooltip={`${note.summary ?? note.title}\nDrag to reorder · Middle-click to delete`}
         onClick={() => void select(note.id)}
         onAuxClick={onAuxClick}
-        onDragStart={drag?.onDragStart}
-        onDragOver={drag?.onDragOver}
-        onDragEnd={drag?.onDragEnd}
-        onDrop={drag?.onDrop}
+        onPointerDown={drag?.onPointerDown}
       >
         {note.project ? (
           note.icon ? (
@@ -194,7 +265,7 @@ function Collection({
 
   const [open, setOpen] = useState(() => notes.some((n) => n.id === activeId));
 
-  const childDrag = useListDrag((fromId, toId) => {
+  const childDrag = useListDrag(`bucket:${name}`, (fromId, toId) => {
     if (!parent) return;
     const next = reordered(
       notes.map((n) => n.id),
@@ -228,13 +299,11 @@ function Collection({
       <div className={headClasses}>
         <button
           className="collection-open"
-          draggable={drag?.draggable ?? false}
+          data-drag-key={drag?.["data-drag-key"]}
+          data-drag-list={drag?.["data-drag-list"]}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          onDragStart={drag?.onDragStart}
-          onDragOver={drag?.onDragOver}
-          onDragEnd={drag?.onDragEnd}
-          onDrop={drag?.onDrop}
+          onPointerDown={drag?.onPointerDown}
           aria-expanded={open}
           data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"} · Drag to reorder`}
         >
@@ -338,7 +407,7 @@ function Section({
 
   const reorderNotes = useStore((s) => s.reorderNotes);
 
-  const drag = useListDrag((fromKey, toKey) => {
+  const drag = useListDrag(`section:${noteType}`, (fromKey, toKey) => {
     const keys = entries.map((e) => e.key);
     const next = reordered(keys, fromKey, toKey);
     // A bucket with no note of its own has no frontmatter to write a position
@@ -434,7 +503,7 @@ export function Sidebar() {
 
   // Outline rows are keyed by index: a bubble has no id, and its position in
   // the body is exactly what the drag is changing.
-  const outlineDrag = useListDrag((fromKey, toKey) => {
+  const outlineDrag = useListDrag("idea-outline", (fromKey, toKey) => {
     moveBubble(Number(fromKey), Number(toKey));
   });
 
@@ -477,14 +546,12 @@ export function Sidebar() {
                   <li key={index}>
                     <button
                       className={classes}
-                      draggable
+                      data-drag-key={rows["data-drag-key"]}
+                      data-drag-list={rows["data-drag-list"]}
                       data-tooltip={`${item.label}
 Drag to reorder · Right-click to delete this bubble`}
                       onClick={() => scrollToPos(item.start)}
-                      onDragStart={rows.onDragStart}
-                      onDragOver={rows.onDragOver}
-                      onDragEnd={rows.onDragEnd}
-                      onDrop={rows.onDrop}
+                      onPointerDown={rows.onPointerDown}
                       onContextMenu={(event) => {
                         event.preventDefault();
                         requestConfirm(
