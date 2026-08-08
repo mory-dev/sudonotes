@@ -327,14 +327,17 @@ const APP_URL =
     margin-right: 8px;
   }
 
+  /* The silver sits on --text-2 rather than --muted: a lighter base narrows the
+     gap to the --text highlight, so the sweep reads as a sheen across the word
+     instead of a bright band travelling over a dark one. */
   .wordmark-word {
     background: linear-gradient(
       90deg,
-      var(--muted) 0%,
-      var(--muted) 35%,
+      var(--text-2) 0%,
+      var(--text-2) 35%,
       var(--text) 50%,
-      var(--muted) 65%,
-      var(--muted) 100%
+      var(--text-2) 65%,
+      var(--text-2) 100%
     );
     background-size: 300% 100%;
     -webkit-background-clip: text;
