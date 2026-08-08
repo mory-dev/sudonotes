@@ -139,7 +139,7 @@ export function ProjectLink() {
             )}
             <div className="project-text">
               <strong>{info?.name ?? linked}</strong>
-              <span className="project-path" title={linked}>
+              <span className="project-path" data-tooltip={linked}>
                 {linked}
               </span>
             </div>

@@ -51,7 +51,7 @@ export function TitleBar() {
       <span className={dirty ? "save-state dirty" : "save-state"}>
         {dirty ? "Saving…" : "Saved"}
       </span>
-      <button className="delete-button" title="Delete note" onClick={onDelete}>
+      <button className="delete-button" data-tooltip="Delete note" onClick={onDelete}>
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2.5 4.5h11" />
           <path d="M6 4.5V2.5h4v2" />

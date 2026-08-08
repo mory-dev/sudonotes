@@ -36,7 +36,6 @@ export function AiPanel() {
           className="ai-info"
           onMouseEnter={() => setTip(true)}
           onMouseLeave={() => setTip(false)}
-          title="About AI assistance"
           aria-label="About AI assistance"
         >
           ?

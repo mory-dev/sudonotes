@@ -25,7 +25,8 @@ function Wikilinks({ text }: { text: string }) {
       <button
         key={key++}
         className="wiki-link"
-        title={`Open "${target}"`}
+        data-target={target}
+        data-tooltip={`Open "${target}"`}
         onClick={() => void openLink(target)}
       >
         {alias || target}
@@ -52,7 +53,7 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   };
 
   return (
-    <button className="card-copy" onClick={() => void copy()} title="Copy prompt">
+    <button className="card-copy" onClick={() => void copy()} data-tooltip="Copy prompt">
       {copied ? (
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M3 8.5 6.5 12 13 4.5" />
@@ -142,13 +143,13 @@ function Card({ prompt }: { prompt: ChildPrompt }) {
       <li
         className="card"
         onDoubleClick={() => setEditing(true)}
-        title="Double-click to edit"
+        data-tooltip="Double-click to edit"
       >
         <header className="card-head">
           {prompt.position != null && <span className="card-index">{prompt.position}</span>}
           <button
             className="card-title"
-            title="Open this prompt"
+            data-tooltip="Open this prompt"
             onClick={() => void select(prompt.id)}
           >
             {prompt.title}
@@ -290,7 +291,7 @@ export function PromptCards() {
           <button
             className="secondary"
             onClick={() => void addPrompt()}
-            title="Add a prompt to this collection"
+            data-tooltip="Add a prompt to this collection"
           >
             + Add prompt
           </button>
@@ -299,7 +300,7 @@ export function PromptCards() {
       </header>
 
       {body.trim() && (
-        <div className="collection-index" title="[[links]] between these prompts">
+        <div className="collection-index" data-tooltip="[[links]] between these prompts">
           <Wikilinks text={body.trim()} />
         </div>
       )}

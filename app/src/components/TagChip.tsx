@@ -17,7 +17,7 @@ export function TagChip({
       className={onClick ? "tag-chip clickable" : "tag-chip"}
       style={{ background: palette.bg, color: palette.fg, borderColor: palette.border }}
       onClick={onClick}
-      title={onClick ? `Search "${tag}"` : undefined}
+      data-tooltip={onClick ? `Search "${tag}"` : undefined}
     >
       {tag}
       {onRemove && (
@@ -26,7 +26,7 @@ export function TagChip({
             event.stopPropagation();
             onRemove();
           }}
-          title={`Remove "${tag}"`}
+          data-tooltip={`Remove "${tag}"`}
           aria-label={`Remove ${tag}`}
         >
           ×

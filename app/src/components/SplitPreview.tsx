@@ -67,7 +67,7 @@ export function SplitPreview() {
               </div>
               <button
                 className="icon-button"
-                title="Remove this prompt"
+                data-tooltip="Remove this prompt"
                 onClick={() => drop(i)}
               >
                 ×

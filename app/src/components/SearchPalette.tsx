@@ -115,9 +115,9 @@ export function SearchPalette() {
                       <TypeBadge type={hit.type} />
                       {note?.project ? (
                         note.icon ? (
-                          <img className="note-project-icon" src={note.icon} alt="" title={note.project} />
+                          <img className="note-project-icon" src={note.icon} alt="" data-tooltip={note.project} />
                         ) : (
-                          <span className="note-project-icon placeholder" title={note.project}>
+                          <span className="note-project-icon placeholder" data-tooltip={note.project}>
                             {projectInitial(note.project)}
                           </span>
                         )
