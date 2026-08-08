@@ -140,6 +140,9 @@ export const api = {
   /** Apply a new order to a collection's children, rewriting their positions. */
   reorderChildren: (parentId: string, ordered: string[]) =>
     invoke<void>("reorder_children", { parentId, ordered }),
+  /** Apply a new order to the top level of a section. A collection is ordered
+   *  by its own parent note, so buckets and loose notes share one list. */
+  reorderNotes: (ordered: string[]) => invoke<void>("reorder_notes", { ordered }),
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),

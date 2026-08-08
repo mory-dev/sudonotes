@@ -17,12 +17,65 @@ function byPosition(a: NoteMeta, b: NoteMeta) {
   return pa - pb || byTitle(a, b);
 }
 
+/** What `useListDrag` hands a row, plus the two flags that style it. */
 interface NoteDragHandlers {
-  onDragStart: () => void;
-  onDragOver: () => void;
-  onDrop: (fromId: string) => void;
+  draggable: boolean;
+  onDragStart: (event: React.DragEvent) => void;
+  onDragOver: (event: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onDrop: (event: React.DragEvent) => void;
   isDragging: boolean;
   isOver: boolean;
+}
+
+/** Drag-to-reorder for one list, keyed by whatever identifies a row.
+ *
+ *  Three lists in this sidebar reorder — the top level of a section, the
+ *  prompts inside a bucket, and the bubbles of the open idea — and they only
+ *  differ in what a key means and what committing does. */
+function useListDrag(onCommit: (fromKey: string, toKey: string) => void) {
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+
+  const rowProps = (key: string) => ({
+    draggable: true,
+    onDragStart: (event: React.DragEvent) => {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", key);
+      setDragKey(key);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setOverKey(key);
+    },
+    onDragEnd: () => {
+      setDragKey(null);
+      setOverKey(null);
+    },
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      // The dataTransfer payload survives across elements; dragKey is the
+      // fallback for browsers that clear it on drop.
+      const from = event.dataTransfer.getData("text/plain") || dragKey;
+      setDragKey(null);
+      setOverKey(null);
+      if (from && from !== key) onCommit(from, key);
+    },
+  });
+
+  return { dragKey, overKey, rowProps };
+}
+
+/** Move `fromKey` to where `toKey` sits, returning the reordered keys. */
+function reordered(keys: string[], fromKey: string, toKey: string): string[] | null {
+  const from = keys.indexOf(fromKey);
+  const to = keys.indexOf(toKey);
+  if (from < 0 || to < 0 || from === to) return null;
+  const next = keys.slice();
+  next.splice(from, 1);
+  next.splice(to, 0, fromKey);
+  return next;
 }
 
 /** The initial letter of a project folder's name, for the placeholder. */
@@ -83,27 +136,14 @@ function NoteRow({ note, drag }: { note: NoteMeta; drag?: NoteDragHandlers }) {
     <li data-type={note.type}>
       <button
         className={classes}
-        draggable={!!drag}
-        data-tooltip={`${note.summary ?? note.title}\nMiddle-click to delete`}
+        draggable={drag?.draggable ?? false}
+        data-tooltip={`${note.summary ?? note.title}\nDrag to reorder · Middle-click to delete`}
         onClick={() => void select(note.id)}
         onAuxClick={onAuxClick}
-        onDragStart={(event) => {
-          if (!drag) return;
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", note.id);
-          drag.onDragStart();
-        }}
-        onDragOver={(event) => {
-          if (!drag) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
-          drag.onDragOver();
-        }}
-        onDrop={(event) => {
-          if (!drag) return;
-          event.preventDefault();
-          drag.onDrop(event.dataTransfer.getData("text/plain") ?? "");
-        }}
+        onDragStart={drag?.onDragStart}
+        onDragOver={drag?.onDragOver}
+        onDragEnd={drag?.onDragEnd}
+        onDrop={drag?.onDrop}
       >
         {note.project ? (
           note.icon ? (
@@ -141,17 +181,28 @@ function Collection({
   name,
   notes,
   parent,
+  drag,
 }: {
   name: string;
   notes: NoteMeta[];
   parent?: NoteMeta;
+  /** Reorders the bucket among its siblings; the children have their own. */
+  drag?: NoteDragHandlers;
 }) {
   const activeId = useStore((s) => s.active?.id ?? null);
   const select = useStore((s) => s.select);
 
   const [open, setOpen] = useState(() => notes.some((n) => n.id === activeId));
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+
+  const childDrag = useListDrag((fromId, toId) => {
+    if (!parent) return;
+    const next = reordered(
+      notes.map((n) => n.id),
+      fromId,
+      toId,
+    );
+    if (next) void useStore.getState().reorderChildren(parent.id, next);
+  });
 
   const isParentActive = parent?.id === activeId;
 
@@ -164,28 +215,28 @@ function Collection({
 
   const onDoubleClick = () => setOpen((v) => !v);
 
-  const onDrop = (fromId: string, targetId: string) => {
-    setDragId(null);
-    setOverId(null);
-    if (!fromId || fromId === targetId || !parent) return;
-    const ids = notes.map((n) => n.id);
-    const from = ids.indexOf(fromId);
-    const to = ids.indexOf(targetId);
-    if (from < 0 || to < 0) return;
-    ids.splice(from, 1);
-    ids.splice(to, 0, fromId);
-    void useStore.getState().reorderChildren(parent.id, ids);
-  };
+  const headClasses = [
+    isParentActive ? "collection-head active" : "collection-head",
+    drag?.isOver ? "drop-target" : "",
+    drag?.isDragging ? "dragging" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <li className="collection" data-type={parent?.type ?? notes[0]?.type ?? "prompt"}>
-      <div className={isParentActive ? "collection-head active" : "collection-head"}>
+      <div className={headClasses}>
         <button
           className="collection-open"
+          draggable={drag?.draggable ?? false}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
+          onDragStart={drag?.onDragStart}
+          onDragOver={drag?.onDragOver}
+          onDragEnd={drag?.onDragEnd}
+          onDrop={drag?.onDrop}
           aria-expanded={open}
-          data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"}`}
+          data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"} · Drag to reorder`}
         >
           <span className="collection-name">{name}</span>
         </button>
@@ -199,11 +250,9 @@ function Collection({
               key={note.id}
               note={note}
               drag={{
-                onDragStart: () => setDragId(note.id),
-                onDragOver: () => setOverId(note.id),
-                onDrop: (fromId) => onDrop(fromId, note.id),
-                isDragging: dragId === note.id,
-                isOver: overId === note.id && dragId !== note.id,
+                ...childDrag.rowProps(note.id),
+                isDragging: childDrag.dragKey === note.id,
+                isOver: childDrag.overKey === note.id && childDrag.dragKey !== note.id,
               }}
             />
           ))}
@@ -228,7 +277,11 @@ function Section({
   // Notes in a subfolder are grouped under it; the rest stay top level. A note
   // whose title matches a collection owns it, and becomes the group's header
   // rather than a second row of its own.
-  const { collections, loose } = useMemo(() => {
+  //
+  // Buckets and loose notes then share one ordered list, so a drag can move a
+  // bucket past a note and back. A bucket is ordered by its own parent note,
+  // which is what carries the position on disk.
+  const entries = useMemo(() => {
     const grouped = new Map<string, NoteMeta[]>();
     const topLevel: NoteMeta[] = [];
 
@@ -249,13 +302,51 @@ function Section({
       if (grouped.has(note.title)) owners.set(note.title, note);
     }
 
-    return {
-      collections: [...grouped.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([name, items]) => ({ name, items, parent: owners.get(name) })),
-      loose: topLevel.filter((n) => !owners.has(n.title)).sort(byTitle),
-    };
+    type Entry =
+      | { kind: "collection"; key: string; name: string; items: NoteMeta[]; parent?: NoteMeta }
+      | { kind: "note"; key: string; note: NoteMeta };
+
+    const list: { entry: Entry; position: number | null; label: string }[] = [];
+
+    for (const [name, items] of grouped) {
+      const parent = owners.get(name);
+      list.push({
+        entry: { kind: "collection", key: parent?.id ?? `collection:${name}`, name, items, parent },
+        position: parent?.position ?? null,
+        label: name,
+      });
+    }
+    for (const note of topLevel) {
+      if (owners.has(note.title)) continue;
+      list.push({
+        entry: { kind: "note", key: note.id, note },
+        position: note.position ?? null,
+        label: note.title,
+      });
+    }
+
+    // Anything never dragged has no position yet, and sorts by name after the
+    // rows that do — so an explicit order is stable and the rest stay alphabetical.
+    list.sort((a, b) => {
+      const pa = a.position ?? Number.MAX_SAFE_INTEGER;
+      const pb = b.position ?? Number.MAX_SAFE_INTEGER;
+      return pa - pb || a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+    });
+
+    return list.map((item) => item.entry);
   }, [notes]);
+
+  const reorderNotes = useStore((s) => s.reorderNotes);
+
+  const drag = useListDrag((fromKey, toKey) => {
+    const keys = entries.map((e) => e.key);
+    const next = reordered(keys, fromKey, toKey);
+    // A bucket with no note of its own has no frontmatter to write a position
+    // into, so it cannot take part in an explicit order.
+    if (next && !next.some((key) => key.startsWith("collection:"))) {
+      void reorderNotes(next);
+    }
+  });
 
   return (
     <section className="section" data-type={noteType}>
@@ -291,17 +382,31 @@ function Section({
         </div>
       ) : (
         <ul className="note-list">
-          {collections.map((group) => (
-            <Collection
-              key={group.name}
-              name={group.name}
-              notes={group.items}
-              parent={group.parent}
-            />
-          ))}
-          {loose.map((note) => (
-            <NoteRow key={note.id} note={note} />
-          ))}
+          {entries.map((entry) =>
+            entry.kind === "collection" ? (
+              <Collection
+                key={entry.key}
+                name={entry.name}
+                notes={entry.items}
+                parent={entry.parent}
+                drag={{
+                  ...drag.rowProps(entry.key),
+                  isDragging: drag.dragKey === entry.key,
+                  isOver: drag.overKey === entry.key && drag.dragKey !== entry.key,
+                }}
+              />
+            ) : (
+              <NoteRow
+                key={entry.key}
+                note={entry.note}
+                drag={{
+                  ...drag.rowProps(entry.key),
+                  isDragging: drag.dragKey === entry.key,
+                  isOver: drag.overKey === entry.key && drag.dragKey !== entry.key,
+                }}
+              />
+            ),
+          )}
         </ul>
       )}
     </section>
@@ -325,6 +430,13 @@ export function Sidebar() {
 
   const deleteBubbleAt = useStore((s) => s.deleteBubbleAt);
   const requestConfirm = useStore((s) => s.requestConfirm);
+  const moveBubble = useStore((s) => s.moveBubble);
+
+  // Outline rows are keyed by index: a bubble has no id, and its position in
+  // the body is exactly what the drag is changing.
+  const outlineDrag = useListDrag((fromKey, toKey) => {
+    moveBubble(Number(fromKey), Number(toKey));
+  });
 
   // The bubbles of the open idea, listed so each idea inside it can be jumped to.
   const ideaOutline = useMemo(
@@ -351,27 +463,43 @@ export function Sidebar() {
               </span>
             </header>
             <ul>
-              {ideaOutline.map((item, index) => (
-                <li key={index}>
-                  <button
-                    className="idea-outline-item"
-                    data-tooltip={`${item.label}
-Right-click to delete this bubble`}
-                    onClick={() => scrollToPos(item.start)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      requestConfirm(
-                        `Delete the bubble "${item.label}"?`,
-                        () => deleteBubbleAt(item.start),
-                        "Delete",
-                      );
-                    }}
-                  >
-                    <span className="idea-outline-mark">{index + 1}</span>
-                    <span className="idea-outline-label">{item.label}</span>
-                  </button>
-                </li>
-              ))}
+              {ideaOutline.map((item, index) => {
+                const key = String(index);
+                const rows = outlineDrag.rowProps(key);
+                const classes = [
+                  "idea-outline-item",
+                  outlineDrag.overKey === key && outlineDrag.dragKey !== key ? "drop-target" : "",
+                  outlineDrag.dragKey === key ? "dragging" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <li key={index}>
+                    <button
+                      className={classes}
+                      draggable
+                      data-tooltip={`${item.label}
+Drag to reorder · Right-click to delete this bubble`}
+                      onClick={() => scrollToPos(item.start)}
+                      onDragStart={rows.onDragStart}
+                      onDragOver={rows.onDragOver}
+                      onDragEnd={rows.onDragEnd}
+                      onDrop={rows.onDrop}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        requestConfirm(
+                          `Delete the bubble "${item.label}"?`,
+                          () => deleteBubbleAt(item.start),
+                          "Delete",
+                        );
+                      }}
+                    >
+                      <span className="idea-outline-mark">{index + 1}</span>
+                      <span className="idea-outline-label">{item.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

@@ -64,6 +64,31 @@ function nextDefaultTitle(noteType: NoteType, notes: NoteMeta[]): string {
 
 /** First non-blank line of a body, markdown heading markers stripped, which
  *  becomes the title of a freshly created note. */
+/** The blank-line separated blocks of an idea body, as ranges. The same
+ *  grouping the editor draws bubbles around and the sidebar outlines, so a
+ *  move made from either place lands on the same block. */
+function bubbleRanges(body: string): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  let from = -1;
+  let offset = 0;
+
+  for (const line of body.split("\n")) {
+    if (line.trim() === "") {
+      if (from >= 0) {
+        // Ends at the previous line's last character, not at this blank one.
+        out.push({ from, to: offset - 1 });
+        from = -1;
+      }
+    } else if (from < 0) {
+      from = offset;
+    }
+    offset += line.length + 1;
+  }
+  if (from >= 0) out.push({ from, to: body.length });
+
+  return out;
+}
+
 function titleFromFirstLine(body: string): string {
   for (const raw of body.split("\n")) {
     const line = raw.trim();
@@ -148,6 +173,10 @@ interface AppState {
   addPrompt: () => Promise<void>;
   /** Reorder a collection's children (drag & drop) and persist the order. */
   reorderChildren: (parentId: string, ordered: string[]) => Promise<void>;
+  /** Reorder the top level of a section — buckets and loose notes together. */
+  reorderNotes: (ordered: string[]) => Promise<void>;
+  /** Move a bubble of the open idea from one index to another. */
+  moveBubble: (fromIndex: number, toIndex: number) => void;
   /** A paste landing in the collection view: split it into several prompts, or
    *  add it as a single prompt when it has no structure to split. */
   pasteIntoCollection: (text: string) => Promise<void>;
@@ -435,6 +464,40 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (e) {
       set({ error: message(e) });
     }
+  },
+
+  reorderNotes: async (ordered) => {
+    try {
+      await api.reorderNotes(ordered);
+      await get().refresh();
+    } catch (e) {
+      set({ error: message(e) });
+    }
+  },
+
+  moveBubble: (fromIndex, toIndex) => {
+    const active = get().active;
+    if (!active || active.type !== "idea") return;
+    const body = active.body ?? "";
+    const blocks = bubbleRanges(body);
+    const n = blocks.length;
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= n || toIndex >= n) {
+      return;
+    }
+
+    // Keep the separators in their original slots so only the moved bubble's
+    // own text changes — the same rule the editor's drag follows.
+    const prefix = body.slice(0, blocks[0].from);
+    const suffix = body.slice(blocks[n - 1].to);
+    const texts = blocks.map((b) => body.slice(b.from, b.to));
+    const seps = blocks.map((b, i) => body.slice(b.to, i < n - 1 ? blocks[i + 1].from : b.to));
+
+    const [moved] = texts.splice(fromIndex, 1);
+    texts.splice(toIndex, 0, moved);
+
+    const next = prefix + texts.map((text, i) => text + seps[i]).join("") + suffix;
+    set({ active: { ...active, body: next }, docVersion: get().docVersion + 1 });
+    get().queueSave(active.id, next);
   },
 
   pasteIntoCollection: async (text) => {

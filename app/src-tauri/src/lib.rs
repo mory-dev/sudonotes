@@ -903,6 +903,45 @@ fn reorder_children(
     })
 }
 
+/// Apply a new visual order to the top level of a section by writing each
+/// note's `position`. A collection is ordered by its own parent note, so
+/// buckets and loose notes share one list and one command.
+///
+/// Unlike `reorder_children` this touches no bodies — only the frontmatter of
+/// the notes whose position actually changed.
+#[tauri::command]
+fn reorder_notes(ordered: Vec<String>, state: State<AppState>) -> Result<()> {
+    with_vault(&state, |open| {
+        for (i, id) in ordered.iter().enumerate() {
+            let path = open
+                .index
+                .path_of(id)
+                .map_err(|e| err("lookup failed", e))?
+                .ok_or("note not found")?;
+            let note_type = open
+                .vault
+                .type_of(&path)
+                .ok_or("note is outside the vault")?;
+            let raw = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
+            let mut note = Note::parse(&raw, &title_from_path(&path));
+
+            let position = i as u32 + 1;
+            if note.frontmatter.position == Some(position) {
+                continue;
+            }
+            note.frontmatter.position = Some(position);
+            note.frontmatter.updated = note::now_rfc3339();
+            note.write_to(&path)
+                .map_err(|e| err("could not write note", e))?;
+            open.index
+                .upsert(note_type, &path, &note, file_mtime(&path))
+                .map_err(|e| err("could not index note", e))?;
+        }
+
+        Ok(())
+    })
+}
+
 #[tauri::command]
 fn write_note(id: String, body: String, state: State<AppState>) -> Result<()> {
     save(&state, &id, |note| note.body = body)
@@ -1361,6 +1400,7 @@ pub fn run() {
             create_note,
             create_child,
             reorder_children,
+            reorder_notes,
             write_note,
             update_model,
             set_bubble_model,

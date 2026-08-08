@@ -1099,12 +1099,17 @@ kbd {
   background: var(--panel-2);
 }
 
-/* Dragging to reorder children inside a collection. */
-.note-item.dragging {
+/* Dragging to reorder: notes and buckets at the top of a section, prompts
+   inside a bucket, and the bubbles of the open idea all read the same. */
+.note-item.dragging,
+.collection-head.dragging,
+.idea-outline-item.dragging {
   opacity: 0.4;
 }
 
-.note-item.drop-target {
+.note-item.drop-target,
+.collection-head.drop-target,
+.idea-outline-item.drop-target {
   background: var(--accent-soft);
   color: var(--accent);
   box-shadow: inset 0 2px 0 0 var(--accent);
