@@ -5,7 +5,7 @@ import { mintDevice, readDevice } from "../src/auth";
 import worker from "../src/index";
 
 const APP = "https://app.sudonotes.com";
-const API = "https://sudonotes.com/api/v1/chat/completions";
+const API = "https://api.sudonotes.com/v1/chat/completions";
 
 /** What the stubbed network should do for this test. */
 let upstream: () => Response;
@@ -108,12 +108,12 @@ describe("routing and CORS", () => {
   });
 
   it("404s an unknown path", async () => {
-    const response = await call({ method: "GET", body: undefined }, "https://sudonotes.com/api/v1/nope");
+    const response = await call({ method: "GET", body: undefined }, "https://api.sudonotes.com/v1/nope");
     expect(response.status).toBe(404);
   });
 
   it("serves the model catalog verbatim for the browser", async () => {
-    const response = await call({ method: "GET", body: undefined, headers: { Origin: APP } }, "https://sudonotes.com/api/v1/models");
+    const response = await call({ method: "GET", body: undefined, headers: { Origin: APP } }, "https://api.sudonotes.com/v1/models");
     expect(response.status).toBe(200);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe(APP);
     // The desktop client parses models.dev's own shape, so it must survive intact.

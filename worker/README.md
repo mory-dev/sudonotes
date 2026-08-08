@@ -1,6 +1,6 @@
 # sudonotes API
 
-The Cloudflare Worker behind `https://sudonotes.com/api/v1/*`. It holds the
+The Cloudflare Worker behind `https://api.sudonotes.com/v1/*`. It holds the
 provider key so the apps never do, and it is the only thing standing between a
 free feature and an unbounded bill.
 
@@ -71,9 +71,8 @@ rotating it invalidates every issued device id. Then:
 npx wrangler deploy
 ```
 
-Add the route `sudonotes.com/api/*` to the Worker in the Cloudflare dashboard,
-and create a Turnstile widget for `app.sudonotes.com` whose secret is the one
-above.
+Point `api.sudonotes.com` at the Worker as a custom domain, and create a
+Turnstile widget for `app.sudonotes.com` whose secret is the one above.
 
 ## Locally
 

@@ -55,7 +55,7 @@ Static output, so anything that serves files works. On Cloudflare the site and
 the API share the `sudonotes.com` origin:
 
 - the site is served from `dist/` (Workers Static Assets or Pages),
-- `sudonotes.com/api/*` routes to the Worker in `../worker`.
+- The API is a separate Worker on `api.sudonotes.com`; this build does not route it.
 
 The two deploy independently. Nothing on this site calls the API — it is all
 static — so the order does not matter.

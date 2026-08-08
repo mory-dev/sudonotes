@@ -18,7 +18,7 @@ const SETTINGS_FILE: &str = "settings.json";
 /// The device id, which is not a secret and is not vault-specific.
 const DEVICE_FILE: &str = "device.txt";
 const DEFAULT_ANALYZER_MODEL: &str = "deepseek-chat";
-const API_BASE: &str = "https://sudonotes.com/api/v1";
+const API_BASE: &str = "https://api.sudonotes.com/v1";
 
 const TAG_VOCABULARY: &[&str] = &[
     "feedback",

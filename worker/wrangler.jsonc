@@ -4,11 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
-  // The desktop app calls https://sudonotes.com/api/v1 (ai.rs API_BASE), so the
-  // zone must route /api/* here rather than to the static site Worker. That
-  // route is added out of band: the deploy token has no Workers Routes
-  // permission on the zone, and declaring it here disables workers.dev as a
-  // side effect, which would take the API down when the route then fails.
+  // The app calls https://api.sudonotes.com/v1 (ai.rs API_BASE). That hostname
+  // is attached to this Worker as a custom domain, which is configured out of
+  // band rather than here: declaring routes in this file turns workers.dev off
+  // as a side effect, and losing that fallback while a route is misconfigured
+  // leaves the API with no reachable hostname at all.
   "workers_dev": true,
   "observability": {
     "enabled": true,

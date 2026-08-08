@@ -121,7 +121,7 @@ in the archive is needed.
 | --- | --- |
 | `core/` | `sudonotes-core` — the note format: frontmatter, filenames, links, paste splitting. Pure Rust, no filesystem, and it compiles to WebAssembly so a browser build can share it. |
 | `app/` | The desktop app. React front end in `src/`, Tauri and the filesystem in `src-tauri/`. |
-| `worker/` | The Cloudflare Worker behind `sudonotes.com/api/*`, which holds the AI provider key. |
+| `worker/` | The Cloudflare Worker behind `api.sudonotes.com`, which holds the AI provider key. |
 | `site/` | sudonotes.com — Astro, static. |
 
 The split between `core/` and `app/src-tauri/` is deliberate and worth

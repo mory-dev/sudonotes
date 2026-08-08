@@ -274,13 +274,13 @@ export default {
     }
 
     try {
-      if (url.pathname === "/api/v1/chat/completions" && request.method === "POST") {
+      if (url.pathname === "/v1/chat/completions" && request.method === "POST") {
         return await handleChat(request, env, ctx);
       }
-      if (url.pathname === "/api/v1/models" && request.method === "GET") {
+      if (url.pathname === "/v1/models" && request.method === "GET") {
         return await handleModels(request, env);
       }
-      if (url.pathname === "/api/v1/device" && request.method === "POST") {
+      if (url.pathname === "/v1/device" && request.method === "POST") {
         const headers = corsHeaders(origin, env);
         const ip = request.headers.get("CF-Connecting-IP");
         if (ip) {
