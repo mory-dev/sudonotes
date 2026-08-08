@@ -3,8 +3,8 @@
  *
  * Two shapes, deliberately different: `collections` are *buckets of reusable
  * prompts* named after the job they do ("Shipper prompts"), and `ideas` are the
- * projects being built ("AI Fridge"). A visitor should be able to tell the two
- * apart from the sidebar alone. Model ids are real (`anthropic/claude-opus-5`,
+ * projects being built ("AI Fridge"). A visitor should be able to
+ * tell the two apart from the sidebar alone. Model ids are real (`anthropic/claude-opus-5`,
  * `deepseek/deepseek-v4`) so `providerOf`/`shortModelName` render sane output.
  * Nothing here is a real note on disk.
  */
@@ -201,18 +201,18 @@ export const ideas: IdeaNote[] = [
     title: "AI Fridge",
     bubbles: [
       {
-        heading: "What the camera sees",
-        body: "A $40 wide-angle cam on the shelf. It photographs the contents on open and tags each shelf with a freshness guess.",
+        heading: "Inventory capture",
+        body: "Combine a door-mounted camera with receipt data to maintain a confidence-scored inventory instead of recognizing every item from one image.",
         model: "deepseek/deepseek-v4",
       },
       {
-        heading: "The shelf-life model",
-        body: "Not expiration dates — a decay curve per category, learned from what actually gets thrown out.",
+        heading: "Freshness estimates",
+        body: "Start with purchase dates and category shelf-life ranges, then adjust when someone marks food as used or spoiled.",
         model: "anthropic/claude-opus-5",
       },
       {
-        heading: "Open question: power budget",
-        body: "A Pi Zero runs 24/7 on 1.2W. Can the vision model fit, or does the tagging happen on a phone?",
+        heading: "Open question: privacy",
+        body: "Can image processing stay local and upload only item labels, or do low-light photos still need cloud inference?",
         model: "google/gemini-3-pro",
       },
     ],
