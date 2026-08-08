@@ -164,6 +164,9 @@ export const api = {
     invoke<BackupSettings>("set_backup_enabled", { enabled }),
   /** Snapshot the open vault now, whatever the schedule says. */
   backupNow: () => invoke<BackupInfo>("backup_now"),
+  /** Unpack a .bak into an empty folder, returning how many notes came back. */
+  restoreBackup: (archive: string, destination: string) =>
+    invoke<number>("restore_backup", { archive, destination }),
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),

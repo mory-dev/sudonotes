@@ -995,6 +995,18 @@ fn backup_now(app: tauri::AppHandle, state: State<AppState>) -> Result<backup::B
     with_vault(&state, |open| Ok(backup::create(&open.vault, &dir)?))
 }
 
+/// Unpack a `.bak` into a folder the user picked, which must be empty.
+///
+/// Deliberately not "restore over the open vault": recovering is only ever
+/// additive here, and the caller decides afterwards whether to open the result.
+#[tauri::command]
+fn restore_backup(archive: String, destination: String) -> Result<usize> {
+    Ok(backup::restore(
+        std::path::Path::new(&archive),
+        std::path::Path::new(&destination),
+    )?)
+}
+
 #[tauri::command]
 fn write_note(id: String, body: String, state: State<AppState>) -> Result<()> {
     save(&state, &id, |note| note.body = body)
@@ -1457,6 +1469,7 @@ pub fn run() {
             backup_state,
             set_backup_enabled,
             backup_now,
+            restore_backup,
             write_note,
             update_model,
             set_bubble_model,

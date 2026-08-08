@@ -194,6 +194,84 @@ pub fn create(vault: &Vault, dir: &Path) -> Result<BackupInfo, String> {
     Ok(info)
 }
 
+/// Reject anything that would escape the destination.
+///
+/// A zip entry's name comes from the archive, not from us, so an entry called
+/// `../../notes.md` would otherwise be written outside the folder the user
+/// chose. Absolute paths, drive prefixes and `..` segments are all refused
+/// rather than sanitised, because a legitimate sudonotes archive never has any.
+fn safe_entry_path(name: &str) -> Option<PathBuf> {
+    if name.is_empty() || name.ends_with('/') {
+        return None;
+    }
+    let mut out = PathBuf::new();
+    for part in name.split(['/', '\\']) {
+        match part {
+            "" | "." => continue,
+            ".." => return None,
+            _ => {
+                if part.contains(':') {
+                    return None;
+                }
+                out.push(part);
+            }
+        }
+    }
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+/// Unpack an archive into `dest`, returning how many notes were written.
+///
+/// `dest` must be empty or absent. Restoring never merges into a folder that
+/// already holds anything: the whole feature exists to recover notes, and
+/// silently writing over a vault someone still had would be the one failure
+/// worse than the loss it is meant to fix.
+pub fn restore(archive: &Path, dest: &Path) -> Result<usize, String> {
+    if dest.exists() {
+        let mut entries =
+            fs::read_dir(dest).map_err(|e| format!("could not read {}: {e}", dest.display()))?;
+        if entries.next().is_some() {
+            return Err(format!(
+                "{} is not empty. Choose an empty folder, so nothing already there is overwritten.",
+                dest.display()
+            ));
+        }
+    }
+
+    let file = File::open(archive).map_err(|e| format!("could not open the archive: {e}"))?;
+    let mut zip =
+        zip::ZipArchive::new(file).map_err(|e| format!("that file is not a backup archive: {e}"))?;
+
+    fs::create_dir_all(dest).map_err(|e| format!("could not create {}: {e}", dest.display()))?;
+
+    let mut restored = 0usize;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        // Ours, not the user's — it would only litter the restored vault.
+        if name == "README.txt" {
+            continue;
+        }
+        let Some(relative) = safe_entry_path(&name) else {
+            continue;
+        };
+        let target = dest.join(&relative);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("could not create a folder: {e}"))?;
+        }
+        let mut out =
+            File::create(&target).map_err(|e| format!("could not write {}: {e}", target.display()))?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| format!("could not write a note: {e}"))?;
+        restored += 1;
+    }
+
+    Ok(restored)
+}
+
 /// Run a backup only if one is due — called when a vault opens, where the user
 /// is not asking for anything and must not be made to wait often.
 pub fn create_if_due(vault: &Vault, dir: &Path) -> Option<BackupInfo> {
@@ -307,6 +385,53 @@ mod tests {
         let recovered = snapshot(restored.path());
 
         assert_eq!(original, recovered, "a restore must reproduce every note");
+    }
+
+    #[test]
+    fn restore_round_trips_a_vault() {
+        let (_guard, vault) = fixture();
+        let out = tempfile::tempdir().unwrap();
+        let info = create(&vault, out.path()).unwrap();
+
+        let into = tempfile::tempdir().unwrap();
+        let dest = into.path().join("recovered");
+        let count = restore(Path::new(&info.path), &dest).unwrap();
+
+        assert_eq!(count, 2);
+        assert_eq!(
+            snapshot(&vault.root)
+                .into_iter()
+                .filter(|(n, _)| n.ends_with(".md"))
+                .collect::<Vec<_>>(),
+            snapshot(&dest)
+        );
+    }
+
+    #[test]
+    fn restore_refuses_a_folder_that_has_anything_in_it() {
+        let (_guard, vault) = fixture();
+        let out = tempfile::tempdir().unwrap();
+        let info = create(&vault, out.path()).unwrap();
+
+        let occupied = tempfile::tempdir().unwrap();
+        let precious = occupied.path().join("my-notes.md");
+        fs::write(&precious, b"do not lose me").unwrap();
+
+        let err = restore(Path::new(&info.path), occupied.path()).unwrap_err();
+
+        assert!(err.contains("not empty"), "{err}");
+        assert_eq!(fs::read(&precious).unwrap(), b"do not lose me");
+    }
+
+    /// An archive naming an entry `../escaped.md` must not write above `dest`.
+    #[test]
+    fn restore_refuses_to_escape_the_destination() {
+        assert_eq!(safe_entry_path("prompts/a.md"), Some(PathBuf::from("prompts/a.md")));
+        assert_eq!(safe_entry_path("../escaped.md"), None);
+        assert_eq!(safe_entry_path("prompts/../../escaped.md"), None);
+        assert_eq!(safe_entry_path("/etc/passwd"), Some(PathBuf::from("etc/passwd")));
+        assert_eq!(safe_entry_path("C:\\Windows\\evil.md"), None);
+        assert_eq!(safe_entry_path(""), None);
     }
 
     #[test]

@@ -30,6 +30,91 @@ in the vault is load-bearing. No credentials are ever written there.
 
 Each note is Markdown with a small YAML frontmatter block (`id`, `title`, `tags`, `created`, `updated`). Edit them in any editor you like; sudonotes picks up external changes automatically.
 
+## Writing a note
+
+Two pieces of syntax do most of the work. Both are ordinary text, so a note that
+uses them is still readable in any editor.
+
+### `{{placeholders}}` — prompts as templates
+
+Anywhere a prompt has a value you swap out each time, write it as
+`{{name}}`:
+
+```markdown
+Review this {{language}} pull request for {{concern}}.
+Be concise and cite line numbers.
+```
+
+The editor highlights each one, and the right panel turns every distinct
+placeholder into a field. Fill them in and **Copy filled** puts the finished
+text on your clipboard — the note itself is never rewritten, so the template
+stays a template. A placeholder you leave blank is copied through as
+`{{name}}`, so a half-filled prompt still shows what is missing rather than
+silently going out with a hole in it.
+
+Names are free text and matched literally: `{{language}}` and `{{ language }}`
+are the same placeholder, `{{Language}}` is a different one.
+
+### `[[links]]` — connecting notes
+
+Write `[[Note title]]` to link one note to another:
+
+```markdown
+Drafted from [[Prompt library]] while working through [[AI fridge]].
+```
+
+The brackets are hidden while you read and reappear when the caret enters the
+link, so a linked note reads as prose rather than markup. `Ctrl+click` opens the
+target. If no note by that title exists yet, following the link offers to create
+it.
+
+To label a link differently from its target, use `[[Target|what to show]]`.
+
+The **Linked from** panel lists every note pointing at the one you have open,
+which is what to check before renaming or deleting something.
+
+Selecting a word and pressing `[` wraps it, one bracket per press — so `[` twice
+gives you a link — and `Backspace` peels the levels back off one at a time.
+
+### Keyboard
+
+| | |
+| --- | --- |
+| `Ctrl K` / `Ctrl F` | Search every note |
+| `Ctrl Shift F` | Find within the open note |
+| `Ctrl N` | New note, of whatever type you are looking at |
+| `Ctrl S` | Flush the pending save (saving is automatic) |
+| `Ctrl A` | Select the current bubble in an idea, then the whole note |
+| `Ctrl` `+` / `-` / `0` | Scale the interface |
+| `Ctrl Enter` | From a prompt in a collection, back to the collection |
+
+## Backups
+
+sudonotes keeps compressed snapshots of the vault **outside** it, in the app's
+own data directory — the point being to survive the vault folder itself being
+deleted:
+
+| | |
+| --- | --- |
+| Windows | `%APPDATA%\com.sudonotes.app\backups\` |
+| macOS | `~/Library/Application Support/com.sudonotes.app/backups/` |
+| Linux | `~/.local/share/com.sudonotes.app/backups/` |
+
+One runs when a vault opens, at most once every six hours, and the twenty most
+recent are kept. The settings dialog has the switch, the folder path, and a
+**Back up now** button.
+
+To recover, use **Restore a backup…** in the same dialog: pick the `.bak`, pick
+an **empty** folder to unpack it into, and sudonotes offers to open the result
+as your vault. Restoring refuses any folder that already has something in it, so
+a recovery can never land on top of notes you still have — your current vault is
+never written to.
+
+Failing that, each archive is an ordinary ZIP despite the extension: rename it to
+`.zip`, unpack it into an empty folder, and open that folder as a vault. The
+`prompts/` and `ideas/` trees inside are exactly as they were, and nothing else
+in the archive is needed.
+
 ## Repository
 
 | Directory | What it is |

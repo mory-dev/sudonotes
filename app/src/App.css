@@ -3285,3 +3285,14 @@ button.status-item:hover {
 .update-banner-close {
   flex: none;
 }
+
+/* Back up / restore sit side by side under the backup settings. */
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.settings-actions .ai-analyze {
+  margin-top: 0;
+}

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { open } from "@tauri-apps/plugin-dialog";
+
 import { api, type BackupSettings } from "../api";
 import { useStore } from "../store";
 
@@ -26,6 +28,9 @@ function BackupSection() {
   const setError = useStore((s) => s.setError);
   const setNotice = useStore((s) => s.setNotice);
   const hasVault = useStore((s) => !!s.vaultPath);
+  const setSettings = useStore((s) => s.setSettings);
+  const requestConfirm = useStore((s) => s.requestConfirm);
+  const openVault = useStore((s) => s.openVault);
 
   const [state, setState] = useState<BackupSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,6 +47,41 @@ function BackupSection() {
       setState(await api.setBackupEnabled(enabled));
     } catch (e) {
       setError(String(e));
+    }
+  };
+
+  /** Pick a `.bak`, pick an empty folder, unpack into it, offer to open it.
+   *
+   *  Two dialogs rather than one because a restore must not be able to land on
+   *  top of a vault: the destination is chosen explicitly and the command
+   *  refuses anything that is not empty. The current vault is never touched. */
+  const restore = async () => {
+    const archive = await open({
+      title: "Choose a backup",
+      multiple: false,
+      filters: [{ name: "sudonotes backup", extensions: ["bak", "zip"] }],
+    });
+    if (typeof archive !== "string") return;
+
+    const destination = await open({
+      directory: true,
+      title: "Choose an empty folder to restore into",
+    });
+    if (typeof destination !== "string") return;
+
+    setBusy(true);
+    try {
+      const count = await api.restoreBackup(archive, destination);
+      setSettings(false);
+      requestConfirm(
+        `Restored ${count} notes into ${destination}. Open it as your vault?`,
+        () => void openVault(destination),
+        "Open it",
+      );
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -97,9 +137,14 @@ function BackupSection() {
         </div>
       </dl>
 
-      <button className="ai-analyze" onClick={() => void runNow()} disabled={busy || !hasVault}>
-        {busy ? "Backing up…" : "Back up now"}
-      </button>
+      <div className="settings-actions">
+        <button className="ai-analyze" onClick={() => void runNow()} disabled={busy || !hasVault}>
+          {busy ? "Backing up…" : "Back up now"}
+        </button>
+        <button className="ai-analyze" onClick={() => void restore()} disabled={busy}>
+          Restore a backup…
+        </button>
+      </div>
     </section>
   );
 }
