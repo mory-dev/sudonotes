@@ -93,7 +93,10 @@ const APP_URL =
     <div class="page split">
       <div class="stack" style="gap:16px">
         <p class="eyebrow">Brainstorm ideas</p>
-        <h2>Think in <span class="hl bubble">bubbles</span>, not walls of text.</h2>
+        <h2>
+          Think in <span class="hl-clause"><span class="hl bubble">bubbles</span>,</span> not walls
+          of text.
+        </h2>
         <p class="lede">
           An idea note splits into bubbles — one per block you write. Hover any bubble to point it
           at its own model, or to copy just that piece: the thinking step and the drafting step
@@ -324,6 +327,18 @@ const APP_URL =
     border: 1px solid color-mix(in srgb, var(--idea) 34%, transparent);
     border-radius: 0.46em;
     background: var(--idea-soft);
+  }
+
+  /* Punctuation after a boxed word is not a word of its own: without this the
+     line broke between "bubbles" and its comma, and the next line opened on a
+     stray comma. The negative margin closes the optical gap the box's own
+     padding leaves behind it. */
+  .hl-clause {
+    white-space: nowrap;
+  }
+
+  .hl-clause > .bubble {
+    margin-right: -0.12em;
   }
 
   .hero .actions {
