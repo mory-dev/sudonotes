@@ -25,11 +25,6 @@ const APP_URL =
   schema="software"
 >
   <section class="hero page">
-    <div class="wordmark" aria-hidden="true">
-      <span class="wordmark-prompt"></span>
-      <span class="wordmark-word">sudonotes</span>
-      <span class="wordmark-caret"></span>
-    </div>
     <h1>
       Organize your <span class="hl prompt"><svg viewBox="0 0 16 16" aria-hidden="true"
           ><path d={CLOUD}></path></svg
@@ -374,85 +369,6 @@ const APP_URL =
 
   .hero-shot {
     margin-top: clamp(30px, 5vw, 54px);
-  }
-
-  /* The terminal lockup from the app's splash, at hero size. */
-  .wordmark {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-family: var(--font-mono);
-    font-size: clamp(2rem, 5.5vw, 3.2rem);
-    letter-spacing: -0.01em;
-  }
-
-  .wordmark-prompt {
-    flex: none;
-    width: 0.34em;
-    height: 0.34em;
-    margin-right: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-
-  /* The silver sits on --text-2 rather than --muted: a lighter base narrows the
-     gap to the --text highlight, so the sweep reads as a sheen across the word
-     instead of a bright band travelling over a dark one. */
-  .wordmark-word {
-    background: linear-gradient(
-      90deg,
-      var(--text-2) 0%,
-      var(--text-2) 35%,
-      var(--text) 50%,
-      var(--text-2) 65%,
-      var(--text-2) 100%
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: sweep 2s ease-in-out infinite;
-  }
-
-  .wordmark-caret {
-    width: 9px;
-    height: 1em;
-    background: var(--accent);
-    animation: blink 1.1s steps(1, end) infinite;
-  }
-
-  @keyframes sweep {
-    from {
-      background-position: 150% 0;
-    }
-    to {
-      background-position: -150% 0;
-    }
-  }
-
-  @keyframes blink {
-    0%,
-    49% {
-      opacity: 1;
-    }
-    50%,
-    100% {
-      opacity: 0;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .wordmark-word,
-    .wordmark-caret {
-      animation: none;
-    }
-
-    .wordmark-word {
-      color: var(--text);
-      -webkit-background-clip: border-box;
-      background-clip: border-box;
-      background: none;
-    }
   }
 
   .split {

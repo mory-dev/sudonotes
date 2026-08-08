@@ -214,6 +214,25 @@ section.band.alt {
   height: 14px;
   margin-left: 5px;
   background: var(--accent);
+  animation: brand-caret-blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes brand-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-caret {
+    animation: none;
+  }
 }
 
 .nav-links {
