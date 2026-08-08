@@ -23,6 +23,7 @@ import {
 import { tags } from "@lezer/highlight";
 
 import { useStore } from "../store";
+import { getUiZoom, viewportToLayout } from "../uiScale";
 import { tagHoverColor } from "../tagColors";
 import { ModelPicker } from "./ModelPicker";
 import { providerMarkHtml, providerOf, shortModelName } from "./ProviderMarks";
@@ -1078,8 +1079,9 @@ export function Editor() {
     event.preventDefault();
     // The ghost follows the cursor immediately, even before the drag threshold.
     if (dragGhostRef.current) {
-      dragGhostRef.current.style.left = `${event.clientX}px`;
-      dragGhostRef.current.style.top = `${event.clientY}px`;
+      const zoom = getUiZoom();
+      dragGhostRef.current.style.left = `${viewportToLayout(event.clientX, zoom)}px`;
+      dragGhostRef.current.style.top = `${viewportToLayout(event.clientY, zoom)}px`;
     }
     // A small threshold so a plain click on the grip never starts a drag.
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) {
@@ -1111,7 +1113,7 @@ export function Editor() {
     const rect = line.getBoundingClientRect();
     const wrapRect = wrap.getBoundingClientRect();
     const contentRect = editor.contentDOM.getBoundingClientRect();
-    const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const zoom = getUiZoom();
     const top = ((boundary < n ? rect.top : rect.bottom) - wrapRect.top) / zoom;
     const left = (contentRect.left - wrapRect.left) / zoom;
     const width = contentRect.width / zoom;
@@ -1146,8 +1148,9 @@ export function Editor() {
     const ghost = document.createElement("div");
     ghost.className = "bubble-drag-ghost";
     ghost.textContent = label;
-    ghost.style.left = `${clientX}px`;
-    ghost.style.top = `${clientY}px`;
+    const zoom = getUiZoom();
+    ghost.style.left = `${viewportToLayout(clientX, zoom)}px`;
+    ghost.style.top = `${viewportToLayout(clientY, zoom)}px`;
     document.body.appendChild(ghost);
     dragGhostRef.current = ghost;
     setBubbleMenu(null);
@@ -1210,7 +1213,7 @@ export function Editor() {
     const wrapRect = wrap.getBoundingClientRect();
     // Absolute offsets are layout pixels that scale with the UI zoom (Ctrl +/-),
     // so convert the visual viewport deltas back into that space first.
-    const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const zoom = getUiZoom();
     // Just above the bubble, or just below it when there is no room up there.
     const below = rect.top < 120;
     const top = ((below ? rect.bottom : rect.top) - wrapRect.top) / zoom;

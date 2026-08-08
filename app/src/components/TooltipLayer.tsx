@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { getUiZoom, viewportToLayout } from "../uiScale";
+
 /** How long the pointer must rest before a tooltip appears, so a quick pass
  *  over an icon never flashes one. */
 const SHOW_DELAY_MS = 320;
@@ -38,8 +40,15 @@ export function TooltipLayer() {
 
     const position = (x: number, y: number) => {
       const below = y < 90;
-      const px = Math.min(window.innerWidth - 10, Math.max(10, x));
-      const py = Math.min(window.innerHeight - 10, Math.max(10, y));
+      const zoom = getUiZoom();
+      const px = viewportToLayout(
+        Math.min(window.innerWidth - 10, Math.max(10, x)),
+        zoom,
+      );
+      const py = viewportToLayout(
+        Math.min(window.innerHeight - 10, Math.max(10, y)),
+        zoom,
+      );
       setTip((prev) =>
         prev && prev.x === px && prev.y === py && prev.below === below
           ? prev

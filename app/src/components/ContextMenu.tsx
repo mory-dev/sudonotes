@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { useStore } from "../store";
+import { getUiZoom, viewportToLayout } from "../uiScale";
 
 const MENU_MARGIN = 8;
 
@@ -87,9 +88,15 @@ export function ContextMenu() {
   useLayoutEffect(() => {
     if (!menuAt || !ref.current) return;
     const { offsetWidth, offsetHeight } = ref.current;
+    const zoom = getUiZoom();
+    const layoutWidth = viewportToLayout(window.innerWidth, zoom);
+    const layoutHeight = viewportToLayout(window.innerHeight, zoom);
+    const margin = viewportToLayout(MENU_MARGIN, zoom);
+    const x = viewportToLayout(menuAt.x, zoom);
+    const y = viewportToLayout(menuAt.y, zoom);
     setPos({
-      x: Math.min(menuAt.x, window.innerWidth - offsetWidth - MENU_MARGIN),
-      y: Math.min(menuAt.y, window.innerHeight - offsetHeight - MENU_MARGIN),
+      x: Math.max(margin, Math.min(x, layoutWidth - offsetWidth - margin)),
+      y: Math.max(margin, Math.min(y, layoutHeight - offsetHeight - margin)),
     });
   }, [menuAt]);
 

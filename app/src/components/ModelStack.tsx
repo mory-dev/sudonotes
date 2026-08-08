@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { NoteMeta } from "../api";
+import { getUiZoom, viewportToLayout } from "../uiScale";
 import { ProviderIcon, providerName, providerOf, shortModelName } from "./ProviderMarks";
 
 /** How many icons show before the rest collapse into a +N bubble. */
@@ -36,7 +37,13 @@ export function ModelStack({ notes }: { notes: NoteMeta[] }) {
   // positioned against the icons.
   const show = () => {
     const box = anchor.current?.getBoundingClientRect();
-    if (box) setAt({ top: box.bottom + 6, right: window.innerWidth - box.right });
+    if (box) {
+      const zoom = getUiZoom();
+      setAt({
+        top: viewportToLayout(box.bottom + 6, zoom),
+        right: viewportToLayout(window.innerWidth - box.right, zoom),
+      });
+    }
   };
 
   return (
