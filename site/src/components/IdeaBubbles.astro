@@ -1,0 +1,266 @@
+---
+/**
+ * A diagram, not a window mock: one idea note branching into its bubbles, each
+ * pointed at its own model.
+ *
+ * This slot used to hold a screenshot of the editor, which showed *where* the
+ * feature lives without showing what it is. The section is about the shape of
+ * an idea note — one thought splitting into parts — so the picture is that
+ * shape, drawn with the app's own colours and marks.
+ */
+import { ideas, modelInfo } from "../data/vault";
+import { LEAF, LEAF_VEIN } from "../lib/marks";
+import { shortModelName } from "../lib/providers";
+import ProviderIcon from "./preview/ProviderIcon.astro";
+
+interface Props {
+  caption?: string;
+}
+
+const { caption } = Astro.props;
+
+const idea = ideas[1]; // "AI Fridge"
+---
+
+<figure class="bubbles-figure" role="img" aria-label={caption}>
+  <div class="bubbles">
+    <div class="bubbles-root">
+      <span class="bubbles-root-title">
+        <svg class="bubbles-mark" viewBox="0 0 16 16" aria-hidden="true">
+          <path d={LEAF}></path>
+          <path d={LEAF_VEIN}></path>
+        </svg>
+        {idea.title}
+      </span>
+      <span class="bubbles-root-meta">{idea.bubbles.length} bubbles</span>
+    </div>
+
+    <ul class="bubbles-list">
+      {
+        idea.bubbles.map((bubble) => {
+          const model = modelInfo(bubble.model);
+          return (
+            <li class="bubble-node">
+              <span class="bubble-node-title">{bubble.heading}</span>
+              <span class="bubble-node-model">
+                <ProviderIcon provider={model.provider} size={13} />
+                <span class="bubble-node-model-name">
+                  {shortModelName(model.name, model.provider)}
+                </span>
+              </span>
+            </li>
+          );
+        })
+      }
+    </ul>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<style>
+  .bubbles-figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .bubbles-figure figcaption {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* Every connector is drawn from these two numbers: `--node-h` is the fixed
+     card height the spine's ends are derived from, `--gutter` the width of the
+     branch stubs. Cards are a fixed height (not min-height) so the spine lands
+     exactly on the first and last card's centre at any width. */
+  .bubbles {
+    --node-h: 56px;
+    --gutter: 30px;
+    --wire: color-mix(in srgb, var(--idea) 45%, transparent);
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: 0 18px;
+    align-items: center;
+  }
+
+  .bubbles-root {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 190px;
+    padding: 14px 16px;
+    background: var(--panel);
+    border: 1px solid color-mix(in srgb, var(--idea) 38%, var(--border));
+    border-radius: 12px;
+  }
+
+  /* Root out to the spine, across the grid's 18px column gap. */
+  .bubbles-root::after {
+    content: "";
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    width: 18px;
+    height: 1px;
+    background: var(--wire);
+  }
+
+  .bubbles-root-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .bubbles-mark {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: var(--idea);
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .bubbles-root-meta {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .bubbles-list {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 var(--gutter);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* The spine, stopping at the centre of the first and last card. */
+  .bubbles-list::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: calc(var(--node-h) / 2);
+    bottom: calc(var(--node-h) / 2);
+    width: 1px;
+    background: var(--wire);
+  }
+
+  .bubble-node {
+    position: relative;
+    height: var(--node-h);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  /* The branch stub, plus the dot where it meets the card. */
+  .bubble-node::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    width: var(--gutter);
+    height: 1px;
+    background: var(--wire);
+  }
+
+  .bubble-node::after {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--idea);
+    transform: translate(50%, -50%);
+  }
+
+  .bubble-node-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 13.5px;
+    font-weight: 550;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bubble-node-model {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 6px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    color: var(--idea);
+    background: var(--idea-soft);
+  }
+
+  /* ProviderIcon is a child component, so its tile is styled from here. */
+  .bubble-node-model :global(.provider-icon) {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 4px;
+    color: #fff;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .bubble-node-model :global(.provider-icon svg) {
+    display: block;
+  }
+
+  /* Below the split's breakpoint the root sits above the branches and the spine
+     runs from its bottom edge instead of its side. */
+  @media (max-width: 860px) {
+    .bubbles {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .bubbles-root {
+      max-width: none;
+      margin-bottom: 18px;
+    }
+
+    .bubbles-root::after {
+      left: 0;
+      top: 100%;
+      width: 1px;
+      height: 18px;
+    }
+
+    .bubbles-list::before {
+      top: 0;
+    }
+  }
+
+  /* Only the narrowest phones need the model dropped to its tile; at 375px the
+     full chip still fits beside the longest heading. */
+  @media (max-width: 359px) {
+    .bubbles {
+      --gutter: 20px;
+    }
+
+    .bubble-node-model-name {
+      display: none;
+    }
+
+    .bubble-node-model {
+      padding: 4px;
+    }
+  }
+</style>

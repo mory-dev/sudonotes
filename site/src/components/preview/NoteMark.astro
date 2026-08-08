@@ -1,0 +1,26 @@
+---
+/**
+ * The cloud (prompt) / leaf (idea) mark. Colored by the surrounding
+ * [data-type] scope.
+ */
+import { CLOUD, LEAF, LEAF_VEIN } from "../../lib/marks";
+
+interface Props {
+  type: "prompt" | "idea";
+}
+
+const { type } = Astro.props;
+---
+
+{
+  type === "prompt" ? (
+    <svg class="note-mark" viewBox="0 0 16 16" aria-hidden="true">
+      <path d={CLOUD} />
+    </svg>
+  ) : (
+    <svg class="note-mark" viewBox="0 0 16 16" aria-hidden="true">
+      <path d={LEAF} />
+      <path d={LEAF_VEIN} />
+    </svg>
+  )
+}

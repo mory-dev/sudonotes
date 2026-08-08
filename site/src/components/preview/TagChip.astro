@@ -1,0 +1,17 @@
+---
+/**
+ * A hue-derived tag chip, importing the app's own tagColors.ts directly so the
+ * colors can never drift between the mock and the product.
+ */
+import { tagPalette } from "../../../../app/src/tagColors";
+
+interface Props {
+  tag: string;
+}
+
+const { tag } = Astro.props;
+const palette = tagPalette(tag);
+const style = `background:${palette.bg};color:${palette.fg};border-color:${palette.border}`;
+---
+
+<span class="tag-chip" style={style}>{tag}</span>

@@ -1,0 +1,349 @@
+---
+/**
+ * A diagram, not a window mock: one pasted blob of text on the left, split into
+ * ordered step cards on the right.
+ *
+ * Deliberately a *sequence* rather than the fan-out used by IdeaBubbles — the
+ * point of this section is that the steps have an order you can rearrange, so
+ * the connectors are arrows and the cards are numbered.
+ */
+import { collections, modelInfo } from "../data/vault";
+import { shortModelName } from "../lib/providers";
+import ProviderIcon from "./preview/ProviderIcon.astro";
+
+interface Props {
+  caption?: string;
+}
+
+const { caption } = Astro.props;
+
+const steps = collections[0].prompts; // "Shipper prompts", the bucket in the hero
+
+/** The ragged line lengths that stand in for the pasted text, as percentages. */
+const blobLines = [100, 82, 94, 61, 88, 44];
+---
+
+<figure class="chain-figure" role="img" aria-label={caption}>
+  <div class="chain">
+    <div class="chain-source">
+      <span class="chain-source-label">One pasted prompt</span>
+      <span class="chain-blob" aria-hidden="true">
+        {blobLines.map((width) => <i style={`width:${width}%`} />)}
+      </span>
+    </div>
+
+    <span class="chain-arrow" aria-hidden="true">
+      <span class="chain-arrow-note">splits into</span>
+    </span>
+
+    <ol class="chain-steps">
+      {
+        steps.map((step, index) => {
+          const model = modelInfo(step.model!);
+          return (
+            <li class="chain-step">
+              <span class="chain-step-head">
+                <span class="chain-index">{index + 1}</span>
+                <span class="chain-grip" aria-hidden="true">
+                  <i /> <i /> <i /> <i /> <i /> <i />
+                </span>
+              </span>
+              <span class="chain-step-title">{step.title}</span>
+              <span class="chain-step-model">
+                <ProviderIcon provider={model.provider} size={12} />
+                {shortModelName(model.name, model.provider)}
+              </span>
+            </li>
+          );
+        })
+      }
+    </ol>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<style>
+  .chain-figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: left;
+  }
+
+  .chain-figure figcaption {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .chain {
+    --wire: color-mix(in srgb, var(--prompt) 45%, transparent);
+    --step-gap: 26px;
+    display: grid;
+    grid-template-columns: 190px 92px minmax(0, 1fr);
+    align-items: center;
+  }
+
+  /* the pasted blob ------------------------------------------------------- */
+
+  .chain-source {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px;
+    background: var(--panel);
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+  }
+
+  .chain-source-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .chain-blob {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .chain-blob i {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+  }
+
+  /* the arrow between them ------------------------------------------------ */
+
+  .chain-arrow {
+    position: relative;
+    align-self: center;
+    height: 1px;
+    background: var(--wire);
+  }
+
+  /* Arrowhead: two strokes rotated into a chevron at the wire's end. */
+  .chain-arrow::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    border-top: 1.5px solid var(--wire);
+    border-right: 1.5px solid var(--wire);
+    transform: translate(-1px, -50%) rotate(45deg);
+  }
+
+  .chain-arrow-note {
+    position: absolute;
+    left: 50%;
+    bottom: 6px;
+    transform: translateX(-50%);
+    font-size: 11.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* the ordered steps ----------------------------------------------------- */
+
+  .chain-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: var(--step-gap);
+    align-items: stretch;
+  }
+
+  .chain-step {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 13px 13px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  /* The connector between consecutive steps: a wire plus its arrowhead, drawn
+     in the gap so the order reads left to right. */
+  .chain-step + .chain-step::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    width: var(--step-gap);
+    height: 1px;
+    background: var(--wire);
+  }
+
+  .chain-step + .chain-step::after {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-top: 1.5px solid var(--wire);
+    border-right: 1.5px solid var(--wire);
+    transform: translate(3px, -50%) rotate(45deg);
+  }
+
+  .chain-step-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .chain-index {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--prompt);
+    background: var(--prompt-soft);
+    border-radius: 6px;
+  }
+
+  /* The drag handle, so "reorder by dragging" is visible and not just claimed. */
+  .chain-grip {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(2, 3px);
+    gap: 3px;
+    opacity: 0.5;
+  }
+
+  .chain-grip i {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+
+  .chain-step-title {
+    font-size: 13px;
+    font-weight: 550;
+    line-height: 1.35;
+  }
+
+  .chain-step-model {
+    margin-top: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .chain-step-model :global(.provider-icon) {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 4px;
+    color: #fff;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .chain-step-model :global(.provider-icon svg) {
+    display: block;
+  }
+
+  /* Two steps per row once four abreast would squeeze the titles. */
+  @media (max-width: 1080px) {
+    .chain {
+      grid-template-columns: 170px 76px minmax(0, 1fr);
+    }
+
+    .chain-steps {
+      flex-wrap: wrap;
+    }
+
+    .chain-step {
+      flex: 1 1 calc(50% - var(--step-gap));
+    }
+
+    /* The wire only makes sense between steps on the same row, so the card that
+       starts row two drops it. Scoped under .chain-steps to outrank the
+       `.chain-step + .chain-step` rule above, which it ties with on its own. */
+    .chain-steps .chain-step:nth-child(odd)::before,
+    .chain-steps .chain-step:nth-child(odd)::after {
+      content: none;
+    }
+  }
+
+  /* Stacked: the source sits above and the arrow turns to point down. */
+  @media (max-width: 720px) {
+    .chain {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+
+    .chain-arrow {
+      justify-self: start;
+      width: 1px;
+      height: 42px;
+      margin-left: 28px;
+    }
+
+    .chain-arrow::after {
+      right: 50%;
+      top: auto;
+      bottom: 0;
+      transform: translate(50%, 1px) rotate(135deg);
+    }
+
+    .chain-arrow-note {
+      left: auto;
+      right: -8px;
+      bottom: 50%;
+      transform: translate(100%, 50%);
+    }
+
+    .chain-step {
+      flex: 1 1 100%;
+    }
+
+    /* Single column: every step follows the one above, so the wire comes back. */
+    .chain-steps .chain-step:nth-child(odd)::before,
+    .chain-steps .chain-step:nth-child(odd)::after {
+      content: "";
+    }
+
+    .chain-steps .chain-step:first-child::before,
+    .chain-steps .chain-step:first-child::after {
+      content: none;
+    }
+
+    /* Every connector now runs down the left edge instead of across. */
+    .chain-step + .chain-step::before {
+      right: auto;
+      left: 28px;
+      top: auto;
+      bottom: 100%;
+      width: 1px;
+      height: var(--step-gap);
+    }
+
+    .chain-step + .chain-step::after {
+      right: auto;
+      left: 28px;
+      top: auto;
+      bottom: 100%;
+      transform: translate(-50%, 3px) rotate(135deg);
+    }
+  }
+</style>

@@ -1,0 +1,33 @@
+---
+/**
+ * A provider's colored tile with its brand mark, mirroring
+ * app/src/components/ProviderMarks.tsx (4px radius square, real brand hex).
+ */
+import { providerInitial, providerStyle } from "../../lib/providers";
+
+interface Props {
+  provider: string;
+  size?: number;
+}
+
+const { provider, size = 13 } = Astro.props;
+const { color, short, path } = providerStyle(provider);
+const style = `width:${size}px;height:${size}px;background:${color}`;
+
+/** simple-icons marks span the full 24-unit canvas, so drawn at the tile's own
+ *  size they touch its edges and clip on its 4px corners. Inset them instead;
+ *  the tile centres what it is given. */
+const glyphSize = Math.round(size * 0.72);
+---
+
+<span class="provider-icon" style={style} title={short}>
+  {path ? (
+    <svg viewBox="0 0 24 24" width={glyphSize} height={glyphSize} aria-hidden="true">
+      <path d={path} fill="#fff" />
+    </svg>
+  ) : (
+    <span class="provider-fallback" style={`font-size:${Math.max(7, Math.round(size * 0.55))}px`}>
+      {providerInitial(provider, short)}
+    </span>
+  )}
+</span>

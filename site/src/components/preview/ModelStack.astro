@@ -1,0 +1,25 @@
+---
+/**
+ * A stack of provider icons for the models a collection uses, mirroring
+ * app/src/components/ModelStack.tsx (up to 3 shown, +N collapsed).
+ */
+import { providerOf } from "../../lib/providers";
+import ProviderIcon from "./ProviderIcon.astro";
+
+interface Props {
+  models: string[];
+}
+
+const { models } = Astro.props;
+const shown = models.slice(0, 3);
+const hidden = models.length - shown.length;
+---
+
+<span class="model-stack">
+  {shown.map((model) => (
+    <span class="model-stack-item">
+      <ProviderIcon provider={providerOf(model)} size={13} />
+    </span>
+  ))}
+  {hidden > 0 && <span class="model-stack-more">+{hidden}</span>}
+</span>

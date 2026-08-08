@@ -1,0 +1,40 @@
+---
+/**
+ * The window chrome and figure wrapper for every preview: the app's `.chrome`
+ * (accent dot + wordmark on the left, Windows-style controls on the right) and
+ * a body container for the page-specific layout.
+ */
+interface Props {
+  /** Class applied to the body container, e.g. "app" or "search". */
+  bodyClass?: string;
+  /** Accessible label and optional figcaption. */
+  caption?: string;
+}
+
+const { bodyClass = "app", caption } = Astro.props;
+---
+
+<figure class="shot-figure" role="img" aria-label={caption}>
+  <div class="shot">
+    <div class="chrome">
+      <span class="chrome-title">
+        <span class="chrome-dot"></span>sudonotes
+      </span>
+      <div class="chrome-controls" aria-hidden="true">
+        <button class="chrome-button" tabindex="-1">
+          <svg viewBox="0 0 10 10"><path d="M0 5h10" /></svg>
+        </button>
+        <button class="chrome-button" tabindex="-1">
+          <svg viewBox="0 0 10 10"><path d="M0.5 0.5h9v9h-9z" /></svg>
+        </button>
+        <button class="chrome-button close" tabindex="-1">
+          <svg viewBox="0 0 10 10"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" /></svg>
+        </button>
+      </div>
+    </div>
+    <div class={bodyClass}>
+      <slot />
+    </div>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

@@ -1,0 +1,68 @@
+---
+/**
+ * The model picker open on a prompt: the catalog rows the app fetches at
+ * runtime, each with its provider, context window and capabilities. Mirrors
+ * `.model-picker` / `.model-options` / `.model-option` from App.css.
+ *
+ * Replaces the old ReviewPreview in this slot, which showed the AI review panel
+ * next to copy about model assignment — the picture and the promise disagreed.
+ */
+import { collections, modelCatalog, modelInfo } from "../data/vault";
+import { providerName, shortModelName } from "../lib/providers";
+import NoteMark from "./preview/NoteMark.astro";
+import ProviderIcon from "./preview/ProviderIcon.astro";
+import Shell from "./preview/Shell.astro";
+
+const { caption } = Astro.props;
+
+const prompt = collections[0].prompts[0]; // "Release notes from a diff"
+const current = modelInfo(prompt.model!);
+
+/** "200k · reasoning · vision", in the order the app's capability column uses. */
+function capabilities(model: (typeof modelCatalog)[number]): string {
+  return [
+    model.reasoning ? "reasoning" : "",
+    model.vision ? "vision" : "",
+    `${Math.round(model.context / 1000)}k`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+---
+
+<Shell bodyClass="picker" caption={caption}>
+  <div class="picker-note" data-type="prompt">
+    <header class="picker-head">
+      <span class="badge prompt"><NoteMark type="prompt" />Prompt</span>
+      <span class="picker-title">{prompt.title}</span>
+    </header>
+
+    <div class="model-picker">
+      <span class="picker-label">Model</span>
+      <span class="model-picker-value is-open">
+        <ProviderIcon provider={current.provider} size={12} />
+        <span class="model-picker-label">{shortModelName(current.name, current.provider)}</span>
+        <svg class="model-chevron up" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </span>
+
+      <ul class="model-options">
+        {
+          modelCatalog.map((model) => (
+            <li>
+              <span class={model.id === current.id ? "model-option active" : "model-option"}>
+                <ProviderIcon provider={model.provider} size={15} />
+                <span class="model-option-name">
+                  <strong>{shortModelName(model.name, model.provider)}</strong>
+                  <small>{providerName(model.provider)}</small>
+                </span>
+                <small class="model-capabilities">{capabilities(model)}</small>
+              </span>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </div>
+</Shell>
