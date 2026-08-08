@@ -165,6 +165,12 @@ fn set_ai_settings(state: State<AppState>, enabled: bool) -> Result<ai::AiSettin
     ai::save_settings(&vault_root(&state)?, enabled)
 }
 
+/// The running app version, e.g. "0.1.1", for the title-bar hover tooltip.
+#[tauri::command]
+fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 #[tauri::command]
 async fn model_catalog(app: tauri::AppHandle, force: bool) -> Result<models::ModelCatalog> {
     models::list(&app, force).await
@@ -318,14 +324,41 @@ fn link_project(
         note.frontmatter.project = Some(root.to_string_lossy().to_string());
         note.frontmatter.updated = note::now_rfc3339();
 
-        note.write_to(&note_path)
-            .map_err(|e| err("could not write note", e))?;
+        // The idea's collection title follows the project's folder name, so the
+        // bucket it groups under in the sidebar matches the linked project.
+        let folder = root
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .filter(|name| !name.is_empty());
+        let mut retitled = false;
+        if let Some(folder) = folder {
+            let old_title = note.frontmatter.title.clone();
+            if old_title != folder {
+                note.frontmatter.title = folder.clone();
+                note.write_to(&note_path)
+                    .map_err(|e| err("could not write note", e))?;
+                retitle_files(&note_path, &old_title, &folder);
+                retitled = true;
+            }
+        }
+        if !retitled {
+            note.write_to(&note_path)
+                .map_err(|e| err("could not write note", e))?;
+        }
         project::write_mirror(&root, MIRROR_STEM, &note.to_markdown())
             .map_err(|e| err("could not write into the project", e))?;
 
-        open.index
-            .upsert(note_type, &note_path, &note, file_mtime(&note_path))
-            .map_err(|e| err("could not index note", e))?;
+        // A retitle moved the file (and any collection folder), so rebuild from
+        // disk rather than patching an entry for a path that no longer exists.
+        if retitled {
+            open.index
+                .sync(&open.vault)
+                .map_err(|e| err("could not reindex vault", e))?;
+        } else {
+            open.index
+                .upsert(note_type, &note_path, &note, file_mtime(&note_path))
+                .map_err(|e| err("could not index note", e))?;
+        }
 
         Ok(LinkResult { info, conflict: false })
     })
@@ -370,14 +403,39 @@ fn import_project_idea(
         note.frontmatter.project = Some(root.to_string_lossy().to_string());
         note.frontmatter.updated = note::now_rfc3339();
 
-        note.write_to(&note_path)
-            .map_err(|e| err("could not write note", e))?;
+        // Same retitle as `link_project`: the imported idea's collection title
+        // becomes the project's folder name.
+        let folder = root
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .filter(|name| !name.is_empty());
+        let mut retitled = false;
+        if let Some(folder) = folder {
+            let old_title = note.frontmatter.title.clone();
+            if old_title != folder {
+                note.frontmatter.title = folder.clone();
+                note.write_to(&note_path)
+                    .map_err(|e| err("could not write note", e))?;
+                retitle_files(&note_path, &old_title, &folder);
+                retitled = true;
+            }
+        }
+        if !retitled {
+            note.write_to(&note_path)
+                .map_err(|e| err("could not write note", e))?;
+        }
         project::write_mirror(&root, MIRROR_STEM, &note.to_markdown())
             .map_err(|e| err("could not write into the project", e))?;
 
-        open.index
-            .upsert(note_type, &note_path, &note, file_mtime(&note_path))
-            .map_err(|e| err("could not index note", e))?;
+        if retitled {
+            open.index
+                .sync(&open.vault)
+                .map_err(|e| err("could not reindex vault", e))?;
+        } else {
+            open.index
+                .upsert(note_type, &note_path, &note, file_mtime(&note_path))
+                .map_err(|e| err("could not index note", e))?;
+        }
 
         Ok(project::describe(&root))
     })
@@ -1284,12 +1342,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             open_vault,
             last_vault,
             get_ai_settings,
             set_ai_settings,
+            app_version,
             model_catalog,
             analyze_note,
             auto_tag_note,
