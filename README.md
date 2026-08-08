@@ -1,3 +1,5 @@
+![sudonotes](.github/assets/sudonotes-header.png)
+
 # sudonotes
 
 A lightweight, local-first notebook for **prompts** and **ideas**.
