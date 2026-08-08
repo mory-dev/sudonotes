@@ -320,7 +320,12 @@ function bubbleBoundaryAt(view: EditorView, x: number, y: number): number | null
 
 /** Priority indicator for a bubble: a horizontal "volume" bar in the right
  *  gutter (outside the bubble) whose width and colour fade from hot (high rank)
- *  to cool (low rank) against the note's other bubbles. */
+ *  to cool (low rank) against the note's other bubbles.
+ *
+ *  The ramp is red → orange → yellow → gray → gone. Hue only ever travels the
+ *  warm end of the wheel, and the cool end of the scale is reached by draining
+ *  the saturation and then mixing into the editor background, so the lowest
+ *  bubble's bar is literally the background colour rather than a cold one. */
 class BubbleHeatWidget extends WidgetType {
   constructor(readonly heat: number) {
     super();
@@ -328,7 +333,17 @@ class BubbleHeatWidget extends WidgetType {
   toDOM() {
     const el = document.createElement("span");
     el.className = "cm-bubble-heat";
-    el.style.setProperty("--heat-hue", String(Math.round(220 - 205 * this.heat)));
+    // Hue reaches yellow by the upper third and stops there; past that the bar
+    // greys out rather than continuing round towards green.
+    const hue = Math.round(6 + 42 * Math.min(1, (1 - this.heat) / 0.35));
+    const saturation = Math.round(80 * this.heat);
+    // Slightly concave, so the fade to nothing happens over the last bubbles
+    // instead of dimming the whole scale evenly.
+    const presence = Math.round(100 * this.heat ** 0.6);
+    el.style.setProperty(
+      "--heat-color",
+      `color-mix(in oklab, hsl(${hue} ${saturation}% 52%) ${presence}%, var(--bg))`,
+    );
     el.style.setProperty("--heat-width", `${Math.round(14 + 36 * this.heat)}px`);
     el.setAttribute("data-tooltip", "Priority");
     return el;
@@ -786,7 +801,7 @@ const theme = EditorView.theme(
       height: "1px",
       borderRadius: "1px",
       opacity: 0.8,
-      background: "hsl(var(--heat-hue) 70% 52%)",
+      background: "var(--heat-color)",
     },
     // Reorder grip for a bubble, in the left gutter; hidden until its bubble is
     // hovered, and kept visible for the bubble being dragged.
