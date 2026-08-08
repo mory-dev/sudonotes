@@ -5,6 +5,7 @@ import { defaultKeymap, history, historyKeymap, redo } from "@codemirror/command
 import { markdown } from "@codemirror/lang-markdown";
 import {
   defaultHighlightStyle,
+  HighlightStyle,
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
@@ -19,6 +20,7 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 
 import { useStore } from "../store";
 import { tagHoverColor } from "../tagColors";
@@ -37,6 +39,12 @@ const WIKILINK = /\[\[([^[\]\n|]+)(?:\|([^[\]\n]+))?\]\]/g;
 
 /** Hides the syntax so a link reads as ordinary highlighted text. */
 const hidden = Decoration.replace({});
+
+const markdownHighlightStyle = HighlightStyle.define(
+  defaultHighlightStyle.specs.map((spec) =>
+    spec.tag === tags.heading ? { ...spec, textDecoration: "none" } : spec,
+  ),
+);
 
 const label = (target: string) =>
   Decoration.mark({
@@ -1300,7 +1308,7 @@ export function Editor() {
           closeBrackets(),
           EditorView.lineWrapping,
           markdown(),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          syntaxHighlighting(markdownHighlightStyle, { fallback: true }),
           wikiLinks,
           headings,
           paragraphBoxes,
