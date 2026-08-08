@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sudonotes-app",
+  "compatibility_date": "2026-08-01",
+  // app.sudonotes.com. Static assets only for now: this serves a placeholder
+  // until the browser vault viewer lands, at which point ./public becomes the
+  // build output and this config is what deploys it.
+  "assets": {
+    "directory": "./public"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

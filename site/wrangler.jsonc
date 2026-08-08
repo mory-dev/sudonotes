@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sudonotes-site",
+  "compatibility_date": "2026-08-01",
+  // Static assets only — there is no server on this side of the origin. The
+  // Astro build is `output: "static"`, so this Worker just serves ./dist.
+  // `/api/*` is the separate sudonotes-api Worker, routed on the zone.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

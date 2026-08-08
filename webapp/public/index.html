@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sudonotes — the web version is on its way</title>
+    <meta
+      name="description"
+      content="A browser vault viewer for sudonotes is in progress. Until it lands, the desktop client has the full feature set."
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#16171a" />
+    <link rel="icon" href="https://sudonotes.com/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --bg: #16171a;
+        --panel: #1c1d21;
+        --border: #2c2e34;
+        --text: #e4e5e9;
+        --text-2: #b6b9c2;
+        --muted: #8b8d96;
+        --accent: #7aa2f7;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+        line-height: 1.6;
+      }
+      main {
+        width: min(100%, 44rem);
+        text-align: center;
+      }
+      .mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        font-family: "JetBrains Mono", Consolas, monospace;
+        font-size: clamp(1.75rem, 5vw, 2.5rem);
+        letter-spacing: -0.01em;
+      }
+      .dot {
+        width: 0.4em;
+        height: 0.4em;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      h1 {
+        margin: 1.5rem 0 0;
+        font-size: clamp(1.25rem, 3.4vw, 1.75rem);
+        font-weight: 600;
+      }
+      p {
+        margin: 0.9rem auto 0;
+        max-width: 46ch;
+        color: var(--text-2);
+      }
+      .actions {
+        margin-top: 2rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: center;
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1.1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        font-size: 0.95rem;
+        text-decoration: none;
+      }
+      a.button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #12131a;
+        font-weight: 600;
+      }
+      a.button:hover {
+        border-color: var(--accent);
+      }
+      a.button.primary:hover {
+        filter: brightness(1.08);
+      }
+      .note {
+        margin-top: 2.5rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark"><span class="dot"></span>sudonotes</div>
+      <h1>The web version is on its way.</h1>
+      <p>
+        A browser build that opens a vault folder and reads your prompts and ideas is in progress.
+        It will be a viewer — writing, project linking and search stay in the desktop client.
+      </p>
+      <div class="actions">
+        <a class="button primary" href="https://sudonotes.com/download">Download for desktop</a>
+        <a class="button" href="https://sudonotes.com">Back to sudonotes.com</a>
+      </div>
+      <p class="note">Your notes are plain Markdown in a folder you own. Nothing is stored here.</p>
+    </main>
+  </body>
+</html>

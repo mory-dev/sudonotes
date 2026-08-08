@@ -7,12 +7,16 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.12",
     "@astrojs/sitemap": "^3.6.0",
     "astro": "^5.16.0",
     "simple-icons": "^16.28.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.0"
   }
 }
