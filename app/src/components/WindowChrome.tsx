@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { api } from "../api";
+
 /** The native title bar is disabled, so the window is dragged and controlled
  *  from here. Guarded throughout so the UI still renders in a plain browser. */
 function appWindow() {
@@ -14,6 +16,7 @@ function appWindow() {
 
 export function WindowChrome() {
   const [maximized, setMaximized] = useState(false);
+  const [version, setVersion] = useState("");
 
   useEffect(() => {
     const win = appWindow();
@@ -30,13 +33,24 @@ export function WindowChrome() {
     return () => stop?.();
   }, []);
 
+  // The version shown in the hover tooltip; empty when running outside Tauri.
+  useEffect(() => {
+    api
+      .appVersion()
+      .then(setVersion)
+      .catch(() => {});
+  }, []);
+
   // Square off the corners when maximized — a rounded maximized window looks broken.
   useEffect(() => {
     document.documentElement.dataset.maximized = String(maximized);
   }, [maximized]);
 
   return (
-    <div className="chrome" data-tauri-drag-region>
+    // The title text itself is pointer-events: none (it must not fight the drag
+    // region), so the version tooltip lives on the chrome bar that actually
+    // receives the hover.
+    <div className="chrome" data-tauri-drag-region data-tooltip={version ? `sudonotes v${version}` : "sudonotes"}>
       <span className="chrome-title" data-tauri-drag-region>
         <span className="chrome-dot" />
         sudonotes
@@ -45,7 +59,7 @@ export function WindowChrome() {
       <div className="chrome-controls">
         <button
           className="chrome-button"
-          title="Minimize"
+          data-tooltip="Minimize"
           aria-label="Minimize"
           onClick={() => void appWindow()?.minimize()}
         >
@@ -56,7 +70,7 @@ export function WindowChrome() {
 
         <button
           className="chrome-button"
-          title={maximized ? "Restore" : "Maximize"}
+          data-tooltip={maximized ? "Restore" : "Maximize"}
           aria-label={maximized ? "Restore" : "Maximize"}
           onClick={() => void appWindow()?.toggleMaximize()}
         >
@@ -74,7 +88,7 @@ export function WindowChrome() {
 
         <button
           className="chrome-button close"
-          title="Close"
+          data-tooltip="Close"
           aria-label="Close"
           onClick={() => void appWindow()?.close()}
         >

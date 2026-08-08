@@ -19,6 +19,8 @@ export interface NoteMeta {
   project?: string | null;
   /** Favicon of the linked project, when one was found. */
   icon?: string | null;
+  /** Blank-line separated groups in the body. Shown beside an idea's title. */
+  bubbles?: number;
 }
 
 /** A prompt filed under a collection, shown inline on the collection's page. */
@@ -118,6 +120,7 @@ export const api = {
   lastVault: () => invoke<string | null>("last_vault"),
   getAiSettings: () => invoke<AiSettings>("get_ai_settings"),
   setAiSettings: (enabled: boolean) => invoke<AiSettings>("set_ai_settings", { enabled }),
+  appVersion: () => invoke<string>("app_version"),
   modelCatalog: (force = false) => invoke<ModelCatalog>("model_catalog", { force }),
   autoTagNote: (id: string) => invoke<string[]>("auto_tag_note", { id }),
   /** A full review of a note. Explicit — never fired automatically. */
