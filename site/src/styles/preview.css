@@ -1,249 +1,383 @@
-/* A recreation of the sudonotes window, built from the same design tokens the
-   app itself uses, so it stays sharp at any size and in any pixel density.
-   Everything inside is mock data. */
+/* The sudonotes window, rebuilt from the app's own class names and px values
+   so it can be verified against `app/src/App.css` with a side-by-side grep.
+   `.shot` stands in for the app's `:root` (font-size 14px); every rule below is
+   the corresponding App.css rule scoped under it. Never re-pick a number. */
 
 .shot {
-  --shot-font: 13px;
+  --shot-font: 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--panel);
+  border-radius: var(--radius);
+  background: var(--bg);
   overflow: hidden;
   box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.02);
   font-size: var(--shot-font);
   line-height: 1.5;
 }
 
-.shot-chrome {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 12px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-}
-
-.shot-dots {
-  display: flex;
-  gap: 6px;
-}
-
-.shot-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--border);
-}
-
-.shot-title {
-  margin-inline: auto;
-  font-size: 11.5px;
-  color: var(--muted);
-  letter-spacing: 0.01em;
-}
-
-.shot-body {
-  display: grid;
-  grid-template-columns: 216px minmax(0, 1fr) 232px;
-  min-height: 430px;
-  background: var(--bg);
-}
-
-.shot-body.two-col {
-  grid-template-columns: 216px minmax(0, 1fr);
-}
-
-.shot-body.one-col {
-  grid-template-columns: minmax(0, 1fr);
-  min-height: 0;
-}
-
-@media (max-width: 900px) {
-  .shot-body,
-  .shot-body.two-col {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .shot-side,
-  .shot-panel {
-    display: none;
-  }
-}
-
-/* sidebar ----------------------------------------------------------------- */
-
-.shot-side {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 10px;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
-  min-width: 0;
-}
-
-.shot-search {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.shot-section-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.shot-count {
-  padding: 0 5px;
-  border-radius: 20px;
-  background: var(--panel-2);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.shot-plus {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.shot-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.shot-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 12.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.shot-row.nested {
-  margin-left: 12px;
-  color: var(--muted);
-}
-
-.shot-row.active {
-  background: var(--type-soft, var(--accent-soft));
-  color: var(--type-color, var(--accent));
-}
-
-.shot-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  font-size: 12.5px;
-  color: var(--text);
-}
-
-.shot-group.active {
-  background: var(--type-soft, var(--accent-soft));
-  color: var(--type-color, var(--accent));
-}
-
-[data-type="prompt"] {
+.shot [data-type="prompt"] {
   --type-color: var(--prompt);
   --type-soft: var(--prompt-soft);
 }
 
-[data-type="idea"] {
+.shot [data-type="idea"] {
   --type-color: var(--idea);
   --type-soft: var(--idea-soft);
 }
 
-.shot-mark {
+/* window chrome ------------------------------------------------------------ */
+
+.shot .chrome {
   flex: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  border: 1.5px solid var(--type-color, var(--accent));
-}
-
-.shot-mark.filled {
-  background: var(--type-soft);
-}
-
-.shot-mark.round {
-  border-radius: 50%;
-}
-
-/* A tiny stack of provider chips, as the sidebar shows for a collection. */
-.shot-stack {
-  margin-left: auto;
-  display: flex;
-}
-
-.shot-chip {
-  width: 15px;
-  height: 15px;
-  margin-left: -4px;
-  border-radius: 50%;
-  border: 1px solid var(--panel);
-  display: grid;
-  place-items: center;
-  font-size: 8px;
-  font-weight: 700;
-  color: #10131b;
-}
-
-.shot-chip:first-child {
-  margin-left: 0;
-}
-
-.chip-ds {
-  background: #6ea8fe;
-}
-.chip-oa {
-  background: #9ece6a;
-}
-.chip-an {
-  background: #e0a05a;
-}
-.chip-gm {
-  background: #b39ddb;
-}
-
-.shot-vault {
-  margin-top: auto;
+  height: var(--chrome-height);
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
+  justify-content: space-between;
+  padding-left: 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.shot .chrome-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
   color: var(--muted);
-  white-space: nowrap;
+}
+
+.shot .chrome-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.shot .chrome-controls {
+  display: flex;
+  height: 100%;
+  padding-right: 4px;
+}
+
+/* The app's controls are 44px wide because they are a real hit target, and they
+   only get a surface on hover. A still shot has neither, so three wide slabs of
+   --muted read as a gray block bolted to the titlebar: the shot narrows them,
+   leaves them flat, and gives the close glyph its hover colour so the row is
+   not three identical gray marks. */
+.shot .chrome-button {
+  width: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.shot .chrome-button.close {
+  color: #e06c5a;
+  opacity: 0.9;
+}
+
+.shot .chrome-button svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.15;
+  stroke-linecap: round;
+}
+
+/* three-pane shell --------------------------------------------------------- */
+
+/* Tall enough that the sidebar's scroll area ends on a whole row: at 500px the
+   Ideas section was cut 4px into its first item and read as broken. */
+.shot .app {
+  height: 560px;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.shot .sidebar,
+.shot .right-panel {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
-.shot-vault svg {
+.shot .sidebar {
+  border-right: 1px solid var(--border);
+  padding: 14px 10px 0;
+}
+
+.shot .right-panel {
+  border-left: 1px solid var(--border);
+}
+
+.shot .panel-split {
+  flex: 1 1 50%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 12px;
+}
+
+.shot .panel-split + .panel-split {
+  border-top: 1px solid var(--border);
+}
+
+.shot .main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* shared bits --------------------------------------------------------------- */
+
+.shot .note-mark,
+.shot .section-mark svg,
+.shot .pick-mark svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--type-color);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.shot .badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.shot .badge svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.shot .badge {
+  background: var(--type-soft);
+  color: var(--type-color);
+}
+
+.shot .badge.prompt {
+  background: var(--prompt-soft);
+  color: var(--prompt);
+}
+
+.shot .badge.idea {
+  background: var(--idea-soft);
+  color: var(--idea);
+}
+
+.shot .provider-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 4px;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+.shot .provider-icon .provider-fallback {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.shot .provider-icon svg {
+  display: block;
+}
+
+/* sidebar -------------------------------------------------------------------- */
+
+.shot .search-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 10px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel-2);
+}
+
+.shot kbd {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.shot .sections {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shot .section {
+  margin-bottom: 18px;
+}
+
+.shot .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.shot .count {
+  opacity: 0.6;
+  margin-left: 2px;
+}
+
+.shot .icon-button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.shot .section-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--type-color);
+}
+
+.shot .note-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shot .note-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shot .note-item.active {
+  background: var(--type-soft);
+  color: var(--type-color);
+  box-shadow: inset 2px 0 0 var(--type-color);
+}
+
+.shot .collection-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  font-weight: 500;
+}
+
+.shot .collection-head.active {
+  background: var(--type-soft);
+  color: var(--type-color);
+  box-shadow: inset 2px 0 0 var(--type-color);
+}
+
+.shot .collection-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shot .model-stack {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.shot .model-stack-item {
+  display: flex;
+  margin-left: -4px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 1.5px var(--panel);
+}
+
+.shot .model-stack-item:first-child {
+  margin-left: 0;
+}
+
+.shot .collection-head.active .model-stack-item {
+  box-shadow: 0 0 0 1.5px var(--panel-2);
+}
+
+.shot .model-stack-more {
+  margin-left: 3px;
+  padding: 0 5px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.shot .vault-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.shot .vault-path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.shot .vault-shield {
   flex: none;
   width: 13px;
   height: 13px;
@@ -252,224 +386,295 @@
   stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+  opacity: 0.9;
 }
 
-/* main -------------------------------------------------------------------- */
+/* collection page ------------------------------------------------------------- */
 
-.shot-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.shot-titlebar {
+.shot .title-bar {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 13px 18px 11px;
+  gap: 10px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--border);
 }
 
-.shot-titlebar h4 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.shot-badge {
-  padding: 1px 7px;
-  border-radius: 20px;
-  border: 1px solid var(--type-color);
-  color: var(--type-color);
-  background: var(--type-soft);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.shot-content {
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.shot .title-input {
+  flex: 1;
   min-width: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-/* A prompt card, as shown inside a collection. */
-.shot-card {
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--panel);
-  padding: 11px 13px;
+.shot .save-state {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.shot .cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 24px 40px;
+}
+
+.shot .cards-head {
   display: flex;
-  flex-direction: column;
-  gap: 7px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 
-.shot-card-head {
+.shot .cards-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.shot-card-index {
-  width: 17px;
-  height: 17px;
+.shot .cards-actions .secondary {
+  padding: 5px 10px;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.shot .card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 90ch;
+}
+
+.shot .card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px 12px;
+}
+
+.shot .card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.shot .card-index {
   flex: none;
+  width: 19px;
+  height: 19px;
   display: grid;
   place-items: center;
+  font-size: 10.5px;
+  color: var(--type-color);
+  background: var(--type-soft);
   border-radius: 5px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 600;
 }
 
-.shot-card-title {
-  font-size: 12.5px;
-  font-weight: 560;
-  white-space: nowrap;
+.shot .card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.shot-model {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px 2px 3px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--panel-2);
-  font-size: 10.5px;
-  color: var(--muted);
   white-space: nowrap;
 }
 
-.shot-card-body {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.62;
+.shot .card-copy {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
   color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.shot .card-copy svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.shot .card-body {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.shot-tags {
+.shot .card-tags {
+  list-style: none;
   display: flex;
   flex-wrap: wrap;
+  gap: 4px;
+  margin: 9px 0 0;
+  padding: 0;
+}
+
+.shot .card-tags li {
+  display: inline-flex;
+}
+
+.shot .card-tags li.is-model {
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--type-color);
+  background: var(--type-soft);
+  border: 1px solid transparent;
 }
 
-.shot-tag {
-  padding: 1px 7px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  font-size: 10px;
-  color: var(--muted);
-}
-
-/* An idea bubble, with the model that block is aimed at. */
-.shot-bubble {
-  border: 1px solid var(--border);
-  border-left: 2px solid var(--idea);
-  border-radius: 0 9px 9px 0;
-  background: var(--panel);
-  padding: 10px 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.shot-bubble-head {
-  display: flex;
+.shot .tag-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  font-weight: 560;
-}
-
-.shot-bubble p {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.shot-heat {
-  height: 3px;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--idea) var(--heat, 40%), var(--border) var(--heat, 40%));
-}
-
-/* right panel ------------------------------------------------------------- */
-
-.shot-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 12px 12px;
-  background: var(--panel);
-  border-left: 1px solid var(--border);
-  min-width: 0;
-}
-
-.shot-panel-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 7px;
+  gap: 3px;
+  padding: 2px 4px 2px 8px;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
 }
 
-.shot-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* right panel ------------------------------------------------------------------ */
+
+.shot .panel-section .section-header {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.shot .pick-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.shot .meta-list {
+  margin: 0;
+}
+
+.shot .meta-row {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 0;
   font-size: 11.5px;
-}
-
-.shot-meta-row {
-  display: flex;
-  gap: 10px;
   align-items: baseline;
 }
 
-.shot-meta-row dt {
-  width: 58px;
-  flex: none;
+.shot .meta-row dt {
   color: var(--muted);
 }
 
-.shot-meta-row dd {
+.shot .meta-row dd {
   margin: 0;
   min-width: 0;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.shot-toggle {
+.shot .meta-tags {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+
+.shot .meta-tags li {
+  display: inline-flex;
+}
+
+.shot .meta-path {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.shot .model-picker-value {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11.5px;
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
-.shot-check {
+.shot .model-picker-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shot .model-chevron {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.shot .ai-panel {
+  padding-bottom: 6px;
+}
+
+.shot .ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 4px;
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.shot .ai-check {
+  flex: none;
   width: 13px;
   height: 13px;
-  flex: none;
   border-radius: 3px;
   background: var(--accent);
   display: grid;
@@ -479,84 +684,398 @@
   font-weight: 800;
 }
 
-.shot-button {
-  padding: 6px 10px;
+.shot .ai-info {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+
+.shot .ai-tip {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.shot .ai-analyze {
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 7px;
-  background: var(--panel-2);
-  color: var(--text);
-  font-size: 11.5px;
   text-align: center;
 }
 
-.shot-fit {
+.shot .ai-result {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shot .ai-fit {
+  margin: 0;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shot .ai-fit-good {
   color: var(--idea);
 }
 
-.shot-panel ul.shot-bullets {
+.shot .ai-result-head {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.shot .ai-list {
   margin: 0;
-  padding-left: 15px;
+  padding-left: 14px;
   display: flex;
   flex-direction: column;
   gap: 3px;
   font-size: 11px;
+  line-height: 1.5;
   color: var(--text);
 }
 
-.shot-panel .shot-sub {
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.5;
-}
+/* idea editor ------------------------------------------------------------------ */
 
-/* command palette --------------------------------------------------------- */
-
-.shot-palette {
-  padding: 26px 18px 30px;
+.shot > .idea {
+  position: relative;
+  min-height: 320px;
   background: var(--bg);
-  display: grid;
-  place-items: start center;
 }
 
-.shot-palette-box {
-  width: min(100%, 460px);
-  border: 1px solid var(--border);
-  border-radius: 11px;
+.shot .idea-editor {
+  padding: 14px 12px 22px 22px;
+}
+
+.shot .bubble + .bubble,
+.shot .bubble-menu-slot + .bubble {
+  margin-top: 14px;
+}
+
+.shot .cm-para {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.shot .cm-para.first {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  padding-top: 5px;
+}
+
+.shot .cm-para.last {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  padding-bottom: 5px;
+}
+
+.shot .cm-para.first.cm-bubble-header {
+  background: rgba(255, 255, 255, 0.045);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.shot .cm-heading2 {
+  font-size: 1.05em;
+  font-weight: 600;
+}
+
+.shot .cm-para p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* The bubble under the cursor: `.cm-para-hover` from Editor.tsx, tinted with
+   the note's type colour the way the app tints it with the first tag's. */
+.shot .bubble.is-hovered .cm-para {
+  background: color-mix(in srgb, var(--type-color) 9%, transparent);
+  border-left-color: rgba(255, 255, 255, 0.18);
+  border-right-color: rgba(255, 255, 255, 0.18);
+}
+
+.shot .bubble.is-hovered .cm-para.first {
+  border-top-color: rgba(255, 255, 255, 0.18);
+}
+
+.shot .bubble.is-hovered .cm-para.last {
+  border-bottom-color: rgba(255, 255, 255, 0.18);
+}
+
+/* In the app the menu floats over the note, anchored to the hovered bubble. In
+   a still it earns its keep only if nothing is hidden behind it, so the shot
+   lays it out in the gap above that bubble instead of overlapping the one
+   before it. */
+.shot .bubble-menu-slot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.shot .bubble-model-menu {
+  width: 230px;
+  padding: 6px;
   background: var(--panel);
-  overflow: hidden;
-  box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
-.shot-palette-input {
+.shot .bubble-model-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  gap: 6px;
 }
 
-.shot-caret {
-  width: 1px;
-  height: 14px;
-  background: var(--accent);
+.shot .bubble-model-row .model-picker-value {
+  flex: 1;
+  min-width: 0;
 }
 
-.shot-hit {
+.shot .bubble-model-copy {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.shot .bubble-model-copy svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* model picker ------------------------------------------------------------------ */
+
+.shot > .picker {
+  padding: 20px 22px 26px;
+  background: var(--bg);
+}
+
+.shot .picker-note {
+  max-width: 340px;
+}
+
+.shot .picker-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 8px 14px;
-  font-size: 12.5px;
+  margin-bottom: 14px;
 }
 
-.shot-hit.active {
+.shot .picker-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.shot .picker-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* The app anchors the list absolutely under the closed control; the shot lets it
+   sit in flow so the figure is exactly as tall as its contents. */
+.shot .model-picker {
+  position: relative;
+}
+
+.shot .model-picker-value.is-open {
+  border-color: var(--accent);
+}
+
+.shot .model-chevron.up {
+  transform: rotate(180deg);
+}
+
+.shot .model-options {
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.shot .model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.shot .model-option.active {
   background: var(--accent-soft);
 }
 
-.shot-hit em {
+.shot .model-option-name {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shot .model-option-name strong,
+.shot .model-option-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shot .model-option-name strong {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.shot .model-option-name small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.shot .model-capabilities {
+  flex: none;
+  text-align: right;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* search palette ---------------------------------------------------------------- */
+
+.shot > .search {
+  position: relative;
+  height: 320px;
+  background: var(--bg);
+}
+
+.shot .search .overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  /* The app sizes the palette against the whole window; this mock is a short
+     window, so the offsets are fixed pixels here. */
+  padding-top: 24px;
+}
+
+.shot .palette {
+  width: min(520px, 92%);
+  max-height: 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.shot .palette-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 16px;
+  font-size: 15px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.shot .palette-caret {
+  width: 1px;
+  height: 16px;
+  background: var(--accent);
+}
+
+.shot .palette-results {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.shot .palette-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.shot .palette-item.selected {
+  background: var(--accent-soft);
+}
+
+.shot .palette-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.shot .palette-title > span {
+  white-space: nowrap;
+}
+
+.shot .palette-title .palette-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shot .palette-snippet {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The match is highlighted in the snippet, not the title. */
+.shot .palette-snippet .em {
   font-style: normal;
   color: var(--accent);
   background: var(--accent-soft);
@@ -564,16 +1083,12 @@
   padding: 0 2px;
 }
 
-.shot-hit .snippet {
-  font-size: 11.5px;
+.shot .palette-kbd {
+  margin-left: auto;
   color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
-/* caption ----------------------------------------------------------------- */
+/* captions ---------------------------------------------------------------------- */
 
 figure.shot-figure {
   margin: 0;
@@ -585,4 +1100,16 @@ figure.shot-figure {
 figure.shot-figure figcaption {
   font-size: 13px;
   color: var(--muted);
+}
+
+/* Kept last so it overrides the base shell rules above. */
+@media (max-width: 900px) {
+  .shot .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shot .sidebar,
+  .shot .right-panel {
+    display: none;
+  }
 }

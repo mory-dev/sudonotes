@@ -1,161 +1,230 @@
 ---
 /**
- * The full window: sidebar, an open collection, and the details panel.
- * Mock data throughout — no real vault is depicted.
+ * The full window: sidebar, an open collection's cards, and the details panel.
+ * Built from the mock vault in data/vault.ts — no real note is depicted.
  */
+import { collections, ideas, loosePrompts, modelInfo, vaultPath } from "../data/vault";
+import { shortModelName } from "../lib/providers";
+import ModelStack from "./preview/ModelStack.astro";
+import NoteMark from "./preview/NoteMark.astro";
+import ProviderIcon from "./preview/ProviderIcon.astro";
+import Shell from "./preview/Shell.astro";
+import TagChip from "./preview/TagChip.astro";
+
 const { caption } = Astro.props;
+
+const open = collections[0];
+const promptCount = collections.reduce((n, c) => n + c.prompts.length, 0) + loosePrompts.length;
+
+function distinctModels(prompts: { model?: string }[]): string[] {
+  const counts = new Map<string, number>();
+  for (const p of prompts) {
+    if (p.model) counts.set(p.model, (counts.get(p.model) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([model]) => model);
+}
+
+const openModels = distinctModels(open.prompts);
+const openModel = modelInfo(openModels[0]);
 ---
 
-<figure class="shot-figure">
-  <div class="shot">
-    <div class="shot-chrome">
-      <div class="shot-dots">
-        <span class="shot-dot"></span><span class="shot-dot"></span><span class="shot-dot"></span>
-      </div>
-      <span class="shot-title">sudonotes — ~/vault</span>
+<Shell bodyClass="app" caption={caption}>
+  <aside class="sidebar">
+    <button class="search-button" tabindex="-1">
+      <span>Search</span><kbd>Ctrl K</kbd>
+    </button>
+
+    <div class="sections">
+      <section class="section" data-type="prompt">
+        <header class="section-header">
+          <span class="section-name">
+            <span class="section-mark"><NoteMark type="prompt" /></span>
+            Prompts <span class="count">{promptCount}</span>
+          </span>
+          <button class="icon-button" tabindex="-1">+</button>
+        </header>
+
+        <ul class="note-list">
+          {
+            collections.map((collection) => {
+              const isOpen = collection.name === open.name;
+              return (
+                <li data-type="prompt">
+                  <div class={isOpen ? "collection-head active" : "collection-head"}>
+                    <span class="collection-name">{collection.name}</span>
+                    <ModelStack models={distinctModels(collection.prompts)} />
+                    <span class="count">{collection.prompts.length}</span>
+                  </div>
+                  {isOpen && (
+                    <ul class="note-list" style="padding-left:14px">
+                      {collection.prompts.map((prompt) => (
+                        <li data-type="prompt">
+                          <span class="note-item">{prompt.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })
+          }
+          {loosePrompts.map((prompt) => (
+            <li data-type="prompt">
+              <span class="note-item">{prompt.title}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section class="section" data-type="idea">
+        <header class="section-header">
+          <span class="section-name">
+            <span class="section-mark"><NoteMark type="idea" /></span>
+            Ideas <span class="count">{ideas.length}</span>
+          </span>
+          <button class="icon-button" tabindex="-1">+</button>
+        </header>
+        <ul class="note-list">
+          {ideas.map((idea) => (
+            <li data-type="idea">
+              <span class="note-item">{idea.title}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
 
-    <div class="shot-body">
-      <aside class="shot-side">
-        <div class="shot-search"><span>Search</span><kbd>Ctrl K</kbd></div>
+    <footer class="vault-path">
+      <svg class="vault-shield" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 1.5 13.5 3.5v4c0 3.4-2.3 5.9-5.5 7-3.2-1.1-5.5-3.6-5.5-7v-4Z" />
+        <path d="M5.5 8l1.7 1.7 3.3-3.4" />
+      </svg>
+      <span class="vault-path-text">{vaultPath}</span>
+    </footer>
+  </aside>
 
-        <div data-type="prompt">
-          <div class="shot-section-head">
-            <span class="shot-mark filled"></span>Prompts <span class="shot-count">9</span>
-            <span class="shot-plus">+</span>
-          </div>
-          <ul class="shot-list">
-            <li class="shot-group active">
-              <span>Release notes pipeline</span>
-              <span class="shot-stack">
-                <span class="shot-chip chip-ds">D</span>
-                <span class="shot-chip chip-an">A</span>
-                <span class="shot-chip chip-oa">O</span>
-              </span>
-              <span class="shot-count">4</span>
+  <main class="main" data-type="prompt">
+    <header class="title-bar">
+      <span class="badge prompt"><NoteMark type="prompt" />Prompt</span>
+      <span class="title-input">{open.name}</span>
+      <span class="save-state">Saved</span>
+    </header>
+
+    <section class="cards">
+      <header class="cards-head">
+        <span>Prompts in this collection <span class="count">{open.prompts.length}</span></span>
+        <div class="cards-actions">
+          <span class="secondary">+ Add prompt</span>
+          <span class="card-copy" style="align-self:center">Copy all</span>
+        </div>
+      </header>
+
+      <ul class="card-list">
+        {
+          open.prompts.map((prompt, index) => (
+            <li class="card">
+              <header class="card-head">
+                <span class="card-index">{index + 1}</span>
+                <span class="card-title">{prompt.title}</span>
+                <span class="card-copy">Copy</span>
+              </header>
+              <pre class="card-body">{prompt.body}</pre>
+              {(prompt.tags.length > 0 || prompt.model) && (
+                <ul class="card-tags">
+                  {prompt.model && (
+                    <li class="is-model">
+                      <ProviderIcon provider={modelInfo(prompt.model).provider} size={11} />
+                      {shortModelName(modelInfo(prompt.model).name, modelInfo(prompt.model).provider)}
+                    </li>
+                  )}
+                  {prompt.tags.map((tag) => (
+                    <li key={tag}>
+                      <TagChip tag={tag} />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
-            <li class="shot-row nested">Collect merged PRs</li>
-            <li class="shot-row nested">Group by surface</li>
-            <li class="shot-row nested">Draft the changelog</li>
-            <li class="shot-row nested">Tighten to one screen</li>
-            <li class="shot-group">
-              <span>Onboarding emails</span>
-              <span class="shot-stack">
-                <span class="shot-chip chip-gm">G</span>
-                <span class="shot-chip chip-ds">D</span>
-              </span>
-              <span class="shot-count">3</span>
-            </li>
-            <li class="shot-row">Bug triage classifier</li>
-            <li class="shot-row">Schema migration reviewer</li>
-          </ul>
-        </div>
+          ))
+        }
+      </ul>
+    </section>
+  </main>
 
-        <div data-type="idea">
-          <div class="shot-section-head">
-            <span class="shot-mark filled round"></span>Ideas <span class="shot-count">4</span>
-            <span class="shot-plus">+</span>
-          </div>
-          <ul class="shot-list">
-            <li class="shot-row">Offline-first sync design</li>
-            <li class="shot-row">Pricing experiments</li>
-            <li class="shot-row">Landing page angles</li>
-            <li class="shot-row">Eval harness sketch</li>
-          </ul>
-        </div>
-
-        <div class="shot-vault">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 1.5 13.5 3.5v4c0 3.4-2.3 5.9-5.5 7-3.2-1.1-5.5-3.6-5.5-7v-4Z"></path>
-            <path d="M5.5 8l1.7 1.7 3.3-3.4"></path>
-          </svg>
-          <span>~/vault</span>
-        </div>
-      </aside>
-
-      <main class="shot-main" data-type="prompt">
-        <div class="shot-titlebar">
-          <span class="shot-mark filled"></span>
-          <h4>Release notes pipeline</h4>
-          <span class="shot-badge">Prompt</span>
-        </div>
-
-        <div class="shot-content">
-          <article class="shot-card">
-            <div class="shot-card-head">
-              <span class="shot-card-index">1</span>
-              <span class="shot-card-title">Collect merged PRs</span>
-              <span class="shot-model"><span class="shot-chip chip-ds">D</span>deepseek-chat</span>
-            </div>
-            <p class="shot-card-body">List every PR merged since {"{{last_tag}}"}. For each: the
-title, the area it touched, and whether a user would notice. Skip
-dependency bumps and CI-only changes.</p>
-            <div class="shot-tags">
-              <span class="shot-tag">docs</span><span class="shot-tag">workflow</span>
-            </div>
-          </article>
-
-          <article class="shot-card">
-            <div class="shot-card-head">
-              <span class="shot-card-index">2</span>
-              <span class="shot-card-title">Group by surface</span>
-              <span class="shot-model"><span class="shot-chip chip-an">A</span>claude-opus-5</span>
-            </div>
-            <p class="shot-card-body">Cluster the entries into Editor, Search, Sync and Fixes.
-Order each group by how much a user would care, not by merge date.</p>
-            <div class="shot-tags"><span class="shot-tag">product</span></div>
-          </article>
-
-          <article class="shot-card">
-            <div class="shot-card-head">
-              <span class="shot-card-index">3</span>
-              <span class="shot-card-title">Draft the changelog</span>
-              <span class="shot-model"><span class="shot-chip chip-oa">O</span>gpt-5.2</span>
-            </div>
-            <p class="shot-card-body">Write it in the voice of [[Changelog style guide]]. One line
-per entry, present tense, no adjectives.</p>
-            <div class="shot-tags">
-              <span class="shot-tag">docs</span><span class="shot-tag">marketing</span>
-            </div>
-          </article>
-        </div>
-      </main>
-
-      <aside class="shot-panel" data-type="prompt">
-        <div>
-          <div class="shot-panel-head">Linked from <span class="shot-count">2</span></div>
-          <ul class="shot-list">
-            <li class="shot-row" data-type="idea">
-              <span class="shot-mark round"></span>Eval harness sketch
-            </li>
-            <li class="shot-row" data-type="prompt">
-              <span class="shot-mark"></span>Changelog style guide
-            </li>
-          </ul>
-        </div>
-
-        <div>
-          <div class="shot-panel-head">Details</div>
-          <dl class="shot-meta">
-            <div class="shot-meta-row"><dt>Type</dt><dd><span class="shot-badge">Prompt</span></dd></div>
-            <div class="shot-meta-row"><dt>Tags</dt><dd>docs · workflow</dd></div>
-            <div class="shot-meta-row"><dt>Model</dt><dd>deepseek-chat</dd></div>
-            <div class="shot-meta-row"><dt>Updated</dt><dd>Aug 6, 2026</dd></div>
-            <div class="shot-meta-row">
-              <dt>File</dt><dd>prompts/release-notes-pipeline.md</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div>
-          <div class="shot-panel-head">AI assistance</div>
-          <div class="shot-toggle">
-            <span class="shot-check">✓</span><span>Refinements &amp; tagging</span>
-          </div>
-          <p class="shot-sub" style="margin-top:6px">On for this vault. Off by a click.</p>
-        </div>
-      </aside>
+  <aside class="right-panel" data-type="prompt">
+    <div class="panel-split">
+      <section class="panel-section">
+        <header class="section-header">
+          <span>Linked from <span class="count">2</span></span>
+        </header>
+        <ul class="note-list">
+          <li data-type="idea">
+            <span class="note-item">
+              <span class="pick-mark"><NoteMark type="idea" /></span>AI Fridge
+            </span>
+          </li>
+          <li data-type="prompt">
+            <span class="note-item">
+              <span class="pick-mark"><NoteMark type="prompt" /></span>Commit message voice
+            </span>
+          </li>
+        </ul>
+      </section>
     </div>
-  </div>
-  {caption && <figcaption>{caption}</figcaption>}
-</figure>
+
+    <div class="panel-split">
+      <section class="panel-section metadata">
+        <header class="section-header"><span>Details</span></header>
+        <dl class="meta-list">
+          <div class="meta-row">
+            <dt>Type</dt>
+            <dd><span class="badge prompt"><NoteMark type="prompt" />Prompt</span></dd>
+          </div>
+          <div class="meta-row">
+            <dt>Tags</dt>
+            <dd>release · writing</dd>
+          </div>
+          <div class="meta-row">
+            <dt>Model</dt>
+            <dd>
+              <span class="model-picker-value">
+                <ProviderIcon provider={openModel.provider} size={12} />
+                <span class="model-picker-label">
+                  {shortModelName(openModel.name, openModel.provider)}
+                </span>
+                <svg class="model-chevron" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M4 6l4 4 4-4" />
+                </svg>
+              </span>
+            </dd>
+          </div>
+          <div class="meta-row">
+            <dt>Updated</dt>
+            <dd>Aug 6, 2026</dd>
+          </div>
+          <div class="meta-row">
+            <dt>File</dt>
+            <dd>
+              <span class="meta-path">prompts/shipper-prompts.md</span>
+            </dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+
+    <div class="panel-split">
+      <section class="ai-panel panel-section">
+        <header class="section-header">
+          <span>AI assistance</span>
+          <span class="ai-info">?</span>
+        </header>
+        <div class="ai-toggle">
+          <span class="ai-check">✓</span><span>Enable refinements &amp; tagging</span>
+        </div>
+        <p class="ai-tip" style="margin-top:4px">On for this vault. Off by a click.</p>
+      </section>
+    </div>
+  </aside>
+</Shell>

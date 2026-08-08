@@ -1,44 +1,91 @@
 ---
-/** The command palette, mid-query. Mock data. */
+/**
+ * The command palette, mid-query against the mock vault.
+ */
+import { modelInfo } from "../data/vault";
+import NoteMark from "./preview/NoteMark.astro";
+import ProviderIcon from "./preview/ProviderIcon.astro";
+import Shell from "./preview/Shell.astro";
+
 const { caption } = Astro.props;
+
+const QUERY = "changelog";
+
+interface Hit {
+  type: "prompt" | "idea";
+  model?: string;
+  title: string;
+  snippet: string;
+}
+
+/** Split a snippet around the query so the match can be highlighted. */
+function splitAround(snippet: string, query: string): string[] {
+  const lower = snippet.toLowerCase();
+  const at = lower.indexOf(query.toLowerCase());
+  if (at < 0) return [snippet];
+  return [snippet.slice(0, at), snippet.slice(at, at + query.length), snippet.slice(at + query.length)];
+}
+
+const hits: Hit[] = [
+  {
+    type: "prompt",
+    model: "deepseek/deepseek-v4",
+    title: "Changelog entry",
+    snippet: "One line per entry, present tense, no adjectives.",
+  },
+  {
+    type: "prompt",
+    model: "anthropic/claude-opus-5",
+    title: "Release notes from a diff",
+    snippet: "Longer than the changelog, and written for people who use the app.",
+  },
+  {
+    type: "prompt",
+    title: "Commit message voice",
+    snippet: "Imperative mood, lowercase subject, under 60 characters.",
+  },
+  {
+    type: "idea",
+    model: "google/gemini-3-pro",
+    title: "AI Fridge",
+    snippet: "Ship the shelf-life model behind a flag, then write the changelog once it holds.",
+  },
+];
 ---
 
-<figure class="shot-figure">
-  <div class="shot">
-    <div class="shot-chrome">
-      <div class="shot-dots">
-        <span class="shot-dot"></span><span class="shot-dot"></span><span class="shot-dot"></span>
+<Shell bodyClass="search" caption={caption}>
+  <div class="overlay">
+    <div class="palette">
+      <div class="palette-input">
+        <span>{QUERY}</span><span class="palette-caret"></span>
+        <kbd class="palette-kbd">Ctrl K</kbd>
       </div>
-      <span class="shot-title">Ctrl K</span>
-    </div>
-
-    <div class="shot-palette">
-      <div class="shot-palette-box">
-        <div class="shot-palette-input">
-          <span>changelog</span><span class="shot-caret"></span>
-        </div>
-        <div class="shot-hit active" data-type="prompt">
-          <span class="shot-mark"></span>
-          <span>Draft the changelog</span>
-          <span class="snippet">Write it in the voice of the <em>changelog</em> style guide…</span>
-        </div>
-        <div class="shot-hit" data-type="prompt">
-          <span class="shot-mark"></span>
-          <span>Changelog style guide</span>
-          <span class="snippet">One line per entry, present tense, no adjectives…</span>
-        </div>
-        <div class="shot-hit" data-type="idea">
-          <span class="shot-mark round"></span>
-          <span>Release ritual</span>
-          <span class="snippet">Tag, then the <em>changelog</em>, then the announcement…</span>
-        </div>
-        <div class="shot-hit" data-type="prompt">
-          <span class="shot-mark"></span>
-          <span>Group by surface</span>
-          <span class="snippet">Cluster entries into Editor, Search, Sync and Fixes…</span>
-        </div>
-      </div>
+      <ul class="palette-results">
+        {
+          hits.map((hit, index) => {
+            const [before, match, after] = splitAround(hit.snippet, QUERY);
+            const model = hit.model ? modelInfo(hit.model) : null;
+            return (
+              <li data-type={hit.type}>
+                <span class={index === 0 ? "palette-item selected" : "palette-item"}>
+                  <span class="palette-title">
+                    <span class="pick-mark">
+                      <NoteMark type={hit.type} />
+                    </span>
+                    <span class="palette-name">{hit.title}</span>
+                    {model && <ProviderIcon provider={model.provider} size={12} />}
+                  </span>
+                  <span class="palette-snippet">
+                    {before}
+                    {match && <em class="em">{match}</em>}
+                    {after}
+                  </span>
+                </span>
+              </li>
+            );
+          })
+        }
+      </ul>
     </div>
   </div>
-  {caption && <figcaption>{caption}</figcaption>}
-</figure>
+</Shell>
