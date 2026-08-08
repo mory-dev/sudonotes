@@ -36,5 +36,5 @@ const { bodyClass = "app", caption } = Astro.props;
       <slot />
     </div>
   </div>
-  {caption && <figcaption>{caption}</figcaption>}
+  {caption && <figcaption class="preview-caption">{caption}</figcaption>}
 </figure>

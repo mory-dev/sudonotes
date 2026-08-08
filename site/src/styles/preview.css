@@ -1097,11 +1097,6 @@ figure.shot-figure {
   gap: 10px;
 }
 
-figure.shot-figure figcaption {
-  font-size: 13px;
-  color: var(--muted);
-}
-
 /* Kept last so it overrides the base shell rules above. */
 @media (max-width: 900px) {
   .shot .app {

@@ -59,7 +59,7 @@ const blobLines = [100, 82, 94, 61, 88, 44];
       }
     </ol>
   </div>
-  {caption && <figcaption>{caption}</figcaption>}
+  {caption && <figcaption class="preview-caption">{caption}</figcaption>}
 </figure>
 
 <style>
@@ -69,12 +69,6 @@ const blobLines = [100, 82, 94, 61, 88, 44];
     flex-direction: column;
     gap: 12px;
     text-align: left;
-  }
-
-  .chain-figure figcaption {
-    font-size: 13px;
-    color: var(--muted);
-    text-align: center;
   }
 
   .chain {

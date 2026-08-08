@@ -157,6 +157,40 @@ hr {
   color: var(--muted);
 }
 
+/* A quiet annotation under product previews. The short rules make captions
+   feel deliberately attached to the visual without giving them badge weight. */
+.preview-caption {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: min(100%, 72ch);
+  font-size: 11.5px;
+  font-weight: 450;
+  line-height: 1.5;
+  letter-spacing: 0.012em;
+  color: var(--muted);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.preview-caption::before,
+.preview-caption::after {
+  content: "";
+  flex: 0 0 20px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--muted) 32%, transparent)
+  );
+}
+
+.preview-caption::after {
+  transform: rotate(180deg);
+}
+
 section.band {
   padding-block: clamp(56px, 9vw, 104px);
 }

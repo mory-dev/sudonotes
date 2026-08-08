@@ -54,7 +54,7 @@ const idea = ideas[1]; // "AI Fridge"
       }
     </ul>
   </div>
-  {caption && <figcaption>{caption}</figcaption>}
+  {caption && <figcaption class="preview-caption">{caption}</figcaption>}
 </figure>
 
 <style>
@@ -63,11 +63,6 @@ const idea = ideas[1]; // "AI Fridge"
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .bubbles-figure figcaption {
-    font-size: 13px;
-    color: var(--muted);
   }
 
   /* Every connector is drawn from these two numbers: `--node-h` is the fixed
