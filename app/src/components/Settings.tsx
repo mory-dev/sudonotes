@@ -1,7 +1,108 @@
 import { useEffect, useState } from "react";
 
-import { api } from "../api";
+import { api, type BackupSettings } from "../api";
 import { useStore } from "../store";
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatWhen(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+/** Compressed snapshots of the vault, kept outside it.
+ *
+ *  The whole point is surviving the vault folder being lost, so the archives go
+ *  to the app's data directory. Nothing here writes into the vault. */
+function BackupSection() {
+  const setError = useStore((s) => s.setError);
+  const setNotice = useStore((s) => s.setNotice);
+  const hasVault = useStore((s) => !!s.vaultPath);
+
+  const [state, setState] = useState<BackupSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .backupState()
+      .then(setState)
+      .catch(() => setState(null));
+  }, []);
+
+  const toggle = async (enabled: boolean) => {
+    try {
+      setState(await api.setBackupEnabled(enabled));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const runNow = async () => {
+    setBusy(true);
+    try {
+      const info = await api.backupNow();
+      setNotice(`Backed up ${info.notes} notes (${formatBytes(info.bytes)}).`);
+      setState(await api.backupState());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!state) return null;
+
+  return (
+    <section className="settings-section">
+      <h3>Backups</h3>
+      <label className="ai-toggle">
+        <input
+          type="checkbox"
+          checked={state.enabled}
+          onChange={(event) => void toggle(event.target.checked)}
+        />
+        <span>Snapshot this vault automatically</span>
+      </label>
+      <p className="ai-tip">
+        A compressed <code>.bak</code> of every note, written to the app's own folder — outside
+        the vault, so losing the vault does not lose these. It is a ZIP: rename it to{" "}
+        <code>.zip</code> to open it. Runs at most every few hours, and the twenty most recent
+        are kept.
+      </p>
+
+      <dl className="settings-meta">
+        <div className="meta-row">
+          <dt>Last</dt>
+          <dd>
+            {state.last
+              ? `${formatWhen(state.last.created)} · ${formatBytes(state.last.bytes)}`
+              : "None yet"}
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Folder</dt>
+          <dd>
+            <span className="meta-path" data-tooltip={state.directory}>
+              {state.directory}
+            </span>
+          </dd>
+        </div>
+      </dl>
+
+      <button className="ai-analyze" onClick={() => void runNow()} disabled={busy || !hasVault}>
+        {busy ? "Backing up…" : "Back up now"}
+      </button>
+    </section>
+  );
+}
 
 /** Application settings, opened from the status bar's cog.
  *
@@ -70,6 +171,8 @@ export function Settings() {
             with it off, tagging falls back to a local keyword pass.
           </p>
         </section>
+
+        <BackupSection />
 
         <section className="settings-section">
           <h3>About</h3>

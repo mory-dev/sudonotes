@@ -1,5 +1,6 @@
 ﻿mod index;
 mod ai;
+mod backup;
 mod models;
 mod note;
 mod project;
@@ -131,6 +132,21 @@ fn open_vault(path: String, app: tauri::AppHandle, state: State<AppState>) -> Re
     let watcher = watcher::spawn(app.clone(), vault.root.clone())
         .map_err(|e| eprintln!("could not watch vault: {e}"))
         .ok();
+
+    // A snapshot on open, at most once every few hours. Off the main path in a
+    // thread: the user asked to open a vault, not to wait for an archive, and a
+    // backup that fails must never be the reason a vault will not open.
+    if let Ok(dir) = backup_dir(&app) {
+        let root = vault.root.clone();
+        std::thread::spawn(move || match Vault::open(root) {
+            Ok(snapshot) => {
+                if let Some(info) = backup::create_if_due(&snapshot, &dir) {
+                    eprintln!("backed up {} notes to {}", info.notes, info.path);
+                }
+            }
+            Err(e) => eprintln!("could not back up vault: {e}"),
+        });
+    }
 
     *state.open.lock().map_err(|e| err("vault lock poisoned", e))? = Some(OpenVault {
         vault,
@@ -942,6 +958,43 @@ fn reorder_notes(ordered: Vec<String>, state: State<AppState>) -> Result<()> {
     })
 }
 
+/// Where vault snapshots live: the app's own data directory, deliberately not
+/// inside the vault, so deleting the vault folder does not take them along.
+fn backup_dir(app: &tauri::AppHandle) -> std::result::Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("backups"))
+        .map_err(|e| format!("no app data directory: {e}"))
+}
+
+fn backup_state_for(app: &tauri::AppHandle) -> Result<backup::BackupSettings> {
+    let dir = backup_dir(app)?;
+    Ok(backup::BackupSettings {
+        enabled: backup::enabled(&dir),
+        directory: dir.display().to_string(),
+        last: backup::list(&dir).into_iter().next(),
+    })
+}
+
+#[tauri::command]
+fn backup_state(app: tauri::AppHandle) -> Result<backup::BackupSettings> {
+    backup_state_for(&app)
+}
+
+#[tauri::command]
+fn set_backup_enabled(enabled: bool, app: tauri::AppHandle) -> Result<backup::BackupSettings> {
+    let dir = backup_dir(&app)?;
+    backup::set_enabled(&dir, enabled)?;
+    backup_state_for(&app)
+}
+
+/// Snapshot the open vault now, whatever the schedule says.
+#[tauri::command]
+fn backup_now(app: tauri::AppHandle, state: State<AppState>) -> Result<backup::BackupInfo> {
+    let dir = backup_dir(&app)?;
+    with_vault(&state, |open| Ok(backup::create(&open.vault, &dir)?))
+}
+
 #[tauri::command]
 fn write_note(id: String, body: String, state: State<AppState>) -> Result<()> {
     save(&state, &id, |note| note.body = body)
@@ -1401,6 +1454,9 @@ pub fn run() {
             create_child,
             reorder_children,
             reorder_notes,
+            backup_state,
+            set_backup_enabled,
+            backup_now,
             write_note,
             update_model,
             set_bubble_model,

@@ -102,6 +102,22 @@ export interface AnalysisResult {
   alternatives: string[];
 }
 
+/** One vault snapshot on disk. */
+export interface BackupInfo {
+  path: string;
+  created: string;
+  bytes: number;
+  /** Only known for a backup this session wrote; 0 when listed from disk. */
+  notes: number;
+}
+
+export interface BackupSettings {
+  enabled: boolean;
+  /** Where archives are written — outside the vault, so it can be shown. */
+  directory: string;
+  last: BackupInfo | null;
+}
+
 export interface SearchHit {
   id: string;
   title: string;
@@ -143,6 +159,11 @@ export const api = {
   /** Apply a new order to the top level of a section. A collection is ordered
    *  by its own parent note, so buckets and loose notes share one list. */
   reorderNotes: (ordered: string[]) => invoke<void>("reorder_notes", { ordered }),
+  backupState: () => invoke<BackupSettings>("backup_state"),
+  setBackupEnabled: (enabled: boolean) =>
+    invoke<BackupSettings>("set_backup_enabled", { enabled }),
+  /** Snapshot the open vault now, whatever the schedule says. */
+  backupNow: () => invoke<BackupInfo>("backup_now"),
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),
