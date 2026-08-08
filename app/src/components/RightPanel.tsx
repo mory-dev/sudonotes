@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { useStore } from "../store";
-import { AiPanel } from "./AiPanel";
+import { AiReview } from "./AiReview";
 import { ModelPicker } from "./ModelPicker";
 import { IdeaMark, PromptMark, TypeBadge } from "./NoteMarks";
 import { ProjectLink } from "./ProjectLink";
@@ -234,9 +234,7 @@ export function RightPanel() {
         {isIdea && <ProjectLink />}
         <Variables />
         <Metadata />
-      </div>
-      <div className="panel-split">
-        <AiPanel />
+        <AiReview />
       </div>
     </aside>
   );

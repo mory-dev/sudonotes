@@ -101,6 +101,8 @@ interface AppState {
   paletteQuery: string;
   /** A pending styled confirmation, shown as a modal instead of a native dialog. */
   confirm: DialogRequest | null;
+  /** Whether the settings dialog, opened from the status bar, is showing. */
+  settingsOpen: boolean;
   /** Right-click menu position in the editor, or null when closed. */
   menuAt: { x: number; y: number; hasSelection: boolean; link: string | null } | null;
   linkPickerOpen: boolean;
@@ -164,6 +166,7 @@ interface AppState {
   setPalette: (open: boolean) => void;
   /** Open the search palette pre-filled with a query (from a clicked tag). */
   openPalette: (query: string) => void;
+  setSettings: (open: boolean) => void;
   requestConfirm: (message: string, onConfirm: () => void, confirmLabel?: string) => void;
   requestChoice: (request: DialogRequest) => void;
   cancelConfirm: () => void;
@@ -197,6 +200,7 @@ export const useStore = create<AppState>((set, get) => ({
   paletteOpen: false,
   paletteQuery: "",
   confirm: null,
+  settingsOpen: false,
   menuAt: null,
   linkPickerOpen: false,
   insertLink: null,
@@ -248,6 +252,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setPalette: (paletteOpen) => set({ paletteOpen, paletteQuery: paletteOpen ? get().paletteQuery : "" }),
   openPalette: (query) => set({ paletteOpen: true, paletteQuery: query }),
+  setSettings: (settingsOpen) => set({ settingsOpen }),
   requestConfirm: (message, onConfirm, confirmLabel = "Confirm") =>
     set({
       confirm: {

@@ -10,9 +10,11 @@ import { NotePicker } from "./components/NotePicker";
 import { PromptCards } from "./components/PromptCards";
 import { RightPanel } from "./components/RightPanel";
 import { SearchPalette } from "./components/SearchPalette";
+import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Splash } from "./components/Splash";
 import { SplitPreview } from "./components/SplitPreview";
+import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import { TooltipLayer } from "./components/TooltipLayer";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -186,6 +188,7 @@ export default function App() {
         )}
       </main>
       {active && <RightPanel />}
+      <StatusBar />
     </div>
   );
 
@@ -199,6 +202,7 @@ export default function App() {
       <ContextMenu />
       <NotePicker />
       <ConfirmDialog />
+      <Settings />
       <TooltipLayer />
 
       {error && (
