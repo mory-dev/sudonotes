@@ -28,7 +28,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2QzNFQjExMDJDMkJENkQ\nUldSdHZjSUNFZXZEbHU0bDg2aktvYkp6QjAreDRzNVg2KzAvYVdxTmowdTMyak5hUFJ5NnNoVmgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2QzNFQjExMDJDMkJENkQKUldSdHZjSUNFZXZEbHU0bDg2aktvYkp6QjAreDRzNVg2KzAvYVdxTmowdTMyak5hUFJ5NnNoVmgK",
       "endpoints": [
         "https://github.com/mory-dev/sudonotes/releases/latest/download/latest.json"
       ],
@@ -40,6 +40,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "windows": {
       "signCommand": {
         "cmd": "cmd",
