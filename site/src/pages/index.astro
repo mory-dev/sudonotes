@@ -25,7 +25,7 @@ const APP_URL =
 >
   <section class="hero page">
     <div class="wordmark" aria-hidden="true">
-      <span class="wordmark-prompt">$</span>
+      <span class="wordmark-prompt"></span>
       <span class="wordmark-word">sudonotes</span>
       <span class="wordmark-caret"></span>
     </div>
@@ -385,8 +385,12 @@ const APP_URL =
   }
 
   .wordmark-prompt {
-    color: var(--accent);
+    flex: none;
+    width: 0.34em;
+    height: 0.34em;
     margin-right: 8px;
+    border-radius: 50%;
+    background: var(--accent);
   }
 
   /* The silver sits on --text-2 rather than --muted: a lighter base narrows the

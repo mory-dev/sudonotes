@@ -197,8 +197,12 @@ section.band.alt {
 }
 
 .brand-mark {
-  color: var(--accent);
-  margin-right: 5px;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .brand-word {
