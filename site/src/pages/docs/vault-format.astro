@@ -6,6 +6,7 @@ import Base from "../../layouts/Base.astro";
   title="Vault format — sudonotes docs"
   description="A sudonotes vault is a directory of Markdown files with a small YAML header. Here is the exact layout, the frontmatter fields, and what is safe to delete."
   type="article"
+  breadcrumbs={[{ label: "Docs", href: "/docs" }, { label: "Vault format" }]}
 >
   <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
     <p class="eyebrow">Docs</p>
@@ -59,7 +60,7 @@ One line per entry, present tense, no adjectives.</code></pre>
           <tr><td><strong>model</strong></td><td>The model this prompt targets, if any.</td></tr>
           <tr><td><strong>models</strong></td><td>On ideas: a per-bubble map from the bubble's first line to a model.</td></tr>
           <tr><td><strong>position</strong></td><td>Order within a collection.</td></tr>
-          <tr><td><strong>project</strong></td><td>The project folder a linked idea mirrors into.</td></tr>
+          <tr><td><strong>project</strong></td><td>The project folder a linked idea mirrors into. See how to <a href="/docs/project-linking">link project ideas through <code>IDEAS.md</code></a>.</td></tr>
           <tr><td><strong>created</strong> / <strong>updated</strong></td><td>RFC 3339 timestamps.</td></tr>
         </tbody>
       </table>

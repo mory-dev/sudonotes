@@ -2,6 +2,8 @@
 
 A lightweight, local-first notebook for **prompts** and **ideas**.
 
+[Website](https://sudonotes.com) · [Documentation](https://sudonotes.com/docs) · [Download](https://sudonotes.com/download)
+
 LLM prompts end up scattered across chat histories, scratch files, and half-abandoned Notion pages. They get rewritten from scratch instead of refined. sudonotes keeps them in one place, links them to the ideas that motivated them, and finds them again instantly.
 
 - **Local-first.** Your notes are plain Markdown files in a folder you choose. No account, no sync, no lock-in.
@@ -11,6 +13,19 @@ LLM prompts end up scattered across chat histories, scratch files, and half-aban
 - **Open source.** MIT.
 
 AI assistance can analyze prompt/model fit, suggest refinements, and add tags. It is on by default and needs no API key of your own — requests go through the sudonotes API, which holds the provider key. Enabling it sends the note's content to that service; turn it off in the app and tagging falls back to a local keyword pass. Note bodies are never logged.
+
+## Project linking and IDEAS.md
+
+Link an idea to a software project and sudonotes mirrors it to `IDEAS.md` in
+the project root. The vault note remains the canonical copy, and every save
+refreshes the mirror so people and local coding agents can find the context next
+to the code.
+
+In a Git repository, sudonotes adds `IDEAS.md` to `.gitignore`. If the project
+already has that file, the app asks whether to import it into the idea or replace
+it instead of silently overwriting it.
+
+[Read the project-linking and IDEAS.md guide](https://sudonotes.com/docs/project-linking/).
 
 ## Vault layout
 

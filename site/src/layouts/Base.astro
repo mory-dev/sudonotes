@@ -8,9 +8,19 @@ interface Props {
   description: string;
   /** Set on article-ish pages so the JSON-LD describes the right thing. */
   type?: "website" | "article";
+  /** Product pages also describe the desktop application. Every page remains a WebPage. */
+  schema?: "webpage" | "software";
+  /** Visible breadcrumbs are also emitted as BreadcrumbList structured data. */
+  breadcrumbs?: Array<{ label: string; href?: string }>;
 }
 
-const { title, description, type = "website" } = Astro.props;
+const {
+  title,
+  description,
+  type = "website",
+  schema: schemaType = "webpage",
+  breadcrumbs = [],
+} = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
 const og = new URL("/og.png", Astro.site).href;
@@ -24,21 +34,56 @@ const nav = [
   { href: "/download", label: "Download" },
 ];
 
-const schema = {
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  name: "sudonotes",
-  applicationCategory: "DeveloperApplication",
-  operatingSystem: "Windows, macOS, Linux",
-  description:
-    "Organize the AI prompts you keep rewriting and the ideas behind them. Plain Markdown in a folder you own. Free, MIT licensed, no account.",
-  url: "https://sudonotes.com",
-  image: "https://sudonotes.com/og.png",
-  sameAs: ["https://github.com/mory-dev/sudonotes"],
-  license: "https://opensource.org/licenses/MIT",
-  isAccessibleForFree: true,
-  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-};
+const websiteId = "https://sudonotes.com/#website";
+const graph: Record<string, unknown>[] = [
+  {
+    "@type": "WebSite",
+    "@id": websiteId,
+    name: "sudonotes",
+    url: "https://sudonotes.com",
+  },
+  {
+    "@type": "WebPage",
+    "@id": `${canonical}#webpage`,
+    name: title,
+    description,
+    url: canonical,
+    isPartOf: { "@id": websiteId },
+    primaryImageOfPage: { "@type": "ImageObject", url: og },
+  },
+];
+
+if (schemaType === "software") {
+  graph.push({
+    "@type": "SoftwareApplication",
+    "@id": "https://sudonotes.com/#software",
+    name: "sudonotes",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Windows, macOS, Linux",
+    description:
+      "Organize the AI prompts you keep rewriting and the ideas behind them. Plain Markdown in a folder you own. Free, MIT licensed, no account.",
+    url: "https://sudonotes.com",
+    image: og,
+    sameAs: ["https://github.com/mory-dev/sudonotes"],
+    license: "https://opensource.org/licenses/MIT",
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  });
+}
+
+if (breadcrumbs.length > 0) {
+  graph.push({
+    "@type": "BreadcrumbList",
+    itemListElement: breadcrumbs.map((crumb, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: crumb.label,
+      item: crumb.href ? new URL(crumb.href, Astro.site).href : canonical,
+    })),
+  });
+}
+
+const structuredData = { "@context": "https://schema.org", "@graph": graph };
 ---
 
 <html lang="en">
@@ -68,7 +113,7 @@ const schema = {
     <meta name="twitter:image" content={og} />
 
     <meta name="generator" content={Astro.generator} />
-    <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+    <script type="application/ld+json" set:html={JSON.stringify(structuredData)} />
 
     <!-- Self-hosted faces, emitted at build time by experimental.fonts. -->
     <Font cssVariable="--font-ui" preload={true} />
@@ -101,6 +146,26 @@ const schema = {
     </nav>
 
     <main id="main">
+      {
+        breadcrumbs.length > 0 && (
+          <nav class="breadcrumbs page" aria-label="Breadcrumb">
+            <ol>
+              {breadcrumbs.map((crumb, index) => {
+                const current = index === breadcrumbs.length - 1;
+                return (
+                  <li>
+                    {crumb.href && !current ? (
+                      <a href={crumb.href}>{crumb.label}</a>
+                    ) : (
+                      <span aria-current={current ? "page" : undefined}>{crumb.label}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+        )
+      }
       <slot />
     </main>
 

@@ -1,0 +1,115 @@
+---
+import Base from "../../layouts/Base.astro";
+---
+
+<Base
+  title="IDEAS.md for AI coding projects — sudonotes docs"
+  description="Link a sudonotes idea to a software project, mirror it to IDEAS.md, keep it gitignored, and give local coding agents useful project context."
+  type="article"
+  breadcrumbs={[{ label: "Docs", href: "/docs" }, { label: "Project linking" }]}
+>
+  <article class="page prose project-guide">
+    <p class="eyebrow">Project linking</p>
+    <h1>Keep project ideas next to the code with IDEAS.md</h1>
+    <p class="lede">
+      Link an idea to a software project and sudonotes keeps a plain Markdown mirror at the project
+      root. Your idea stays searchable in the vault while local coding agents can read its context
+      where they are already working.
+    </p>
+
+    <div class="note">
+      <strong><code>IDEAS.md</code> is a sudonotes convention, not an industry standard.</strong>
+      The filename is deliberately predictable so people and tools know where to look.
+    </div>
+
+    <h2>Link an idea</h2>
+    <ol>
+      <li>Open an idea in the desktop app.</li>
+      <li>In the <strong>Project</strong> panel, choose <strong>Choose project folder…</strong>.</li>
+      <li>Select the root folder of the software project.</li>
+    </ol>
+
+    <p>
+      sudonotes records the project path in the vault note and writes the current note to
+      <code>IDEAS.md</code>. The vault copy is canonical: every later save refreshes the project
+      mirror. A missing or unwritable project never prevents the vault note itself from saving.
+    </p>
+
+    <h2>What appears in the project</h2>
+    <pre><code>weather-station/
+├── .git/
+├── .gitignore       # contains IDEAS.md
+├── IDEAS.md         # mirror managed by sudonotes
+├── README.md
+└── src/</code></pre>
+
+    <p>The idea body can be as simple as:</p>
+
+    <pre><code>## Offline alert queue
+
+Store sensor alerts while the network is unavailable, then send them in order.
+
+- Keep the queue bounded.
+- Preserve the original timestamps.
+- Show a visible retry state in the dashboard.</code></pre>
+
+    <p>
+      sudonotes writes the complete Markdown note, including its small YAML frontmatter, rather
+      than converting it to a private format. A local coding agent with access to the working
+      folder can read it like any other project file.
+    </p>
+
+    <h2>Git and privacy</h2>
+    <p>
+      In a Git repository, sudonotes adds <code>IDEAS.md</code> to <code>.gitignore</code>. That keeps
+      the file available locally without sending the note to GitHub or including it in commits.
+      Remote tools cannot see a gitignored file unless you give them separate access to your local
+      working folder.
+    </p>
+    <p>
+      You can deliberately remove the ignore entry and commit the file, but inspect both its body
+      and frontmatter first. The mirror may contain private ideas and a local project path. Linking,
+      unlinking, and local coding-agent access do not send the file through the sudonotes AI
+      service.
+    </p>
+
+    <h2>If IDEAS.md already exists</h2>
+    <p>sudonotes stops before overwriting it and gives you two choices:</p>
+    <ul>
+      <li><strong>Use the existing file</strong> imports its body into the vault idea, then links it.</li>
+      <li><strong>Replace it with this note</strong> overwrites the project file with the open idea.</li>
+    </ul>
+    <p>Cancel leaves both files unchanged.</p>
+
+    <h2>Unlinking</h2>
+    <ul>
+      <li><strong>Unlink</strong> stops future mirroring and leaves the current <code>IDEAS.md</code> in place.</li>
+      <li><strong>Unlink &amp; delete</strong> also removes the project mirror.</li>
+    </ul>
+    <p>
+      The <code>.gitignore</code> entry is kept so a later file with the same name is not committed by
+      surprise. Remove that line manually if you no longer want it.
+    </p>
+
+    <div class="actions">
+      <a class="button primary" href="/download">Download sudonotes</a>
+      <a class="button" href="https://github.com/mory-dev/sudonotes">View the source on GitHub</a>
+    </div>
+  </article>
+</Base>
+
+<style>
+  .project-guide {
+    padding-block: clamp(44px, 7vw, 76px);
+  }
+
+  .project-guide .note strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text);
+  }
+
+  .project-guide .actions {
+    margin-top: 18px;
+  }
+</style>

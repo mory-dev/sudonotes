@@ -60,6 +60,22 @@ the API share the `sudonotes.com` origin:
 The two deploy independently. Nothing on this site calls the API — it is all
 static — so the order does not matter.
 
+## Search indexing after a deploy
+
+Astro generates `sitemap-index.xml` and every public page declares its canonical
+URL. After deploying a new documentation route:
+
+1. Open the `sudonotes.com` domain property in Google Search Console.
+2. Submit `https://sudonotes.com/sitemap-index.xml` if it is not already listed.
+3. Inspect the homepage and the new route, then request indexing once each URL
+   returns `200` in production.
+4. Review impressions, clicks and average position after six to eight weeks for
+   `sudonotes`, `IDEAS.md`, `IDEAS.md gitignore`, `project ideas markdown`, and
+   `ideas file for coding agents`.
+
+Do not add page analytics, `llms.txt`, or generated keyword pages to perform
+this check. Search Console reports are enough for this first pass.
+
 ## Analytics
 
 There are none, and `/docs/privacy` says so. If Cloudflare Web Analytics is ever

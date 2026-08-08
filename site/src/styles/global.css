@@ -310,6 +310,41 @@ section.band.alt {
   transition: color 120ms ease;
 }
 
+.breadcrumbs {
+  margin-top: 24px;
+  margin-bottom: -20px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.breadcrumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.breadcrumbs li + li::before {
+  content: "/";
+  color: var(--text-2);
+}
+
+.breadcrumbs a {
+  color: var(--muted);
+}
+
+.breadcrumbs a:hover {
+  color: var(--text);
+}
+
 /* buttons ----------------------------------------------------------------- */
 
 .button {

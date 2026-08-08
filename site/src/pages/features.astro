@@ -37,7 +37,8 @@ const features = [
     cue: "project",
     kicker: "Ideas in context",
     title: "Project linking",
-    body: "Mirror an idea into a repository's IDEAS.md, with an offer to add it to .gitignore. It detects the project's icon and name, and imports an existing IDEAS.md instead of overwriting it.",
+    body: "Mirror an idea into a repository's IDEAS.md and keep it gitignored. It detects the project's icon and name, and lets you import an existing IDEAS.md instead of overwriting it.",
+    href: "/docs/project-linking",
   },
 ];
 ---
@@ -45,6 +46,7 @@ const features = [
 <Base
   title="Features — sudonotes"
   description="Collections, per-bubble model assignment, full-text search, backlinks, project linking and optional AI review — everything sudonotes does today."
+  schema="software"
 >
   <section class="page features-page">
     <div class="prose">
@@ -85,6 +87,7 @@ const features = [
             </div>
             <h2>{feature.title}</h2>
             <p>{feature.body}</p>
+            {feature.href && <a class="feature-link" href={feature.href}>Read the project-linking guide →</a>}
           </article>
         ))
       }
@@ -182,6 +185,14 @@ const features = [
     z-index: 1;
     color: var(--muted);
     font-size: 14.5px;
+  }
+
+  .feature-link {
+    position: relative;
+    z-index: 1;
+    display: inline-block;
+    margin-top: 14px;
+    font-size: 13.5px;
   }
 
   .note-mark {
