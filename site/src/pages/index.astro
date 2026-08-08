@@ -71,7 +71,12 @@ const APP_URL =
 
   <section class="band alt">
     <div class="page stack" style="gap:16px">
-      <h2>You have written this prompt before.</h2>
+      <h2>
+        You have written this <span class="hl prompt"
+          ><svg viewBox="0 0 16 16" aria-hidden="true"><path d={CLOUD}></path></svg
+          >prompt</span
+        > before.
+      </h2>
       <p class="lede">
         Prompts scatter across chat histories, scratch files and half-abandoned docs. So the next
         time you need one you write it from scratch — slightly worse than last time, and you spend
@@ -88,7 +93,7 @@ const APP_URL =
     <div class="page split">
       <div class="stack" style="gap:16px">
         <p class="eyebrow">Brainstorm ideas</p>
-        <h2>Think in bubbles, not walls of text.</h2>
+        <h2>Think in <span class="hl bubble">bubbles</span>, not walls of text.</h2>
         <p class="lede">
           An idea note splits into bubbles — one per block you write. Hover any bubble to point it
           at its own model, or to copy just that piece: the thinking step and the drafting step
@@ -108,7 +113,12 @@ const APP_URL =
       <ModelPreview caption="The model picker, reading the live catalog. " />
       <div class="stack" style="gap:16px">
         <p class="eyebrow">Match prompt and model</p>
-        <h2>Every prompt knows what it is for.</h2>
+        <h2>
+          Every <span class="hl prompt"
+            ><svg viewBox="0 0 16 16" aria-hidden="true"><path d={CLOUD}></path></svg
+            >prompt</span
+          > knows what it is for.
+        </h2>
         <p class="lede">
           Point a prompt — or a single bubble inside an idea — at a specific model, picked from a
           live catalog that carries each model's context window, reasoning and vision support. Not
@@ -124,7 +134,12 @@ const APP_URL =
 
   <section class="band full">
     <div class="page stack" style="gap:16px">
-      <h2>Turn a messy prompt chain into editable steps.</h2>
+      <h2>
+        Turn a messy <span class="hl prompt"
+          ><svg viewBox="0 0 16 16" aria-hidden="true"><path d={CLOUD}></path></svg
+          >prompt</span
+        > chain into editable steps.
+      </h2>
       <p class="lede">
         Paste a multi-step prompt and <Wordmark /> breaks it into ordered prompts inside one
         collection. Reorder the steps by drag-and-drop, and keep each step's model, tags, and file separate.
@@ -156,7 +171,13 @@ const APP_URL =
 
   <section class="band">
     <div class="page stack" style="gap:16px">
-      <h2>Ideas that live next to the code.</h2>
+      <h2>
+        <span class="hl idea"
+          ><svg viewBox="0 0 16 16" aria-hidden="true"
+            ><path d={LEAF}></path><path d={LEAF_VEIN}></path></svg
+          >Ideas</span
+        > that live next to the code.
+      </h2>
       <p class="lede">
         Link an idea to a project folder and <Wordmark /> mirrors it to an <code>IDEAS.md</code> in
         that repository. The thinking travels with the work, where the next person — or the next
@@ -216,7 +237,18 @@ const APP_URL =
 
   <section class="band">
     <div class="page stack" style="gap:20px; align-items:center; text-align:center">
-      <h2>Keep the prompts. Keep the thinking.</h2>
+      {/* The closing line pairs the two halves of the product, so it carries
+          both marks rather than picking a side. */}
+      <h2>
+        Keep the <span class="hl prompt"
+          ><svg viewBox="0 0 16 16" aria-hidden="true"><path d={CLOUD}></path></svg
+          >prompts</span
+        >. Keep the <span class="hl idea"
+          ><svg viewBox="0 0 16 16" aria-hidden="true"
+            ><path d={LEAF}></path><path d={LEAF_VEIN}></path></svg
+          >thinking</span
+        >.
+      </h2>
       <p class="lede" style="max-width:52ch">
         <Wordmark /> is early and moving quickly. It is free, it is MIT, and your notes are files
         you can walk away with at any time.
@@ -247,25 +279,27 @@ const APP_URL =
     max-width: 22ch;
   }
 
-  /* The two nouns carry the app's own colour coding: prompts read blue with the
-     cloud, ideas read green with the leaf. Sized in `em` so the marks track the
-     fluid headline instead of drifting at either end of the clamp. */
-  .hero h1 .hl {
+  /* The subject nouns carry the app's own colour coding: prompts read blue with
+     the cloud, ideas read green with the leaf. Sized in `em` so the marks track
+     whatever heading they land in rather than drifting at either end of a fluid
+     clamp. Set on `.hl` rather than under `.hero h1`, because every section
+     heading down the page marks its own subject the same way. */
+  .hl {
     display: inline-flex;
     align-items: baseline;
     gap: 0.16em;
     white-space: nowrap;
   }
 
-  .hero h1 .hl.prompt {
+  .hl.prompt {
     color: var(--prompt);
   }
 
-  .hero h1 .hl.idea {
+  .hl.idea {
     color: var(--idea);
   }
 
-  .hero h1 .hl svg {
+  .hl svg {
     /* `align-self` rather than a baseline sit: the glyph is optically centred on
        the lowercase body, which baseline alignment would drop too low. */
     align-self: center;
@@ -277,6 +311,19 @@ const APP_URL =
     stroke-width: 1.4;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  /* "bubbles", drawn as one. The heading says what an idea note looks like, so
+     the word wears the same tinted, rounded box the editor puts around a block.
+     Padding is in `em` and the line-height is pinned, so the box hugs the word
+     without opening up the heading's leading. */
+  .hl.bubble {
+    color: var(--idea);
+    padding: 0.04em 0.4em 0.1em;
+    line-height: 1.1;
+    border: 1px solid color-mix(in srgb, var(--idea) 34%, transparent);
+    border-radius: 0.46em;
+    background: var(--idea-soft);
   }
 
   .hero .actions {
