@@ -15,14 +15,24 @@ Output goes to `dist/`.
 ## The UI previews are recreations, not screenshots
 
 `src/components/*Preview.astro` rebuild the app's interface in HTML and CSS,
-using the same design tokens as `app/src/App.css`, filled with **mock data**. No
-real vault is depicted.
+using the same design tokens as `app/src/App.css`, filled with **mock data** from
+`src/data/vault.ts`. No real vault is depicted.
 
 This is deliberate: they stay sharp at any density, adapt to narrow screens,
 weigh a few kilobytes instead of a few hundred, and cannot rot into a
 screenshot of a version nobody runs any more. The trade is that they can drift
 from the real UI — if you change the app's layout or palette meaningfully,
-change these too.
+change these too. Two shared files keep the drift from happening silently:
+
+- `../tokens.css` — the `:root` design tokens, imported by both `app/src/App.css`
+  and `site/src/styles/*.css`.
+- `app/src/tagColors.ts` — imported directly by the tag chips so tag hues can
+  never diverge. Astro's dev server allows reading outside `site/` via
+  `vite.server.fs.allow`.
+
+The provider glyphs in `src/lib/providers.ts` are hand-drawn approximations of
+each brand, paired with the vendors' real trademarked colours. Fine for mock
+previews; worth replacing with vendor assets before a real launch push.
 
 ## Honesty rules for this site
 
@@ -59,8 +69,13 @@ vault paths or prompt content.
 
 ## Regenerating the OG image
 
-`public/og.png` is rendered from `assets/og.svg`:
+`public/og.png` is rendered from `assets/og.svg`, which draws the mono wordmark
+in a committed face (`assets/fonts/jetbrains-mono.woff2`) so it never falls
+back to whatever font the build machine has. Render it with a headless Edge
+(matches how it will look in real browsers):
 
 ```bash
-node -e "require('sharp')('assets/og.svg',{density:144}).resize(1200,630).png().toFile('public/og.png')"
+"<path to msedge.exe>" --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --screenshot=public/og.png --window-size=1200,630 assets/og.svg
 ```
+
+On Windows, Edge ships with the OS. Adjust the path if it is elsewhere.
