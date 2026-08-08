@@ -11,6 +11,10 @@ permissions:
 
 jobs:
   build:
+    # macOS needs a Developer ID certificate and notarization before its
+    # installers are usable; until the APPLE_* secrets are configured, skip the
+    # two macOS runners so the pipeline isn't spent on builds nobody can run.
+    if: ${{ matrix.macos != true || (secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID != '') }}
     strategy:
       fail-fast: false
       matrix:
@@ -18,9 +22,11 @@ jobs:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
             name: macOS (Apple silicon)
+            macos: true
           - platform: macos-latest
             args: --target x86_64-apple-darwin
             name: macOS (Intel)
+            macos: true
           - platform: ubuntu-22.04
             args: ""
             name: Linux
