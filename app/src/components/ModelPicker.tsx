@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type ModelInfo } from "../api";
+import { useStore } from "../store";
 import {
   ProviderIcon,
   providerName,
@@ -62,6 +63,21 @@ export function ModelPicker({
     [models, value],
   );
 
+  // How often each model is already assigned in this vault: once per note that
+  // targets it, plus each bubble of the open idea. Bubble assignments only
+  // exist on the loaded note, so a bubble-heavy idea counts once it is open.
+  const notes = useStore((s) => s.notes);
+  const activeModels = useStore((s) => s.active?.models);
+  const usage = useMemo(() => {
+    const counts = new Map<string, number>();
+    const bump = (id: string | null | undefined) => {
+      if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+    };
+    for (const note of notes) bump(note.model);
+    for (const id of Object.values(activeModels ?? {})) bump(id);
+    return counts;
+  }, [notes, activeModels]);
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const filtered = models.filter((model) =>
@@ -69,11 +85,18 @@ export function ModelPicker({
         ? true
         : `${model.provider} ${model.name} ${model.id}`.toLowerCase().includes(needle),
     );
+
+    // The models this vault actually uses come first. The catalog is hundreds
+    // of entries long and mostly irrelevant to any one person, so the handful
+    // already picked before are the ones worth putting under the cursor —
+    // while searching too, where they are still the likeliest match.
+    filtered.sort((a, b) => (usage.get(b.id) ?? 0) - (usage.get(a.id) ?? 0));
+
     if (value && !filtered.some((model) => model.id === value)) {
       filtered.unshift(emptyModel(value));
     }
     return filtered.slice(0, 80);
-  }, [models, query, value]);
+  }, [models, query, value, usage]);
 
   const choose = (model: ModelInfo) => {
     onChange(model.id);
