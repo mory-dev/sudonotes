@@ -27,6 +27,12 @@ import "./App.css";
 /** Keep the splash on screen long enough to read, even on a fast start. */
 const MIN_SPLASH_MS = 900;
 
+/** Browser chrome the webview still offers but a desktop note app has no use
+ *  for: print, open-file, view-source, downloads, bookmark, find-next. Ctrl+P
+ *  in particular was reaching the print dialog. The editor's own keymap sees
+ *  these first, so suppressing here only cancels the webview's default. */
+const SUPPRESSED_MOD_KEYS = new Set(["p", "o", "u", "j", "d", "g"]);
+
 /** The friendly landing page shown when nothing is open yet. */
 function EmptyState() {
   const create = useStore((s) => s.create);
@@ -100,19 +106,34 @@ export default function App() {
       const mod = event.ctrlKey || event.metaKey;
       if (!mod) return;
       const { setPalette, create, flushSave, active: current } = useStore.getState();
+      const key = event.key.toLowerCase();
 
-      if (event.key === "f" || event.key === "k") {
+      if (key === "f" || key === "k") {
         event.preventDefault();
         setPalette(true);
-      } else if (event.key === "n") {
+      } else if (key === "n") {
         event.preventDefault();
         void create(current?.type ?? "prompt", "");
-      } else if (event.key === "s") {
+      } else if (key === "s") {
         event.preventDefault();
         void flushSave();
+      } else if (SUPPRESSED_MOD_KEYS.has(key)) {
+        event.preventDefault();
       }
     };
 
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Reload and the developer tools are webview affordances too, but they sit on
+  // function keys rather than a modifier. F5/Ctrl+R would throw away unsaved
+  // edits and restart the whole app, which no user is asking for from a note.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const reload = event.key === "F5" || ((event.ctrlKey || event.metaKey) && event.key === "r");
+      if (reload) event.preventDefault();
+    };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
