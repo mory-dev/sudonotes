@@ -1,0 +1,40 @@
+---
+/**
+ * The product's name as it appears in the app's own titlebar: the accent dot,
+ * then the name set in the mono face.
+ *
+ * Used for mentions in running prose so "sudonotes" reads as the application
+ * rather than as an ordinary noun — the same cue the window chrome gives.
+ */
+---
+
+<span class="wordmark-inline"><span class="wordmark-inline-dot" aria-hidden="true"></span
+  ><span class="wordmark-inline-word">sudonotes</span></span>
+
+<style>
+  .wordmark-inline {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.34em;
+    white-space: nowrap;
+  }
+
+  .wordmark-inline-dot {
+    /* Aligned to the x-height rather than the baseline, so the dot sits level
+       with the middle of the lowercase word next to it. */
+    align-self: center;
+    width: 0.4em;
+    height: 0.4em;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .wordmark-inline-word {
+    font-family: var(--font-mono);
+    /* The mono face runs large next to the UI face; this brings the two to the
+       same apparent size. */
+    font-size: 0.92em;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+</style>

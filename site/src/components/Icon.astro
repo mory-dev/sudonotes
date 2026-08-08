@@ -1,0 +1,40 @@
+---
+/**
+ * One 24x24 path, drawn in the current text colour so it sits in a line of type
+ * without introducing another palette. Filled by default (brand marks);
+ * `stroke` switches to an outline for the interface glyphs.
+ */
+interface Props {
+  path: string;
+  size?: number;
+  stroke?: boolean;
+  /** Set only when the mark carries meaning the surrounding text does not. */
+  label?: string;
+}
+
+const { path, size = 15, stroke = false, label } = Astro.props;
+---
+
+<svg
+  class="icon"
+  viewBox="0 0 24 24"
+  width={size}
+  height={size}
+  role={label ? "img" : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : "true"}
+  fill={stroke ? "none" : "currentColor"}
+  stroke={stroke ? "currentColor" : undefined}
+  stroke-width={stroke ? 1.7 : undefined}
+  stroke-linecap={stroke ? "round" : undefined}
+  stroke-linejoin={stroke ? "round" : undefined}
+>
+  <path d={path}></path>
+</svg>
+
+<style>
+  .icon {
+    flex: none;
+    display: block;
+  }
+</style>
