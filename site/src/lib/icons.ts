@@ -37,6 +37,11 @@ export const SCALE =
 export const DOWNLOAD =
   "M12 3.5v10.5m0 0 4-4m-4 4-4-4M4.5 16.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2";
 
+/** Arrow leaving a frame: this link opens the app rather than moving around the
+ *  site. Stroked. */
+export const LAUNCH =
+  "M13.5 3.5h7v7M20.5 3.5 11 13M18 13.5v6a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6";
+
 /** A closed box, for the installer size. Stroked. */
 export const PACKAGE =
   "M12 2.8 20.5 7v10L12 21.2 3.5 17V7L12 2.8Zm0 0v18.4M3.5 7l8.5 4.6L20.5 7";

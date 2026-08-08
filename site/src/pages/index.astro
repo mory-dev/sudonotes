@@ -7,9 +7,16 @@ import SearchPreview from "../components/SearchPreview.astro";
 import Base from "../layouts/Base.astro";
 import Icon from "../components/Icon.astro";
 import Wordmark from "../components/Wordmark.astro";
-import { APPLE, DOWNLOAD, GITHUB, LINUX, PACKAGE, SCALE, WINDOWS } from "../lib/icons";
+import { APPLE, GITHUB, LAUNCH, LINUX, PACKAGE, SCALE, WINDOWS } from "../lib/icons";
 import { CLOUD, LEAF, LEAF_VEIN } from "../lib/marks";
 import "../styles/preview.css";
+
+// The web app is its own deployment on its own subdomain, so the hero links out
+// by absolute URL rather than by route. In development that deployment is the
+// app's Vite server; PUBLIC_APP_URL overrides either.
+const APP_URL =
+  import.meta.env.PUBLIC_APP_URL ??
+  (import.meta.env.DEV ? "http://localhost:1420" : "https://app.sudonotes.com");
 ---
 
 <Base
@@ -36,8 +43,8 @@ import "../styles/preview.css";
     </p>
 
     <div class="actions">
-      <a class="button primary" href="/download">
-        <Icon path={DOWNLOAD} size={16} stroke />Get sudonotes
+      <a class="button primary" href={APP_URL}>
+        <Icon path={LAUNCH} size={16} stroke />Start now
       </a>
       <a class="button" href="https://github.com/mory-dev/sudonotes">
         <Icon path={GITHUB} size={16} />View the source
@@ -215,10 +222,12 @@ import "../styles/preview.css";
         you can walk away with at any time.
       </p>
       <div class="actions" style="justify-content:center">
-        <a class="button primary" href="/download">
-          <Icon path={DOWNLOAD} size={16} stroke />Get sudonotes
+        <a class="button primary" href={APP_URL}>
+          <Icon path={LAUNCH} size={16} stroke />Start now
         </a>
-        <a class="button" href="/docs">Read the docs</a>
+        {/* The hero no longer points at /download, so this is the home page's
+            one remaining route to the installers. */}
+        <a class="button" href="/download">Download for desktop</a>
       </div>
     </div>
   </section>
