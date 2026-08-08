@@ -1,0 +1,87 @@
+---
+import Base from "../../layouts/Base.astro";
+import Wordmark from "../../components/Wordmark.astro";
+---
+
+<Base
+  title="Prompt placeholders — sudonotes"
+  description="Write {{placeholders}} in a prompt and fill them in from the sidebar when you use it. The note stays a reusable template; only the copy on your clipboard is filled in."
+>
+  <section class="page" style="padding-block: clamp(44px, 7vw, 76px)">
+    <div class="prose">
+      <p class="eyebrow">Docs</p>
+      <h1>Prompt placeholders</h1>
+      <p class="lede">
+        Most prompts are almost the same every time. One name changes, or one file path, or one
+        tone. Placeholders let you write the prompt once and fill in the parts that move.
+      </p>
+
+      <h2>Writing one</h2>
+      <p>
+        In any prompt, put a name in double curly braces. That is the whole syntax:
+      </p>
+
+      <pre><code>Review the diff on {'{{branch}}'} and write release notes
+for {'{{audience}}'}. Keep it under {'{{word count}}'} words.</code></pre>
+
+      <p>
+        Names can contain spaces, so <code>{'{{word count}}'}</code> is fine. Use the same name
+        twice and it stays one field — fill it once and both copies take the value.
+      </p>
+
+      <h2>Filling it in</h2>
+      <p>
+        Open the prompt and look at the <strong>Variables</strong> panel on the right. Every
+        placeholder in the note gets a field, listed in the order it first appears. Type your
+        values, then press <strong>Copy filled</strong> — the filled prompt goes to your clipboard,
+        ready to paste into whichever model the prompt is pointed at.
+      </p>
+
+      <div class="note">
+        The note on disk never changes. Filling in values does not rewrite the prompt, so the
+        template survives being used — that is the point of it. Values are remembered while the app
+        is open and forgotten when you close it.
+      </div>
+
+      <h2>Leaving one blank</h2>
+      <p>
+        A placeholder you have not filled is copied through as-is, still in its braces, and the
+        button tells you how many are still blank. A half-filled prompt therefore shows you exactly
+        what is missing instead of pasting an empty gap into your chat window.
+      </p>
+
+      <h2>What it looks like in the file</h2>
+      <p>
+        Nothing special. Placeholders are ordinary text in the Markdown body, so a prompt with them
+        is still a plain file you can read, edit in any editor, or grep:
+      </p>
+
+      <pre><code>---
+id: 01J9F...
+title: Release notes
+type: prompt
+model: anthropic/claude-opus-5
+---
+
+Review the diff on {'{{branch}}'} and write release notes
+for {'{{audience}}'}.</code></pre>
+
+      <p>
+        There is no separate schema, no registry of variables, and nothing to migrate. If you delete
+        a placeholder from the text, its field disappears from the panel.
+      </p>
+
+      <h2>Where they work</h2>
+      <p>
+        Placeholders are a prompt feature. Idea notes do not get a Variables panel — an idea is
+        something you are still thinking through, not a template you run. If you want a template out
+        of an idea, copy the bubble into a prompt and add the braces there.
+      </p>
+
+      <p>
+        <Wordmark /> highlights <code>{'{{like this}}'}</code> in the editor so a template is
+        recognisable at a glance rather than only when you go looking for the panel.
+      </p>
+    </div>
+  </section>
+</Base>
