@@ -81,9 +81,8 @@ const hasInstaller = !!(release && (release.windows || release.linux));
     {hasInstaller ? (
       <>
         <p class="lead">
-          <Wordmark /> <strong>v{release!.version}</strong> is ready. The Windows installer is
-          signed with <strong>Azure Trusted Signing</strong>; Linux packages are built in the same
-          CI pipeline. Everything is compiled from the public source on GitHub.
+          <Wordmark /> <strong>v{release!.version}</strong> is ready for Windows and Linux. Every
+          release is built from the public source on GitHub.
         </p>
 
         <div class="download-grid">
@@ -98,11 +97,12 @@ const hasInstaller = !!(release && (release.windows || release.linux));
                   class="button primary download-button"
                   href={release!.windows.url}
                   rel="noopener"
+                  data-download-platform="windows"
                 >
-                  <Icon path={DOWNLOAD} size={16} />
+                  <Icon path={DOWNLOAD} size={16} stroke />
                   Download installer
                 </a>
-                <span class="download-meta">
+                <span class="download-meta" data-download-meta="windows">
                   {release!.windows.name} · {formatSize(release!.windows.size)}
                 </span>
               </>
@@ -122,11 +122,12 @@ const hasInstaller = !!(release && (release.windows || release.linux));
                   class="button primary download-button"
                   href={release!.linux.url}
                   rel="noopener"
+                  data-download-platform="linux"
                 >
-                  <Icon path={DOWNLOAD} size={16} />
+                  <Icon path={DOWNLOAD} size={16} stroke />
                   Download installer
                 </a>
-                <span class="download-meta">
+                <span class="download-meta" data-download-meta="linux">
                   {release!.linux.name} · {formatSize(release!.linux.size)}
                 </span>
               </>
@@ -135,20 +136,24 @@ const hasInstaller = !!(release && (release.windows || release.linux));
             )}
           </div>
 
-          <div class="download-card">
-            <span class="download-platform">
-              <Icon path={APPLE} size={22} label="macOS" />
-            </span>
-            <h2>macOS</h2>
-            <span class="download-meta">Coming soon</span>
-          </div>
         </div>
+
+        <div class="auto-download" id="auto-download" hidden aria-live="polite">
+          <span id="auto-download-message"></span>{" "}
+          <a id="auto-download-link" href="">Download now</a>
+          <span id="cancel-auto-download-separator" aria-hidden="true"> · </span>
+          <button id="cancel-auto-download" type="button">Cancel</button>
+        </div>
+
+        <p class="coming-soon">
+          <Icon path={APPLE} size={15} label="macOS" />
+          <span><strong>macOS</strong> is coming soon.</span>
+        </p>
 
         <div class="note">
           <strong>Verify before you install.</strong> The Windows installer is signed with Azure
-          Trusted Signing, so SmartScreen shows the publisher instead of a warning. Every release
-          carries a <code>checksums.txt</code> — compare the SHA-256 of what you downloaded against
-          it on the{" "}
+          Trusted Signing. Every release carries a <code>checksums.txt</code> — compare the SHA-256
+          of what you downloaded against it on the{" "}
           <a href={release!.url}>
             release page <span aria-hidden="true">↗</span>
           </a>
@@ -160,14 +165,13 @@ const hasInstaller = !!(release && (release.windows || release.linux));
           <li class="platform-line">
             <span class="platforms">
               <Icon path={WINDOWS} size={14} label="Windows" />
-              <Icon path={APPLE} size={14} label="macOS" />
               <Icon path={LINUX} size={14} label="Linux" />
             </span>
-            <span><strong>Windows, macOS and Linux</strong> — one codebase, native builds.</span>
+            <span><strong>Windows and Linux.</strong> One codebase, platform-native packages.</span>
           </li>
           <li>
-            <strong>About 20&nbsp;MB.</strong> Tauri uses your system's webview rather than
-            shipping a browser.
+            <strong>No bundled browser.</strong> Tauri uses your system's webview; current download
+            sizes are shown above.
           </li>
           <li><strong>No account.</strong> First launch asks you where to keep your vault. That is it.</li>
         </ul>
@@ -205,6 +209,145 @@ const hasInstaller = !!(release && (release.windows || release.linux));
     </div>
   </section>
 </Base>
+
+<script>
+  const RELEASE_API = "https://api.github.com/repos/mory-dev/sudonotes/releases/latest";
+  const RELEASE_ASSET_PATH = "/mory-dev/sudonotes/releases/download/";
+  const COUNTDOWN_SECONDS = 5;
+
+  type Platform = "windows" | "linux";
+  type ReleaseAsset = { name: string; url: string; size: number | null };
+
+  function currentPlatform(): Platform | null {
+    const navigatorWithUserAgentData = navigator as Navigator & {
+      userAgentData?: { platform?: string };
+    };
+    const platform = (
+      navigatorWithUserAgentData.userAgentData?.platform ||
+      navigator.platform ||
+      navigator.userAgent
+    ).toLowerCase();
+    const userAgent = navigator.userAgent.toLowerCase();
+
+    if (platform.includes("win")) return "windows";
+    if (platform.includes("linux") && !userAgent.includes("android") && !userAgent.includes("cros")) {
+      return "linux";
+    }
+    return null;
+  }
+
+  function isTrustedAssetUrl(value: string): boolean {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" &&
+        url.hostname === "github.com" &&
+        url.pathname.startsWith(RELEASE_ASSET_PATH);
+    } catch {
+      return false;
+    }
+  }
+
+  function formatAssetSize(bytes: number | null): string {
+    if (!bytes) return "";
+    const mb = bytes / (1024 * 1024);
+    return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+  }
+
+  function findAsset(assets: ReleaseAsset[], platform: Platform): ReleaseAsset | null {
+    const byName = (pattern: RegExp) => assets.find((asset) => pattern.test(asset.name.toLowerCase()));
+    if (platform === "windows") return byName(/setup\.exe$/) ?? byName(/\.exe$/) ?? null;
+    return byName(/\.appimage$/) ?? byName(/\.deb$/) ?? byName(/\.rpm$/) ?? null;
+  }
+
+  async function latestAsset(platform: Platform): Promise<ReleaseAsset | null> {
+    try {
+      const response = await fetch(RELEASE_API, {
+        headers: { Accept: "application/vnd.github+json" },
+      });
+      if (!response.ok) return null;
+
+      const release = await response.json();
+      const assets: ReleaseAsset[] = Array.isArray(release.assets)
+        ? release.assets.map((asset: { name?: unknown; browser_download_url?: unknown; size?: unknown }) => ({
+            name: String(asset.name ?? ""),
+            url: String(asset.browser_download_url ?? ""),
+            size: typeof asset.size === "number" ? asset.size : null,
+          }))
+        : [];
+      const asset = findAsset(assets, platform);
+      return asset && isTrustedAssetUrl(asset.url) ? asset : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function pageAsset(platform: Platform): ReleaseAsset | null {
+    const link = document.querySelector<HTMLAnchorElement>(`[data-download-platform="${platform}"]`);
+    if (!link || !isTrustedAssetUrl(link.href)) return null;
+    return { name: "", url: link.href, size: null };
+  }
+
+  function updatePlatformLink(platform: Platform, asset: ReleaseAsset): void {
+    const link = document.querySelector<HTMLAnchorElement>(`[data-download-platform="${platform}"]`);
+    if (link) link.href = asset.url;
+
+    const meta = document.querySelector<HTMLElement>(`[data-download-meta="${platform}"]`);
+    if (meta && asset.name) {
+      const size = formatAssetSize(asset.size);
+      meta.textContent = size ? `${asset.name} · ${size}` : asset.name;
+    }
+  }
+
+  async function startAutomaticDownload(): Promise<void> {
+    const platform = currentPlatform();
+    if (!platform) return;
+
+    const asset = (await latestAsset(platform)) ?? pageAsset(platform);
+    if (!asset) return;
+    updatePlatformLink(platform, asset);
+
+    const container = document.querySelector<HTMLElement>("#auto-download");
+    const message = document.querySelector<HTMLElement>("#auto-download-message");
+    const downloadLink = document.querySelector<HTMLAnchorElement>("#auto-download-link");
+    const cancelButton = document.querySelector<HTMLButtonElement>("#cancel-auto-download");
+    const cancelSeparator = document.querySelector<HTMLElement>("#cancel-auto-download-separator");
+    if (!container || !message || !downloadLink || !cancelButton || !cancelSeparator) return;
+
+    const platformLabel = platform === "windows" ? "Windows" : "Linux";
+    let seconds = COUNTDOWN_SECONDS;
+    let cancelled = false;
+    downloadLink.href = asset.url;
+    container.hidden = false;
+
+    const render = () => {
+      message.textContent = `Your ${platformLabel} download starts in ${seconds} second${seconds === 1 ? "" : "s"}.`;
+    };
+    render();
+
+    const timer = window.setInterval(() => {
+      seconds -= 1;
+      if (seconds <= 0) {
+        window.clearInterval(timer);
+        if (!cancelled) {
+          message.textContent = `Starting your ${platformLabel} download…`;
+          window.location.assign(asset.url);
+        }
+        return;
+      }
+      render();
+    }, 1000);
+
+    cancelButton.addEventListener("click", () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      message.textContent = "Automatic download cancelled.";
+      cancelSeparator.hidden = true;
+      cancelButton.hidden = true;
+    }, { once: true });
+  }
+
+  void startAutomaticDownload();
+</script>
 
 <style>
   .lead {
@@ -246,13 +389,50 @@ const hasInstaller = !!(release && (release.windows || release.linux));
   }
 
   .download-button {
+    box-sizing: border-box;
+    justify-content: center;
+    width: 100%;
     margin-top: 4px;
+    padding-inline: 12px;
+    white-space: nowrap;
   }
 
   .download-meta {
     font-size: 12px;
     color: var(--muted);
-    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+
+  .auto-download {
+    margin: -10px 0 26px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel-2);
+    font-size: 13px;
+  }
+
+  .auto-download a,
+  .auto-download button {
+    color: var(--accent);
+    font: inherit;
+    font-weight: 650;
+  }
+
+  .auto-download button {
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .coming-soon {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: -10px 0 26px;
+    color: var(--muted);
+    font-size: 13px;
   }
 
   .platform-line {
