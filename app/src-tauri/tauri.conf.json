@@ -45,6 +45,10 @@
       "signCommand": {
         "cmd": "cmd",
         "args": ["/C", "sign-windows.cmd", "%1"]
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
       }
     },
     "icon": [
