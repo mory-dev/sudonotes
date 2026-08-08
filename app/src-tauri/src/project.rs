@@ -128,7 +128,8 @@ fn cached_icon(root: &Path) -> Option<String> {
 
 /// First recognisable icon in the project, as a data URI. Known locations are
 /// checked first; if none match, a shallow scan (a few levels, skipping heavy
-/// folders) looks for anything icon-shaped and stops at the first hit.
+/// folders) ranks icon-shaped files so a real favicon wins over incidental UI
+/// assets such as `icon-addlink.svg`.
 fn find_icon(root: &Path) -> Option<String> {
     for candidate in ICON_CANDIDATES {
         if let Some(uri) = encode_icon(&root.join(candidate)) {
@@ -147,31 +148,52 @@ fn find_icon(root: &Path) -> Option<String> {
                 true
             }
         });
+    let mut candidates = Vec::new();
     for entry in walker.filter_map(Result::ok) {
-        if entry.file_type().is_file() && is_icon_name(&entry.file_name().to_string_lossy()) {
-            if let Some(uri) = encode_icon(&entry.path()) {
-                return Some(uri);
+        if entry.file_type().is_file() {
+            let name = entry.file_name().to_string_lossy();
+            if let Some(priority) = icon_name_priority(&name) {
+                let path = entry.into_path();
+                let tie_breaker = path.to_string_lossy().to_ascii_lowercase();
+                candidates.push((priority, tie_breaker, path));
             }
         }
     }
-    None
+    candidates.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+
+    candidates
+        .into_iter()
+        .find_map(|(_, _, path)| encode_icon(&path))
 }
 
 /// Does a file name look like a project icon? (favicon.*, logo*, icon*,
 /// apple-touch-icon*, …)
-fn is_icon_name(name: &str) -> bool {
+/// Lower values are more likely to represent the project itself, preventing
+/// framework/admin UI icons from beating an actual favicon merely because the
+/// filesystem returned them first.
+fn icon_name_priority(name: &str) -> Option<u8> {
     let lower = name.to_ascii_lowercase();
     let Some((stem, ext)) = lower.rsplit_once('.') else {
-        return false;
+        return None;
     };
     if !matches!(ext, "svg" | "png" | "ico" | "jpg" | "jpeg") {
-        return false;
+        return None;
     }
-    stem.starts_with("favicon")
-        || stem.starts_with("logo")
-        || stem.starts_with("icon")
-        || stem == "apple-touch-icon"
-        || stem == "apple-touch-icon-precomposed"
+
+    match stem {
+        "favicon" => Some(0),
+        stem if stem.starts_with("favicon") => Some(1),
+        "apple-touch-icon" | "apple-touch-icon-precomposed" => Some(2),
+        "logo" => Some(3),
+        stem if stem.starts_with("logo") => Some(4),
+        "icon" => Some(5),
+        stem if stem.starts_with("icon") => Some(6),
+        _ => None,
+    }
 }
 
 /// Read an icon file and base64-encode it as a `data:` URI, or `None` when the
@@ -343,6 +365,21 @@ mod tests {
         std::fs::write(dir.join("web/src/ui/favicon.png"), b"png").unwrap();
 
         assert!(find_icon(&dir).is_some());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn prefers_a_favicon_over_an_incidental_ui_icon() {
+        let dir = temp_dir("favicon-priority");
+        let admin_icon = dir.join("staticfiles/admin/img/icon-addlink.svg");
+        let favicon = dir.join("staticfiles/images/favicons/favicon.ico");
+        std::fs::create_dir_all(admin_icon.parent().unwrap()).unwrap();
+        std::fs::write(&admin_icon, "<svg>plus</svg>").unwrap();
+        std::fs::create_dir_all(favicon.parent().unwrap()).unwrap();
+        std::fs::write(&favicon, b"eye").unwrap();
+
+        assert_eq!(find_icon(&dir), encode_icon(&favicon));
 
         std::fs::remove_dir_all(&dir).ok();
     }
