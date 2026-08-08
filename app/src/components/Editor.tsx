@@ -34,7 +34,6 @@ function normalizePastedText(text: string): string {
 }
 
 const WIKILINK = /\[\[([^[\]\n|]+)(?:\|([^[\]\n]+))?\]\]/g;
-const recentWraps = new WeakMap<EditorView, { position: number; until: number }>();
 
 /** Hides the syntax so a link reads as ordinary highlighted text. */
 const hidden = Decoration.replace({});
@@ -705,56 +704,90 @@ const findPlugin = ViewPlugin.fromClass(
     },
   },
 );
-function wrapSelection(view: EditorView): boolean {
-  const { from, to } = view.state.selection.main;
-  if (from === to) {
-    const recent = recentWraps.get(view);
-    if (recent && recent.position === from && recent.until > Date.now()) {
-      recentWraps.delete(view);
-      return true;
-    }
-    return false;
+/** Deepest wrap `[` will build. Five is past anything markdown gives meaning
+ *  to, which is the point: the levels above two are the user's to use. */
+const MAX_BRACKETS = 5;
+
+/** How many matched `[`/`]` pairs sit immediately around `[from, to)`. */
+function bracketDepth(doc: Text, from: number, to: number): number {
+  let depth = 0;
+  while (
+    from - depth - 1 >= 0 &&
+    to + depth + 1 <= doc.length &&
+    doc.sliceString(from - depth - 1, from - depth) === "[" &&
+    doc.sliceString(to + depth, to + depth + 1) === "]"
+  ) {
+    depth++;
   }
-  const selected = view.state.sliceDoc(from, to);
-  const inserted = `[[${selected}]]`;
-  view.dispatch({
-    changes: { from, to, insert: inserted },
-    selection: { anchor: from + inserted.length },
-  });
-  recentWraps.set(view, { position: from + inserted.length, until: Date.now() + 350 });
-  return true;
+  return depth;
 }
 
-/** Backspace just after a `[[link]]` takes the brackets off and keeps the word.
- *
- *  A collapsed link is an atomic range, so the default binding treats the whole
- *  `[[word]]` as one unit and deletes the word along with the markup — the
- *  opposite of what backspacing at the end of a wrap is asking for. Undoing the
- *  wrap is the useful move; a second press then deletes a character as usual. */
-function unwrapLinkBackspace(view: EditorView): boolean {
+/** `[` over a selection is `closeBrackets`' job — it adds one pair per press,
+ *  which is what lets a word be wrapped one bracket at a time. This only steps
+ *  in at the ceiling, swallowing the key so the wrap stops growing. */
+function limitBracketWrap(view: EditorView): boolean {
   const { from, to } = view.state.selection.main;
-  if (from !== to) return false;
+  if (from === to) return false;
+  return bracketDepth(view.state.doc, from, to) >= MAX_BRACKETS;
+}
 
-  const line = view.state.doc.lineAt(from);
-  const offset = from - line.from;
+/** Backspace takes one bracket level off a wrapped word instead of destroying
+ *  it, so a wrap walks back down 5-4-3-2-1 the way it was built up.
+ *
+ *  Two shapes reach here. With the word still selected from wrapping it, the
+ *  pair either side of the selection comes off and the selection stays, so the
+ *  key can be held. With a bare caret just past the closing brackets, the
+ *  outermost pair comes off — the default binding would take the whole
+ *  `[[word]]` at once, since a collapsed link is one atomic range. */
+function peelBrackets(view: EditorView): boolean {
+  const { from, to } = view.state.selection.main;
+  const doc = view.state.doc;
 
-  WIKILINK.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = WIKILINK.exec(line.text))) {
-    // Only at the very end of the link: anywhere else backspace should behave
-    // normally, including inside the target text.
-    if (match.index + match[0].length !== offset) continue;
-
-    const inner = match[0].slice(2, -2);
-    const start = line.from + match.index;
+  if (from !== to) {
+    if (bracketDepth(doc, from, to) === 0) return false;
     view.dispatch({
-      changes: { from: start, to: start + match[0].length, insert: inner },
-      selection: { anchor: start + inner.length },
+      changes: [
+        { from: from - 1, to: from },
+        { from: to, to: to + 1 },
+      ],
+      selection: { anchor: from - 1, head: to - 1 },
       userEvent: "delete.unwrap",
     });
     return true;
   }
-  return false;
+
+  // Trailing `]` run immediately before the caret.
+  let close = 0;
+  while (close < MAX_BRACKETS && from - close - 1 >= 0) {
+    if (doc.sliceString(from - close - 1, from - close) !== "]") break;
+    close++;
+  }
+  if (close === 0) return false;
+
+  // The word being wrapped ends where that run starts; its opening run is the
+  // nearest `[` before it.
+  const contentEnd = from - close;
+  let cursor = contentEnd - 1;
+  while (cursor >= 0 && doc.sliceString(cursor, cursor + 1) !== "[") cursor--;
+  if (cursor < 0) return false;
+
+  let open = 0;
+  while (open < close && cursor - open >= 0) {
+    if (doc.sliceString(cursor - open, cursor - open + 1) !== "[") break;
+    open++;
+  }
+  if (open === 0) return false;
+
+  const outermost = cursor - open + 1;
+  view.dispatch({
+    changes: [
+      { from: outermost, to: outermost + 1 },
+      { from: from - 1, to: from },
+    ],
+    selection: { anchor: from - 2 },
+    userEvent: "delete.unwrap",
+  });
+  return true;
 }
 
 const theme = EditorView.theme(
@@ -1280,14 +1313,16 @@ export function Editor() {
           Prec.highest(
             keymap.of([
               {
+                // closeBrackets does the wrapping, one pair per press; this
+                // only stops it once the word is five deep.
                 key: "[",
-                run: wrapSelection,
+                run: limitBracketWrap,
               },
               {
-                // Ahead of the default binding, which would take the linked
-                // word with the brackets.
+                // Ahead of the default binding, which would take the whole
+                // wrapped word rather than one level of it.
                 key: "Backspace",
-                run: unwrapLinkBackspace,
+                run: peelBrackets,
               },
               {
                 key: "Mod-Enter",
