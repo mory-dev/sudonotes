@@ -700,15 +700,23 @@ code {
 
 /* Two stacked, independently scrolling halves. */
 .panel-split {
-  flex: 1 1 50%;
   min-height: 0;
   overflow-y: auto;
   padding: 14px 12px;
 }
 
-/* The status bar floats over this corner, so the lower half reserves room for
-   it — otherwise the end of the panel can never be scrolled clear of it. */
+/* Backlinks are usually a short list, and an even split left the top half
+   mostly empty above a Details section that had to scroll. It now takes only
+   what it needs, capped so a long list still gives the rest of the column back. */
+.panel-split:first-child {
+  flex: 0 1 auto;
+  max-height: 32%;
+}
+
 .panel-split:last-child {
+  flex: 1 1 auto;
+  /* The status bar floats over this corner, so the lower half reserves room for
+     it — otherwise the end of the panel can never be scrolled clear of it. */
   padding-bottom: 44px;
 }
 
