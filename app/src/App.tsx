@@ -14,6 +14,8 @@ import { Sidebar } from "./components/Sidebar";
 import { Splash } from "./components/Splash";
 import { SplitPreview } from "./components/SplitPreview";
 import { TitleBar } from "./components/TitleBar";
+import { TooltipLayer } from "./components/TooltipLayer";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { Welcome } from "./components/Welcome";
 import { WindowChrome } from "./components/WindowChrome";
 import { useStore } from "./store";
@@ -29,10 +31,10 @@ function EmptyState() {
   return (
     <div className="blank">
       <div className="blank-marks">
-        <span className="blank-mark prompt" title="Prompts">
+        <span className="blank-mark prompt" data-tooltip="Prompts">
           <PromptMark />
         </span>
-        <span className="blank-mark idea" title="Ideas">
+        <span className="blank-mark idea" data-tooltip="Ideas">
           <IdeaMark />
         </span>
       </div>
@@ -197,6 +199,7 @@ export default function App() {
       <ContextMenu />
       <NotePicker />
       <ConfirmDialog />
+      <TooltipLayer />
 
       {error && (
         <div className="toast" role="alert">
@@ -215,6 +218,8 @@ export default function App() {
           </button>
         </div>
       )}
+
+      <UpdateBanner />
     </div>
   );
 }
