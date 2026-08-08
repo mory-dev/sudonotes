@@ -155,11 +155,14 @@ function Collection({
 
   const isParentActive = parent?.id === activeId;
 
-  // One target: opens the collection's own note and toggles the list with it.
+  // A single click selects the collection's note; only a double click opens or
+  // closes the list. Toggling on the first click meant every visit to the
+  // collection's own note also collapsed the children the user was reading.
   const onClick = () => {
-    setOpen((v) => !v);
     if (parent) void select(parent.id);
   };
+
+  const onDoubleClick = () => setOpen((v) => !v);
 
   const onDrop = (fromId: string, targetId: string) => {
     setDragId(null);
@@ -177,7 +180,13 @@ function Collection({
   return (
     <li className="collection" data-type={parent?.type ?? notes[0]?.type ?? "prompt"}>
       <div className={isParentActive ? "collection-head active" : "collection-head"}>
-        <button className="collection-open" onClick={onClick} aria-expanded={open}>
+        <button
+          className="collection-open"
+          onClick={onClick}
+          onDoubleClick={onDoubleClick}
+          aria-expanded={open}
+          data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"}`}
+        >
           <span className="collection-name">{name}</span>
         </button>
         <ModelStack notes={notes} />
