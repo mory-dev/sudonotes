@@ -2,65 +2,202 @@
 import Base from "../layouts/Base.astro";
 import Icon from "../components/Icon.astro";
 import Wordmark from "../components/Wordmark.astro";
-import { APPLE, GITHUB, LINUX, WINDOWS } from "../lib/icons";
+import { APPLE, DOWNLOAD, GITHUB, LINUX, WINDOWS } from "../lib/icons";
 
 const repo = "https://github.com/mory-dev/sudonotes";
+const releasesUrl = "https://github.com/mory-dev/sudonotes/releases";
+
+type Asset = { name: string; url: string; size: number | null };
+type Release = {
+  tag: string;
+  version: string;
+  url: string;
+  windows: Asset | null;
+  linux: Asset | null;
+  mac: Asset | null;
+};
+
+function formatSize(bytes: number | null): string {
+  if (!bytes) return "";
+  const mb = bytes / (1024 * 1024);
+  return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+}
+
+// The latest published release, fetched once at build time so the buttons
+// always point at the newest signed installer. When there is none yet (or the
+// build has no network), the page falls back to building from source.
+let release: Release | null = null;
+try {
+  const res = await fetch(
+    "https://api.github.com/repos/mory-dev/sudonotes/releases/latest",
+    {
+      headers: {
+        "User-Agent": "sudonotes-site",
+        Accept: "application/vnd.github+json",
+      },
+    },
+  );
+  if (res.ok) {
+    const data = await res.json();
+    const assets: Asset[] = (data.assets ?? []).map((a: any) => ({
+      name: String(a.name ?? ""),
+      url: String(a.browser_download_url ?? ""),
+      size: typeof a.size === "number" ? a.size : null,
+    }));
+    const byName = (re: RegExp) => assets.find((a) => re.test(a.name.toLowerCase()));
+    const windows =
+      byName(/setup\.exe$/) ?? byName(/\.exe$/) ?? null;
+    const linux =
+      byName(/\.appimage$/) ??
+      byName(/\.deb$/) ??
+      byName(/\.rpm$/) ??
+      null;
+    const mac = byName(/\.(dmg|app\.tar\.gz)$/) ?? null;
+    const tag = String(data.tag_name ?? "");
+    release = {
+      tag,
+      version: tag.replace(/^v/, ""),
+      url: String(data.html_url ?? releasesUrl),
+      windows,
+      linux,
+      mac,
+    };
+  }
+} catch {
+  release = null;
+}
+
+const hasInstaller = !!(release && (release.windows || release.linux));
 ---
 
 <Base
   title="Download sudonotes"
-  description="How to get sudonotes today: build it from source in a couple of commands. Signed installers for Windows, macOS and Linux are being prepared."
+  description="Download the sudonotes installer for Windows or Linux — built and signed in CI with Azure Trusted Signing. macOS is coming soon."
 >
   <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
     <p class="eyebrow">Download</p>
     <h1>Get sudonotes</h1>
 
-    <div class="note warn">
-      <strong>There are no prebuilt installers yet.</strong> <Wordmark /> is at v0.1.1 and the release
-      pipeline — cross-platform builds, code signing and macOS notarization — is not finished.
-      Rather than hand you an unsigned binary that your OS will warn you about, the honest answer
-      today is: build it from source. It takes two commands and about a minute.
-    </div>
+    {hasInstaller ? (
+      <>
+        <p class="lead">
+          <Wordmark /> <strong>v{release!.version}</strong> is ready. The Windows installer is
+          signed with <strong>Azure Trusted Signing</strong>; Linux packages are built in the same
+          CI pipeline. Everything is compiled from the public source on GitHub.
+        </p>
 
-    <h2>Build it yourself</h2>
-    <p>
-      You need <a href="https://nodejs.org">Node.js</a>, <a href="https://rustup.rs">Rust</a>, and
-      the <a href="https://tauri.app/start/prerequisites/">Tauri system dependencies</a> for your
-      platform.
-    </p>
+        <div class="download-grid">
+          <div class="download-card">
+            <span class="download-platform">
+              <Icon path={WINDOWS} size={22} label="Windows" />
+            </span>
+            <h2>Windows</h2>
+            {release!.windows ? (
+              <>
+                <a
+                  class="button primary download-button"
+                  href={release!.windows.url}
+                  rel="noopener"
+                >
+                  <Icon path={DOWNLOAD} size={16} />
+                  Download installer
+                </a>
+                <span class="download-meta">
+                  {release!.windows.name} · {formatSize(release!.windows.size)}
+                </span>
+              </>
+            ) : (
+              <span class="download-meta">Coming soon</span>
+            )}
+          </div>
 
-    <pre><code>git clone https://github.com/mory-dev/sudonotes.git</code></pre>
-    <pre><code>cd sudonotes/app && npm install && npm run tauri build</code></pre>
+          <div class="download-card">
+            <span class="download-platform">
+              <Icon path={LINUX} size={22} label="Linux" />
+            </span>
+            <h2>Linux</h2>
+            {release!.linux ? (
+              <>
+                <a
+                  class="button primary download-button"
+                  href={release!.linux.url}
+                  rel="noopener"
+                >
+                  <Icon path={DOWNLOAD} size={16} />
+                  Download installer
+                </a>
+                <span class="download-meta">
+                  {release!.linux.name} · {formatSize(release!.linux.size)}
+                </span>
+              </>
+            ) : (
+              <span class="download-meta">Coming soon</span>
+            )}
+          </div>
 
-    <p>
-      The installer lands in <code>app/src-tauri/target/release/bundle/</code>. To run it in
-      development instead, use <code>npm run tauri dev</code>.
-    </p>
+          <div class="download-card">
+            <span class="download-platform">
+              <Icon path={APPLE} size={22} label="macOS" />
+            </span>
+            <h2>macOS</h2>
+            <span class="download-meta">Coming soon</span>
+          </div>
+        </div>
 
-    <h2>What you get</h2>
-    <ul>
-      <li class="platform-line">
-        <span class="platforms">
-          <Icon path={WINDOWS} size={14} label="Windows" />
-          <Icon path={APPLE} size={14} label="macOS" />
-          <Icon path={LINUX} size={14} label="Linux" />
-        </span>
-        <span><strong>Windows, macOS and Linux</strong> — one codebase, native builds.</span>
-      </li>
-      <li>
-        <strong>About 20&nbsp;MB.</strong> Tauri uses your system's webview rather than shipping a
-        browser.
-      </li>
-      <li><strong>No account.</strong> First launch asks you where to keep your vault. That is it.</li>
-    </ul>
+        <div class="note">
+          <strong>Verify before you install.</strong> The Windows installer is signed with Azure
+          Trusted Signing, so SmartScreen shows the publisher instead of a warning. Every release
+          carries a <code>checksums.txt</code> — compare the SHA-256 of what you downloaded against
+          it on the{" "}
+          <a href={release!.url}>
+            release page <span aria-hidden="true">↗</span>
+          </a>
+          .
+        </div>
 
-    <h2>When installers land</h2>
-    <p>
-      Signed builds need an Apple Developer account for notarization and a Windows signing
-      certificate; both cost money and take time to set up. Until they are in place, an unsigned
-      installer would trip SmartScreen and Gatekeeper — which is a worse first impression than a
-      clone and a build. Progress is on the <a href="/roadmap">roadmap</a>.
-    </p>
+        <h2>What you get</h2>
+        <ul>
+          <li class="platform-line">
+            <span class="platforms">
+              <Icon path={WINDOWS} size={14} label="Windows" />
+              <Icon path={APPLE} size={14} label="macOS" />
+              <Icon path={LINUX} size={14} label="Linux" />
+            </span>
+            <span><strong>Windows, macOS and Linux</strong> — one codebase, native builds.</span>
+          </li>
+          <li>
+            <strong>About 20&nbsp;MB.</strong> Tauri uses your system's webview rather than
+            shipping a browser.
+          </li>
+          <li><strong>No account.</strong> First launch asks you where to keep your vault. That is it.</li>
+        </ul>
+      </>
+    ) : (
+      <>
+        <div class="note warn">
+          <strong>Installers are being prepared.</strong> <Wordmark />'s release pipeline — Windows
+          signing with Azure Trusted Signing and Linux packages — is running its first build. Until
+          it lands, the honest path is to build from source. It takes two commands and about a
+          minute.
+        </div>
+
+        <h2>Build it yourself</h2>
+        <p>
+          You need <a href="https://nodejs.org">Node.js</a>,{" "}
+          <a href="https://rustup.rs">Rust</a>, and the{" "}
+          <a href="https://tauri.app/start/prerequisites/">Tauri system dependencies</a> for your
+          platform.
+        </p>
+
+        <pre><code>git clone https://github.com/mory-dev/sudonotes.git</code></pre>
+        <pre><code>cd sudonotes/app && npm install && npm run tauri build</code></pre>
+
+        <p>
+          The installer lands in <code>app/src-tauri/target/release/bundle/</code>. To run it in
+          development instead, use <code>npm run tauri dev</code>.
+        </p>
+      </>
+    )}
 
     <div class="actions">
       <a class="button primary" href={repo}><Icon path={GITHUB} size={16} />Open the repository</a>
@@ -70,6 +207,54 @@ const repo = "https://github.com/mory-dev/sudonotes";
 </Base>
 
 <style>
+  .lead {
+    font-size: 16px;
+  }
+
+  .download-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    margin: 26px 0;
+  }
+
+  .download-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .download-card h2 {
+    margin: 0 0 4px;
+    font-size: 15px;
+  }
+
+  .download-platform {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+    background: var(--panel-2);
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .download-button {
+    margin-top: 4px;
+  }
+
+  .download-meta {
+    font-size: 12px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+
   .platform-line {
     display: flex;
     align-items: baseline;
