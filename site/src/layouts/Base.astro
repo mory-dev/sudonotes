@@ -89,7 +89,7 @@ const schema = {
             nav.map((item) => (
               <a
                 href={item.href}
-                class={item.wide ? "nav-hide" : undefined}
+                class:list={[item.wide && "nav-hide", item.href === "/download" && "nav-download"]}
                 aria-current={path === item.href ? "page" : undefined}
               >
                 {item.label}

@@ -1,28 +1,41 @@
 ---
 import Base from "../layouts/Base.astro";
+import NoteMark from "../components/preview/NoteMark.astro";
 
 const features = [
   {
+    cue: "prompt",
+    kicker: "Prompt flow",
     title: "Collections",
     body: "Group a chain of prompts under one header note. Paste a multi-step prompt and sudonotes detects the steps, previews them, and only writes once you confirm.",
   },
   {
+    cue: "both",
+    kicker: "Prompts + ideas",
     title: "Model assignment",
     body: "Point a prompt — or one bubble of an idea — at a specific model, chosen from a live catalog with context and capability data.",
   },
   {
+    cue: "search",
+    kicker: "Vault-wide",
     title: "Search and links",
     body: "SQLite FTS5 over every note, ranked to favour titles. [[Wiki links]] between notes, with a panel showing everything that points at the one you have open.",
   },
   {
+    cue: "keyboard",
+    kicker: "Fast navigation",
     title: "Keyboard first",
     body: "Ctrl N new note, Ctrl S flush, Ctrl K search, Ctrl Shift F find in the open note, and Ctrl + / − to scale the whole UI.",
   },
   {
+    cue: "files",
+    kicker: "Local by default",
     title: "Plain files",
     body: "Markdown with a small YAML header, in a watched folder. Edit a note in vim and sudonotes catches up without clobbering what you were typing.",
   },
   {
+    cue: "project",
+    kicker: "Ideas in context",
     title: "Project linking",
     body: "Mirror an idea into a repository's IDEAS.md, with an offer to add it to .gitignore. It detects the project's icon and name, and imports an existing IDEAS.md instead of overwriting it.",
   },
@@ -33,7 +46,7 @@ const features = [
   title="Features — sudonotes"
   description="Collections, per-bubble model assignment, full-text search, backlinks, project linking and optional AI review — everything sudonotes does today."
 >
-  <section class="page" style="padding-block: clamp(44px, 7vw, 76px)">
+  <section class="page features-page">
     <div class="prose">
       <p class="eyebrow">Features</p>
       <h1>What it does today</h1>
@@ -43,15 +56,226 @@ const features = [
       </p>
     </div>
 
-    <div class="grid" style="margin-top:40px">
+    <div class="features-grid">
       {
         features.map((feature) => (
-          <div class="card">
-            <h3>{feature.title}</h3>
+          <article class={`feature-card ${feature.cue}`}>
+            <div class="feature-head">
+              <span class="feature-cue" aria-hidden="true">
+                {feature.cue === "prompt" && (
+                  <span class="note-mark prompt"><NoteMark type="prompt" /></span>
+                )}
+                {feature.cue === "both" && (
+                  <span class="paired-marks">
+                    <span class="note-mark prompt"><NoteMark type="prompt" /></span>
+                    <span class="note-mark idea"><NoteMark type="idea" /></span>
+                  </span>
+                )}
+                {feature.cue === "search" && <span class="search-mark"></span>}
+                {feature.cue === "keyboard" && <span class="cue-symbol keyboard-mark">⌘</span>}
+                {feature.cue === "files" && <span class="cue-symbol file-mark">.md</span>}
+                {feature.cue === "project" && (
+                  <span class="project-mark">
+                    <span class="note-mark idea"><NoteMark type="idea" /></span>
+                    <span class="project-arrow">↗</span>
+                  </span>
+                )}
+              </span>
+              <span class="feature-kicker">{feature.kicker}</span>
+            </div>
+            <h2>{feature.title}</h2>
             <p>{feature.body}</p>
-          </div>
+          </article>
         ))
       }
     </div>
   </section>
 </Base>
+
+<style>
+  .features-page {
+    padding-block: clamp(44px, 7vw, 76px);
+  }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 40px;
+  }
+
+  .feature-card {
+    position: relative;
+    min-height: 238px;
+    padding: 22px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: linear-gradient(
+      145deg,
+      var(--panel),
+      color-mix(in srgb, var(--panel-2) 44%, var(--panel))
+    );
+  }
+
+  .feature-card::after {
+    content: "";
+    position: absolute;
+    right: -34px;
+    bottom: -44px;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: var(--cue-soft, color-mix(in srgb, var(--muted) 8%, transparent));
+    filter: blur(8px);
+    pointer-events: none;
+  }
+
+  .feature-card.prompt {
+    --cue: var(--accent);
+    --cue-soft: var(--accent-soft);
+  }
+
+  .feature-card.both,
+  .feature-card.project {
+    --cue: var(--idea);
+    --cue-soft: var(--idea-soft);
+  }
+
+  .feature-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .feature-cue {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border: 1px solid color-mix(in srgb, var(--cue, var(--muted)) 30%, var(--border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--cue-soft, var(--panel-2)) 58%, var(--panel-2));
+    color: var(--cue, var(--text-2));
+  }
+
+  .feature-kicker {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-align: right;
+    text-transform: uppercase;
+  }
+
+  .feature-card h2 {
+    margin-bottom: 8px;
+    font-size: 1.12rem;
+    font-weight: 620;
+  }
+
+  .feature-card p {
+    position: relative;
+    z-index: 1;
+    color: var(--muted);
+    font-size: 14.5px;
+  }
+
+  .note-mark {
+    display: grid;
+    place-items: center;
+  }
+
+  .note-mark.prompt {
+    color: var(--accent);
+  }
+
+  .note-mark.idea {
+    color: var(--idea);
+  }
+
+  .note-mark :global(svg) {
+    display: block;
+    width: 23px;
+    height: 23px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .paired-marks {
+    display: flex;
+    align-items: center;
+  }
+
+  .paired-marks .note-mark + .note-mark {
+    margin-left: -5px;
+    padding: 3px;
+    border-radius: 50%;
+    background: var(--panel-2);
+  }
+
+  .search-mark {
+    position: relative;
+    width: 19px;
+    height: 19px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+  }
+
+  .search-mark::after {
+    content: "";
+    position: absolute;
+    right: -6px;
+    bottom: -4px;
+    width: 8px;
+    border-top: 2px solid currentColor;
+    transform: rotate(45deg);
+    transform-origin: left center;
+  }
+
+  .cue-symbol {
+    font-family: var(--font-mono);
+    line-height: 1;
+  }
+
+  .keyboard-mark {
+    font-size: 25px;
+  }
+
+  .file-mark {
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.04em;
+  }
+
+  .project-mark {
+    position: relative;
+    display: grid;
+    place-items: center;
+  }
+
+  .project-arrow {
+    position: absolute;
+    top: -7px;
+    right: -9px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  @media (max-width: 720px) {
+    .features-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .feature-card {
+      min-height: 0;
+    }
+  }
+</style>

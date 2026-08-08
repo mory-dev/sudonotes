@@ -234,6 +234,34 @@ section.band.alt {
   color: var(--text);
 }
 
+.nav-links .nav-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 2px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  line-height: 1.25;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.nav-links .nav-download::after {
+  content: "↓";
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.nav-links .nav-download:hover,
+.nav-links .nav-download[aria-current="page"] {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 75%, var(--panel));
+  color: var(--accent);
+}
+
 @media (max-width: 720px) {
   .nav-links {
     gap: 14px;

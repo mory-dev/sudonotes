@@ -4,33 +4,53 @@ import Base from "../layouts/Base.astro";
 const items = [
   {
     state: "now",
-    title: "Deploy the AI proxy",
-    body: "The Worker is written and tested; it needs to go live on sudonotes.com with its secrets set. Until it does, AI features fall back to local tagging on every call.",
+    title: "Everyday interaction polish",
+    body: "Make menus, hover behavior and project-aware details feel anchored, predictable and quick.",
   },
   {
     state: "next",
-    title: "Shared core, compiled to WebAssembly",
-    body: "Move note parsing, serialization, filename rules and paste splitting into a crate the desktop app and a browser build both call, so the two can never disagree about how a file is written.",
+    title: "Documentation and discoverability",
+    body: "Build practical guides for project linking, shortcuts, search, backups, recovery and the on-disk format.",
   },
   {
     state: "next",
-    title: "Browser app on app.sudonotes.com",
-    body: "Connect to the same local vault where the browser allows it, import and export where it does not. See web vs. desktop for the shape of it.",
+    title: "Browser app",
+    body: "Connect to the same local vault where the browser allows it, with clear import and export everywhere else.",
   },
   {
     state: "next",
-    title: "Signed installers",
-    body: "Cross-platform CI, an Apple Developer account for notarization, and a Windows signing certificate — so downloads stop tripping Gatekeeper and SmartScreen.",
+    title: "Cloud-folder backups",
+    body: "Send compressed vault snapshots to an existing local sync folder without adding another account connection.",
   },
   {
     state: "later",
-    title: "Conflict handling on both sides",
-    body: "Fingerprint a note on open, re-check before writing, and offer reload / keep mine / save a copy. Needed before two programs share one folder.",
+    title: "GitHub handoff",
+    body: "Recognize linked repositories and turn an idea into a focused GitHub issue or implementation handoff.",
+  },
+  {
+    state: "later",
+    title: "Prompt intelligence",
+    body: "Flag likely duplicates across the vault and suggest a suitable model when that saves a choice.",
+  },
+  {
+    state: "later",
+    title: "Idea and prompt maps",
+    body: "Explore parent and child relationships in a lightweight visual graph.",
+  },
+  {
+    state: "later",
+    title: "Conflict-safe editing",
+    body: "Detect changes made by another program and offer reload, keep mine or save a copy before writing.",
+  },
+  {
+    state: "later",
+    title: "macOS release",
+    body: "Add signed and notarized macOS builds alongside the existing Windows and Linux downloads.",
   },
   {
     state: "later",
     title: "Vim keybindings",
-    body: "Asked for early and often.",
+    body: "A focused keyboard mode for people who prefer to stay off the mouse.",
   },
 ];
 
@@ -41,78 +61,228 @@ const label = { now: "In progress", next: "Next", later: "Later" };
   title="Roadmap — sudonotes"
   description="What is being worked on in sudonotes, and what comes next."
 >
-  <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
-    <p class="eyebrow">Roadmap</p>
-    <h1>What is next</h1>
-    <p class="lede">
-      sudonotes is at v0.1.1. This is the honest order of work, not a wish list — items move here
-      only when they are actually being built.
-    </p>
+  <section class="page roadmap-page">
+    <header class="roadmap-intro">
+      <p class="eyebrow">Roadmap</p>
+      <h1>What is next</h1>
+      <p class="lede">
+        A short view of what we are improving next. It is a direction, not a set of dates — the
+        order can change as the product develops.
+      </p>
+      <div class="phase-key" aria-label="Roadmap stages">
+        <span class="now"><i aria-hidden="true"></i>In progress</span>
+        <span class="next"><i aria-hidden="true"></i>Next</span>
+        <span class="later"><i aria-hidden="true"></i>Later</span>
+      </div>
+    </header>
 
-    <ul class="roadmap">
+    <ol class="roadmap">
       {
-        items.map((item) => (
+        items.map((item, index) => (
           <li class={`roadmap-item ${item.state}`}>
-            <span class="roadmap-state">{label[item.state as keyof typeof label]}</span>
-            <div>
-              <h3>{item.title}</h3>
+            <span class="roadmap-node" aria-hidden="true"></span>
+            <article class="roadmap-card">
+              <div class="roadmap-meta">
+                <span class="roadmap-state">{label[item.state as keyof typeof label]}</span>
+                <span class="roadmap-number">{String(index + 1).padStart(2, "0")}</span>
+              </div>
+              <h2>{item.title}</h2>
               <p>{item.body}</p>
-            </div>
+            </article>
           </li>
         ))
       }
-    </ul>
+    </ol>
   </section>
 </Base>
 
 <style>
-  .roadmap {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .roadmap-page {
+    width: min(100% - 40px, 880px);
+    padding-block: clamp(44px, 7vw, 82px);
+  }
+
+  .roadmap-intro {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    padding-bottom: clamp(30px, 5vw, 48px);
+  }
+
+  .roadmap-intro .lede {
+    max-width: 62ch;
+  }
+
+  .phase-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .phase-key span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .phase-key i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+
+  .phase-key .now i {
+    background: var(--idea);
+  }
+
+  .phase-key .next i {
+    background: var(--accent);
+  }
+
+  .roadmap {
+    position: relative;
+    display: grid;
+    gap: 18px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .roadmap::before {
+    content: "";
+    position: absolute;
+    top: 27px;
+    bottom: 27px;
+    left: 19px;
+    width: 2px;
+    border-radius: 2px;
+    background: linear-gradient(
+      to bottom,
+      var(--idea) 0 7%,
+      var(--accent) 16% 36%,
+      color-mix(in srgb, var(--muted) 58%, transparent) 48% 100%
+    );
   }
 
   .roadmap-item {
+    position: relative;
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr);
-    gap: 16px;
-    padding: 18px;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .roadmap-item::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    top: 27px;
+    left: 20px;
+    width: 38px;
+    border-top: 1px solid var(--border);
+  }
+
+  .roadmap-node {
+    z-index: 2;
+    align-self: start;
+    justify-self: center;
+    width: 12px;
+    height: 12px;
+    margin-top: 21px;
+    border: 2px solid var(--muted);
+    border-radius: 50%;
+    background: var(--bg);
+    box-shadow: 0 0 0 6px var(--bg);
+  }
+
+  .roadmap-card {
+    position: relative;
+    z-index: 1;
+    padding: 19px 22px 20px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: var(--panel);
+    background: linear-gradient(
+      135deg,
+      var(--panel),
+      color-mix(in srgb, var(--panel-2) 50%, var(--panel))
+    );
   }
 
-  @media (max-width: 620px) {
-    .roadmap-item {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 8px;
-    }
+  .roadmap-item:nth-child(odd) .roadmap-card {
+    margin-right: clamp(0px, 2vw, 18px);
   }
 
-  .roadmap-item h3 {
-    margin-bottom: 5px;
+  .roadmap-item:nth-child(even) .roadmap-card {
+    margin-left: clamp(0px, 2vw, 18px);
   }
 
-  .roadmap-item p {
-    font-size: 14.5px;
+  .roadmap-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 10px;
+  }
+
+  .roadmap-number {
     color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+
+  .roadmap-card h2 {
+    margin-bottom: 6px;
+    font-size: 1.08rem;
+    font-weight: 620;
+  }
+
+  .roadmap-card p {
+    color: var(--muted);
+    font-size: 14.5px;
   }
 
   .roadmap-state {
-    align-self: start;
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
     padding: 2px 9px;
-    border-radius: 20px;
     border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--muted);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.03em;
+    line-height: 1;
     text-transform: uppercase;
-    color: var(--muted);
-    text-align: center;
-    justify-self: start;
+  }
+
+  .roadmap-item.now .roadmap-node {
+    border-color: var(--idea);
+    background: var(--idea);
+  }
+
+  .roadmap-item.next .roadmap-node {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  .roadmap-item.now .roadmap-card {
+    border-color: color-mix(in srgb, var(--idea) 30%, var(--border));
+  }
+
+  .roadmap-item.next .roadmap-card {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
   }
 
   .roadmap-item.now .roadmap-state {
@@ -125,5 +295,38 @@ const label = { now: "In progress", next: "Next", later: "Later" };
     color: var(--accent);
     border-color: color-mix(in srgb, var(--accent) 45%, transparent);
     background: var(--accent-soft);
+  }
+
+  @media (max-width: 620px) {
+    .roadmap-page {
+      width: min(100% - 28px, 880px);
+    }
+
+    .roadmap {
+      gap: 14px;
+    }
+
+    .roadmap::before {
+      left: 14px;
+    }
+
+    .roadmap-item {
+      grid-template-columns: 30px minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    .roadmap-item::after {
+      left: 15px;
+      width: 27px;
+    }
+
+    .roadmap-card {
+      padding: 17px 17px 18px;
+    }
+
+    .roadmap-item:nth-child(odd) .roadmap-card,
+    .roadmap-item:nth-child(even) .roadmap-card {
+      margin-inline: 0;
+    }
   }
 </style>

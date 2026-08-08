@@ -1,5 +1,8 @@
 ---
 import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import { SCALE } from "../lib/icons";
+import { siGithub } from "simple-icons";
 
 const repo = "https://github.com/mory-dev/sudonotes";
 ---
@@ -10,14 +13,20 @@ const repo = "https://github.com/mory-dev/sudonotes";
 >
   <section class="page prose" style="padding-block: clamp(44px, 7vw, 76px)">
     <p class="eyebrow">Open source</p>
-    <h1>MIT, all of it</h1>
+    <div class="license-title">
+      <span class="license-icon" aria-hidden="true"><Icon path={SCALE} size={30} stroke /></span>
+      <h1>MIT, all of it</h1>
+    </div>
     <p class="lede">
       The app, the AI proxy and this website are in one repository. Nothing about how your notes are
       stored or what leaves your machine is hidden behind a service you cannot read.
     </p>
 
     <div class="actions">
-      <a class="button primary" href={repo}>github.com/mory-dev/sudonotes</a>
+      <a class="button primary" href={repo}>
+        <Icon path={siGithub.path} size={16} />
+        github.com/mory-dev/sudonotes
+      </a>
       <a class="button" href={`${repo}/issues`}>Issues</a>
     </div>
 
@@ -63,3 +72,19 @@ const repo = "https://github.com/mory-dev/sudonotes";
     </div>
   </section>
 </Base>
+
+<style>
+  .license-title {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .license-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+  }
+</style>
