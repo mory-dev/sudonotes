@@ -47,16 +47,22 @@ function Item({
   hint,
   onClick,
   disabled,
+  danger,
 }: {
   icon: ReactNode;
   label: string;
   hint?: string;
   onClick: () => void;
   disabled?: boolean;
+  danger?: boolean;
 }) {
   return (
     <li>
-      <button className="menu-item" onClick={onClick} disabled={disabled}>
+      <button
+        className={danger ? "menu-item danger" : "menu-item"}
+        onClick={onClick}
+        disabled={disabled}
+      >
         <span className="menu-icon">{icon}</span>
         <span className="menu-label">{label}</span>
         {hint && <kbd>{hint}</kbd>}
@@ -94,9 +100,34 @@ export function ContextMenu() {
     return () => window.removeEventListener("keydown", onKey);
   }, [menuAt, closeMenu]);
 
+  // Right-click anywhere replaces the webview's default menu with this one.
+  // The editor handles its own right-clicks (it knows the editor selection)
+  // and stops propagation, so every other right-click lands here.
+  useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      const target = event.target as HTMLElement | null;
+      const link =
+        target?.closest?.("[data-target]")?.getAttribute("data-target") ?? null;
+      const selection = window.getSelection();
+      const hasSelection =
+        !!selection && !selection.isCollapsed && selection.toString().trim().length > 0;
+      useStore.getState().openMenu({
+        x: event.clientX,
+        y: event.clientY,
+        hasSelection,
+        link,
+      });
+    };
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => window.removeEventListener("contextmenu", onContextMenu);
+  }, []);
+
   if (!menuAt) return null;
 
   const selection = window.getSelection()?.toString().trim() ?? "";
+  const selectionShort =
+    selection.length > 48 ? `${selection.slice(0, 48)}…` : selection || null;
 
   const wrapAsLink = () => {
     closeMenu();
@@ -123,12 +154,18 @@ export function ContextMenu() {
         style={{ left: pos.x, top: pos.y }}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        {(menuAt.link || selectionShort) && (
+          <p className="menu-head">
+            {menuAt.link ? `Link to "${menuAt.link}"` : `Selection: “${selectionShort}”`}
+          </p>
+        )}
+
         <ul>
           {menuAt.link && (
             <>
               <Item
                 icon={<OpenIcon />}
-                label={`Open "${menuAt.link}"`}
+                label="Open this note"
                 hint="Ctrl click"
                 onClick={() => {
                   closeMenu();
@@ -148,7 +185,7 @@ export function ContextMenu() {
           <Item
             icon={<LinkIcon />}
             label="Wrap selection as link"
-            hint="[ [ "
+            hint="[ ["
             onClick={wrapAsLink}
             disabled={!menuAt.hasSelection}
           />
