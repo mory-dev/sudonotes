@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "sudonotes",
-        "width": 1000,
+        "width": 1096,
         "height": 640,
         "minWidth": 720,
         "minHeight": 480,
@@ -26,9 +26,26 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2QzNFQjExMDJDMkJENkQ\nUldSdHZjSUNFZXZEbHU0bDg2aktvYkp6QjAreDRzNVg2KzAvYVdxTmowdTMyak5hUFJ5NnNoVmgK",
+      "endpoints": [
+        "https://github.com/mory-dev/sudonotes/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "windows": {
+      "signCommand": {
+        "cmd": "cmd",
+        "args": ["/C", "sign-windows.cmd", "%1"]
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
