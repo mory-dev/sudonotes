@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type ModelInfo } from "../api";
-import { ProviderIcon, providerOf, shortModelName } from "./ProviderMarks";
+import {
+  ProviderIcon,
+  providerName,
+  providerOf,
+  shortModelName,
+} from "./ProviderMarks";
 
 const emptyModel = (id: string): ModelInfo => ({
   id,
@@ -108,23 +113,36 @@ export function ModelPicker({
           }}
         />
       ) : (
-        <button
-          className="model-picker-value"
-          onClick={() => setOpen(true)}
-          title={value || "No model selected"}
-        >
-          {value ? (
-            <>
-              <ProviderIcon provider={selected?.provider ?? providerOf(value)} />
-              <span className="model-picker-label">{closedLabel}</span>
-            </>
-          ) : (
-            <span className="model-picker-placeholder">Select model</span>
+        <div className="model-picker-closed">
+          <button
+            className="model-picker-value"
+            onClick={() => setOpen(true)}
+            data-tooltip={value || "No model selected"}
+          >
+            {value ? (
+              <>
+                <ProviderIcon provider={selected?.provider ?? providerOf(value)} />
+                <span className="model-picker-label">{closedLabel}</span>
+              </>
+            ) : (
+              <span className="model-picker-placeholder">Select model</span>
+            )}
+            <svg className="model-chevron" viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M2 3.5l3 3 3-3" />
+            </svg>
+          </button>
+          {value && (
+            <button
+              className="model-picker-clear"
+              data-tooltip="Clear model"
+              onClick={() => choose(emptyModel(""))}
+            >
+              <svg viewBox="0 0 10 10" aria-hidden="true">
+                <path d="M2 2l6 6M8 2l-6 6" />
+              </svg>
+            </button>
           )}
-          <svg className="model-chevron" viewBox="0 0 10 10" aria-hidden="true">
-            <path d="M2 3.5l3 3 3-3" />
-          </svg>
-        </button>
+        </div>
       )}
 
       {open && (
@@ -142,7 +160,7 @@ export function ModelPicker({
                   <ProviderIcon provider={model.provider} />
                   <span className="model-option-name">
                     <strong>{shortModelName(model.name, model.provider)}</strong>
-                    <small>{model.provider}</small>
+                    <small>{providerName(model.provider)}</small>
                   </span>
                   <small className="model-capabilities">
                     {model.reasoning ? "reasoning · " : ""}
