@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
   defaultHighlightStyle,
@@ -23,6 +23,7 @@ import {
 import { useStore } from "../store";
 import { tagHoverColor } from "../tagColors";
 import { ModelPicker } from "./ModelPicker";
+import { providerMarkHtml, providerOf, shortModelName } from "./ProviderMarks";
 
 /** Split pasted text into clean paragraphs (separated by a single blank line)
  *  so an imported notepad-style file becomes distinct idea bubbles. */
@@ -43,7 +44,7 @@ const label = (target: string) =>
     class: "cm-wikilink",
     attributes: {
       "data-target": target,
-      title: `Ctrl+click to open "${target}"`,
+      "data-tooltip": `Ctrl+click to open "${target}"`,
     },
   });
 
@@ -146,6 +147,43 @@ function buildHeadingDecorations(view: EditorView): DecorationSet {
   return builder.finish();
 }
 
+/** Mark `{{name}}` in a prompt so a template is visibly a template. The
+ *  right panel turns the same matches into fields to fill in. */
+const PLACEHOLDER = /\{\{\s*[^{}]+?\s*\}\}/g;
+
+function buildPlaceholderDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  if (useStore.getState().active?.type !== "prompt") return builder.finish();
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.doc.sliceString(from, to);
+    PLACEHOLDER.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = PLACEHOLDER.exec(text))) {
+      builder.add(
+        from + match.index,
+        from + match.index + match[0].length,
+        Decoration.mark({ class: "cm-placeholder-var" }),
+      );
+    }
+  }
+  return builder.finish();
+}
+
+const placeholders = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildPlaceholderDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = buildPlaceholderDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
 const headings = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -210,6 +248,76 @@ function computeBubbles(state: EditorState): { from: number; to: number; heading
   return runs;
 }
 
+/** The heading text identifying the bubble that contains `pos`, or null when
+ *  the position is between bubbles. This is the same key `setBubbleModel`
+ *  stores a model under, so the right panel and the hover menu agree. */
+function bubbleLabelAt(state: EditorState, pos: number): string | null {
+  const bubble = computeBubbles(state).find(
+    (b) => pos >= b.from && pos <= b.to && b.from !== b.to,
+  );
+  if (!bubble) return null;
+  return state.doc.lineAt(bubble.from).text.trim() || null;
+}
+
+/** Rebuild the note with the bubble at `fromIndex` moved to `toIndex`, keeping
+ *  the separators between bubbles in their original slots so nothing outside
+ *  the moved bubble's own text changes. Returns null for a no-op, or the new
+ *  body together with the moved bubble's new first-line offset. */
+function reorderBubbles(
+  state: EditorState,
+  fromIndex: number,
+  toIndex: number,
+): { body: string; at: number } | null {
+  const doc = state.doc;
+  const bubbles = computeBubbles(state);
+  const n = bubbles.length;
+  if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= n || toIndex < 0 || toIndex >= n) {
+    return null;
+  }
+  const prefix = doc.sliceString(0, bubbles[0].from);
+  const suffix = doc.sliceString(bubbles[n - 1].to, doc.length);
+  const texts = bubbles.map((b) => doc.sliceString(b.from, b.to));
+  const seps = bubbles.map((b, i) =>
+    doc.sliceString(b.to, i < n - 1 ? bubbles[i + 1].from : b.to),
+  );
+  const [moved] = texts.splice(fromIndex, 1);
+  texts.splice(toIndex, 0, moved);
+  let out = prefix;
+  let at = -1;
+  for (let i = 0; i < n; i++) {
+    if (i === toIndex) at = out.length;
+    out += texts[i] + seps[i];
+  }
+  return { body: out + suffix, at };
+}
+
+/** The `.cm-line` element containing `pos`, or null when it maps to no line. */
+function lineElementAt(view: EditorView, pos: number): HTMLElement | null {
+  const dom = view.domAtPos(pos);
+  const el = dom.node instanceof Element ? dom.node : dom.node.parentElement;
+  return el?.closest(".cm-line") ?? null;
+}
+
+/** The bubble boundary (0..bubbles.length) a drag pointer is hovering: over a
+ *  bubble, its top half means before it and its bottom half means after it; a
+ *  position between bubbles resolves to the boundary after the last one that
+ *  starts before it. */
+function bubbleBoundaryAt(view: EditorView, x: number, y: number): number | null {
+  const pos = view.posAtCoords({ x, y });
+  if (pos == null) return null;
+  const bubbles = computeBubbles(view.state);
+  const n = bubbles.length;
+  if (n === 0) return null;
+  const index = bubbles.findIndex((b) => pos >= b.from && pos <= b.to);
+  if (index >= 0) {
+    const line = lineElementAt(view, pos);
+    const rect = line?.getBoundingClientRect();
+    const before = !rect || y < rect.top + rect.height / 2;
+    return Math.max(0, Math.min(n, before ? index : index + 1));
+  }
+  return Math.max(0, Math.min(n, bubbles.filter((b) => b.from < pos).length));
+}
+
 /** Priority indicator for a bubble: a horizontal "volume" bar in the right
  *  gutter (outside the bubble) whose width and colour fade from hot (high rank)
  *  to cool (low rank) against the note's other bubbles. */
@@ -222,11 +330,79 @@ class BubbleHeatWidget extends WidgetType {
     el.className = "cm-bubble-heat";
     el.style.setProperty("--heat-hue", String(Math.round(220 - 205 * this.heat)));
     el.style.setProperty("--heat-width", `${Math.round(14 + 36 * this.heat)}px`);
-    el.title = "Priority";
+    el.setAttribute("data-tooltip", "Priority");
     return el;
   }
   eq(other: BubbleHeatWidget) {
     return other.heat === this.heat;
+  }
+}
+
+/** Drag handle for an idea bubble, in the left gutter opposite its heat bar.
+ *  The bubble's own text stays selectable, so only this small grip is the
+ *  drag handle; the reorder runs in the editor's pointer-based drag. */
+class BubbleGripWidget extends WidgetType {
+  constructor(readonly from: number) {
+    super();
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-bubble-grip";
+    // Not `draggable` — the reorder is a custom pointer drag, which avoids the
+    // browser's native drag cursor fighting CodeMirror's own drag handling.
+    el.setAttribute("data-tooltip", "Drag to reorder");
+    el.setAttribute("data-from", String(this.from));
+    el.innerHTML =
+      '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 3h8M2 6h8M2 9h8"/></svg>';
+    // Intercept mousedown on the grip itself, before CodeMirror's own event
+    // handling can place a caret or start a text drag, and hand the drag off
+    // to the editor component (widgets are built outside React, so this is the
+    // one shared channel back into it).
+    el.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      gripDragStart.onDown?.(this.from, event.clientX, event.clientY);
+    });
+    return el;
+  }
+  eq(other: BubbleGripWidget) {
+    return other.from === this.from;
+  }
+}
+
+/** One-way bridge from grip widgets to the Editor component's drag handler,
+ *  since widgets are created by the decoration plugins, outside React. */
+const gripDragStart: { onDown: ((from: number, x: number, y: number) => void) | null } = {
+  onDown: null,
+};
+
+/** A little pill at a bubble's bottom-right corner naming the model assigned
+ *  to that bubble — the idea's model lives on its bubbles, not the note row. */
+class BubbleModelBadgeWidget extends WidgetType {
+  constructor(readonly model: string) {
+    super();
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-bubble-model";
+    el.setAttribute("data-tooltip", this.model);
+    const provider = providerOf(this.model);
+    const mark = document.createElement("span");
+    mark.innerHTML = providerMarkHtml(provider, 12);
+    const tile = mark.firstElementChild as HTMLElement | null;
+    if (tile) el.appendChild(tile);
+    const name = document.createElement("span");
+    name.className = "cm-bubble-model-name";
+    // The id's last segment, hyphenated as in "claude-opus-5", reads better as
+    // "opus 5" once the brand prefix is dropped.
+    const segment = this.model.slice(this.model.lastIndexOf("/") + 1).replace(/-/g, " ");
+    name.textContent = shortModelName(segment, provider);
+    el.appendChild(name);
+    return el;
+  }
+  eq(other: BubbleModelBadgeWidget) {
+    return other.model === this.model;
   }
 }
 
@@ -274,28 +450,68 @@ function buildHeatDecorations(view: EditorView): DecorationSet {
   const doc = view.state.doc;
   const runs = computeBubbles(view.state);
   const total = runs.length;
+  const models = useStore.getState().active?.models ?? {};
   for (const [index, block] of runs.entries()) {
     const firstLine = doc.lineAt(block.from);
     const heat = total <= 1 ? 1 : 1 - index / (total - 1);
+    // Widgets at one position must be added by ascending `side` — grip (-1)
+    // before heat (+1) — or RangeSetBuilder rejects the set.
+    builder.add(
+      firstLine.from,
+      firstLine.from,
+      Decoration.widget({ widget: new BubbleGripWidget(firstLine.from), side: -1 }),
+    );
     builder.add(
       firstLine.from,
       firstLine.from,
       Decoration.widget({ widget: new BubbleHeatWidget(heat), side: 1 }),
     );
+    // The model assigned to this bubble, named by its first line, shows as a
+    // badge directly below the heat bar.
+    const label = doc.lineAt(block.from).text.trim();
+    const model = models[label];
+    if (model) {
+      builder.add(
+        firstLine.from,
+        firstLine.from,
+        Decoration.widget({ widget: new BubbleModelBadgeWidget(model), side: 1 }),
+      );
+    }
   }
   return builder.finish();
 }
 
+/** Signals the heat/badge plugin that a bubble's model assignment changed, so
+ *  the badge appears as soon as a model is picked without an edit. */
+const bubbleModelsEffect = StateEffect.define<null>();
+
 const heatBars = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    alive = true;
+    unsubscribe: () => void;
     constructor(view: EditorView) {
       this.decorations = buildHeatDecorations(view);
+      // Rebuild when the open note's per-bubble models change (e.g. a model is
+      // assigned from the hover menu) without any document edit.
+      this.unsubscribe = useStore.subscribe((state, previous) => {
+        if (this.alive && state.active?.models !== previous.active?.models) {
+          view.dispatch({ effects: bubbleModelsEffect.of(null) });
+        }
+      });
     }
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.transactions.some((tr) => tr.effects.some((effect) => effect.is(bubbleModelsEffect)))
+      ) {
         this.decorations = buildHeatDecorations(update.view);
       }
+    }
+    destroy() {
+      this.alive = false;
+      this.unsubscribe();
     }
   },
   { decorations: (plugin) => plugin.decorations },
@@ -442,10 +658,20 @@ const findPlugin = ViewPlugin.fromClass(
       useStore.setState({ findCount: this.matches.length });
       if (find.move && this.matches.length > 0) {
         const index = Math.max(0, Math.min(find.index, this.matches.length - 1));
-        view.dispatch({
-          effects: EditorView.scrollIntoView(this.matches[index].from, { y: "center" }),
+        const pos = this.matches[index].from;
+        // CodeMirror forbids dispatching a transaction from inside an update
+        // cycle, and `apply` runs from `update`. Dispatching here was silently
+        // dropped, which is why Enter highlighted the next match but never
+        // scrolled to it. Defer to the next frame instead.
+        requestAnimationFrame(() => {
+          if (this.destroyed) return;
+          view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
         });
       }
+    }
+    destroyed = false;
+    destroy() {
+      this.destroyed = true;
     }
   },
   {
@@ -537,6 +763,11 @@ const theme = EditorView.theme(
       background: "rgba(255,255,255,0.045)",
       borderBottom: "1px solid rgba(255,255,255,0.08)",
     },
+    // The header's own background is more specific than the hover tint, so the
+    // hover rule would lose on the bubble's first line; restate it explicitly.
+    ".cm-para.first.cm-bubble-header.cm-para-hover": {
+      background: "var(--para-hover, rgba(255,255,255,0.06))",
+    },
     ".cm-para-hover": {
       backgroundColor: "var(--para-hover, rgba(255,255,255,0.06))",
       borderLeftColor: "rgba(255,255,255,0.18)",
@@ -552,10 +783,75 @@ const theme = EditorView.theme(
       right: "12px",
       top: "auto",
       width: "var(--heat-width)",
-      height: "3px",
-      borderRadius: "2px",
+      height: "1px",
+      borderRadius: "1px",
+      opacity: 0.8,
       background: "hsl(var(--heat-hue) 70% 52%)",
     },
+    // Reorder grip for a bubble, in the left gutter; hidden until its bubble is
+    // hovered, and kept visible for the bubble being dragged.
+    ".cm-bubble-grip": {
+      position: "absolute",
+      left: "8px",
+      top: "auto",
+      width: "14px",
+      height: "14px",
+      display: "grid",
+      placeItems: "center",
+      color: "var(--muted)",
+      cursor: "grab",
+      opacity: 0,
+      borderRadius: "4px",
+      transition: "opacity 120ms ease",
+    },
+    ".cm-line.cm-para-hover .cm-bubble-grip, .cm-bubble-grip:hover, .cm-bubble-grip.dragging":
+      {
+        opacity: 1,
+      },
+    ".cm-bubble-grip:hover": { color: "var(--text)" },
+    ".cm-bubble-grip.dragging": { cursor: "grabbing", color: "var(--text)" },
+    ".cm-bubble-grip svg": {
+      width: "12px",
+      height: "12px",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.4",
+      strokeLinecap: "round",
+      pointerEvents: "none",
+    },
+    // Model badge at a bubble's bottom-right corner, naming the model assigned
+    // to that bubble. Floats in the right gutter, just below the heat bar.
+    ".cm-bubble-model": {
+      position: "absolute",
+      right: "12px",
+      top: "auto",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "4px",
+      maxWidth: "140px",
+      padding: "1px 6px 1px 2px",
+      fontSize: "10px",
+      fontWeight: 600,
+      lineHeight: "1.3",
+      color: "var(--muted)",
+      background: "var(--panel)",
+      border: "1px solid var(--border)",
+      borderRadius: "999px",
+      transform: "translateY(5px)",
+    },
+    ".cm-bubble-model-name": {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    },
+    ".provider-mark": {
+      display: "grid",
+      placeItems: "center",
+      flex: "none",
+      borderRadius: "4px",
+    },
+    ".provider-mark svg": { display: "block" },
+    ".provider-mark-fallback": { color: "#fff", fontWeight: 700, lineHeight: 1 },
     ".cm-find-match": {
       backgroundColor: "rgba(247, 168, 42, 0.2)",
       borderRadius: "2px",
@@ -598,11 +894,34 @@ export function Editor() {
     label: string;
     below: boolean;
     text: string;
+    from: number;
+    to: number;
   } | null>(null);
   const [copiedBubble, setCopiedBubble] = useState(false);
+  // The menu retires on its own ~1.5s after it appears, so a mouse resting in
+  // the note is not left with a panel floating over the text. Held open for as
+  // long as the pointer is actually inside it.
+  const [menuFading, setMenuFading] = useState(false);
+  const fadeTimers = useRef<number[]>([]);
+  const menuHeld = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<number | null>(null);
+  // Bubble reorder drag state (pointer-based, not native HTML5 DnD): which
+  // bubble is being dragged, the pointer position the drag began at, and the
+  // drop boundary the pointer is currently over. `cleanup` detaches the
+  // document listeners added while a drag is in progress.
+  const bubbleDrag = useRef<{
+    index: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    boundary: number | null;
+  } | null>(null);
+  const bubbleDragCleanup = useRef<(() => void) | null>(null);
+  /** Floating ghost element following the cursor while a bubble is dragged. */
+  const dragGhostRef = useRef<HTMLElement | null>(null);
+  const [dropAt, setDropAt] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const cancelHide = () => {
     if (hideTimer.current) {
@@ -610,11 +929,20 @@ export function Editor() {
       hideTimer.current = null;
     }
   };
+
+  const clearFade = () => {
+    for (const t of fadeTimers.current) clearTimeout(t);
+    fadeTimers.current = [];
+    setMenuFading(false);
+  };
   // A short grace period so moving from the bubble up to the menu (or across a
   // heading in between) never makes the menu vanish before it is reached.
   const scheduleHide = () => {
     cancelHide();
-    hideTimer.current = window.setTimeout(() => setBubbleMenu(null), 250);
+    hideTimer.current = window.setTimeout(() => {
+      setBubbleMenu(null);
+      useStore.getState().setHoverBubble(null);
+    }, 250);
   };
 
   const copyBubble = () => {
@@ -624,11 +952,144 @@ export function Editor() {
     setTimeout(() => setCopiedBubble(false), 1200);
   };
 
+  // --- pointer-based bubble reorder drag ---
+  // Native HTML5 DnD from the grip fights CodeMirror's own drag handling (its
+  // dragstart preventDefault leaves a "no-drop" cursor), so the reorder is done
+  // with raw pointer events instead: mousedown on a grip records the bubble,
+  // mousemove past a small threshold shows the drop line, mouseup commits it.
+
+  const endBubbleDrag = (commit: boolean) => {
+    const drag = bubbleDrag.current;
+    bubbleDrag.current = null;
+    bubbleDragCleanup.current?.();
+    bubbleDragCleanup.current = null;
+    document.body.classList.remove("bubble-dragging");
+    dragGhostRef.current?.remove();
+    dragGhostRef.current = null;
+    setDropAt(null);
+    if (!commit || !drag || !drag.moved || drag.boundary == null) return;
+    const editor = view.current;
+    if (!editor) return;
+    const toIndex = drag.boundary <= drag.index ? drag.boundary : drag.boundary - 1;
+    const next = reorderBubbles(editor.state, drag.index, toIndex);
+    if (next != null) {
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: next.body },
+        selection: { anchor: next.at },
+        scrollIntoView: true,
+      });
+      editor.focus();
+    }
+    setBubbleMenu(null);
+    useStore.getState().setHoverBubble(null);
+  };
+
+  const onBubbleDragMove = (event: MouseEvent) => {
+    const drag = bubbleDrag.current;
+    if (!drag) return;
+    event.preventDefault();
+    // The ghost follows the cursor immediately, even before the drag threshold.
+    if (dragGhostRef.current) {
+      dragGhostRef.current.style.left = `${event.clientX}px`;
+      dragGhostRef.current.style.top = `${event.clientY}px`;
+    }
+    // A small threshold so a plain click on the grip never starts a drag.
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) {
+      return;
+    }
+    drag.moved = true;
+    const editor = view.current;
+    if (!editor) return;
+    const boundary = bubbleBoundaryAt(editor, event.clientX, event.clientY);
+    drag.boundary = boundary;
+    if (boundary == null) {
+      setDropAt(null);
+      return;
+    }
+    const bubbles = computeBubbles(editor.state);
+    const n = bubbles.length;
+    const toIndex = boundary <= drag.index ? boundary : boundary - 1;
+    if (toIndex === drag.index) {
+      setDropAt(null);
+      return;
+    }
+    const anchor = boundary < n ? bubbles[boundary].from : bubbles[n - 1].to;
+    const line = lineElementAt(editor, anchor);
+    const wrap = wrapRef.current;
+    if (!line || !wrap) {
+      setDropAt(null);
+      return;
+    }
+    const rect = line.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const contentRect = editor.contentDOM.getBoundingClientRect();
+    const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const top = ((boundary < n ? rect.top : rect.bottom) - wrapRect.top) / zoom;
+    const left = (contentRect.left - wrapRect.left) / zoom;
+    const width = contentRect.width / zoom;
+    setDropAt((current) =>
+      current && current.top === top && current.left === left && current.width === width
+        ? current
+        : { top, left, width },
+    );
+  };
+
+  const onBubbleDragUp = (event: MouseEvent) => {
+    if (!bubbleDrag.current) return;
+    event.preventDefault();
+    endBubbleDrag(true);
+  };
+
+  const startBubbleDrag = (clientX: number, clientY: number, index: number) => {
+    const editor = view.current;
+    const bubbles = editor ? computeBubbles(editor.state) : [];
+    const label =
+      editor && bubbles[index] ? editor.state.doc.lineAt(bubbles[index].from).text.trim() : "";
+    bubbleDrag.current = {
+      index,
+      startX: clientX,
+      startY: clientY,
+      moved: false,
+      boundary: null,
+    };
+    document.body.classList.add("bubble-dragging");
+    // A floating ghost of the bubble's first line follows the cursor so it is
+    // obvious which bubble is being picked up.
+    const ghost = document.createElement("div");
+    ghost.className = "bubble-drag-ghost";
+    ghost.textContent = label;
+    ghost.style.left = `${clientX}px`;
+    ghost.style.top = `${clientY}px`;
+    document.body.appendChild(ghost);
+    dragGhostRef.current = ghost;
+    setBubbleMenu(null);
+    useStore.getState().setHoverBubble(null);
+    const onMove = (e: MouseEvent) => onBubbleDragMove(e);
+    const onUp = (e: MouseEvent) => onBubbleDragUp(e);
+    const onBlur = () => endBubbleDrag(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") endBubbleDrag(false);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    bubbleDragCleanup.current = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  };
+
   const onEditorMouseMove = (event: React.MouseEvent) => {
     if (useStore.getState().active?.type !== "idea") {
       setBubbleMenu(null);
+      useStore.getState().setHoverBubble(null);
       return;
     }
+    // A bubble reorder drag is in progress — don't open the hover menu.
+    if (bubbleDrag.current) return;
     // Over the menu or its dropdown: keep it open.
     if (menuRef.current?.contains(event.target as Node)) {
       cancelHide();
@@ -649,10 +1110,12 @@ export function Editor() {
       return;
     }
     const bubble = computeBubbles(editor.state).find((b) => pos >= b.from && pos < b.to);
-    const text = bubble
-      ? editor.state.doc.sliceString(bubble.from, bubble.to)
-      : editor.state.doc.lineAt(pos).text;
+    const docLine = editor.state.doc.lineAt(pos);
+    const text = bubble ? editor.state.doc.sliceString(bubble.from, bubble.to) : docLine.text;
+    const from = bubble ? bubble.from : docLine.from;
+    const to = bubble ? bubble.to : docLine.to;
     cancelHide();
+    useStore.getState().setHoverBubble(label);
     const wrap = wrapRef.current;
     if (!wrap) return;
     const rect = first.getBoundingClientRect();
@@ -669,16 +1132,66 @@ export function Editor() {
         current &&
         current.label === label &&
         current.below === below &&
+        current.from === from &&
+        current.to === to &&
         Math.abs(current.top - top) < 1 &&
         Math.abs(current.left - left) < 1
       ) {
         return current;
       }
-      return { top, left, label, below, text };
+      return { top, left, label, below, text, from, to };
     });
   };
 
+  /** Remove the hovered bubble, optionally copying it first (cut). The blank
+   *  line that separated it goes too, so the note does not accumulate gaps;
+   *  Ctrl+Z puts the whole thing back. */
+  const removeBubble = (cut: boolean) => {
+    const editor = view.current;
+    if (!editor || !bubbleMenu) return;
+    if (cut) void navigator.clipboard.writeText(bubbleMenu.text);
+
+    const text = editor.state.doc.toString();
+    let { from, to } = bubbleMenu;
+    const after = /^\n[ \t]*\n/.exec(text.slice(to));
+    if (after) {
+      to += after[0].length;
+    } else {
+      const before = /\n[ \t]*\n$/.exec(text.slice(0, from));
+      if (before) from -= before[0].length;
+    }
+
+    editor.dispatch({
+      changes: { from, to, insert: "" },
+      selection: { anchor: Math.min(from, editor.state.doc.length - (to - from)) },
+      scrollIntoView: true,
+    });
+    setBubbleMenu(null);
+    useStore.getState().setHoverBubble(null);
+    editor.focus();
+  };
+
   const onEditorMouseLeave = () => scheduleHide();
+
+  // Fade out at 1.3s, gone at 1.5s. Restarted whenever the menu moves to
+  // another bubble, because `bubbleMenu` keeps its identity while it stays put.
+  useEffect(() => {
+    clearFade();
+    if (!bubbleMenu) return;
+    const fade = window.setTimeout(() => {
+      if (!menuHeld.current) setMenuFading(true);
+    }, 1300);
+    const gone = window.setTimeout(() => {
+      if (menuHeld.current) return;
+      setBubbleMenu(null);
+      useStore.getState().setHoverBubble(null);
+    }, 1500);
+    fadeTimers.current = [fade, gone];
+    return () => {
+      clearTimeout(fade);
+      clearTimeout(gone);
+    };
+  }, [bubbleMenu]);
 
   useEffect(() => {
     return () => {
@@ -712,6 +1225,7 @@ export function Editor() {
           headings,
           paragraphBoxes,
           heatBars,
+          placeholders,
           bubbleHover,
           findPlugin,
           theme,
@@ -745,6 +1259,14 @@ export function Editor() {
               {
                 key: "Mod-s",
                 run: () => (void useStore.getState().flushSave(), true),
+              },
+              {
+                // historyKeymap only binds Mod-Shift-z on macOS; Windows and
+                // Linux are left with Mod-y alone. Bind both everywhere so
+                // either muscle memory redoes.
+                key: "Mod-Shift-z",
+                run: redo,
+                preventDefault: true,
               },
               {
                 // In an idea, select just the bubble the cursor is in; outside
@@ -788,6 +1310,8 @@ export function Editor() {
               return false;
             },
             mousedown: (event) => {
+              // Note: a grip's mousedown is handled on the grip element itself
+              // (see BubbleGripWidget), so it never reaches here.
               if (!event.ctrlKey && !event.metaKey) return false;
               const link = (event.target as HTMLElement).closest(".cm-wikilink");
               const target = link?.getAttribute("data-target");
@@ -799,6 +1323,7 @@ export function Editor() {
             // Replace the webview's default menu with linking actions.
             contextmenu: (event, view) => {
               event.preventDefault();
+              event.stopPropagation();
               const link = (event.target as HTMLElement)
                 .closest(".cm-wikilink")
                 ?.getAttribute("data-target");
@@ -812,6 +1337,22 @@ export function Editor() {
             },
           }),
           EditorView.updateListener.of((update) => {
+            // The bubble the caret sits in, so the right panel can follow it
+            // when the mouse is not hovering one.
+            if (update.docChanged || update.selectionSet) {
+              const store = useStore.getState();
+              store.setCursorBubble(
+                store.active?.type === "idea"
+                  ? bubbleLabelAt(update.state, update.state.selection.main.head)
+                  : null,
+              );
+            }
+            // Typing dismisses the hover menu — the note is being worked in,
+            // not hovered. Skips programmatic replacements (loading a note).
+            if (update.docChanged && !applying.current) {
+              setBubbleMenu(null);
+              useStore.getState().setHoverBubble(null);
+            }
             if (!update.docChanged || applying.current) return;
             const id = activeId.current;
             if (id) useStore.getState().queueSave(id, update.state.doc.toString());
@@ -821,7 +1362,22 @@ export function Editor() {
     });
 
     view.current = editor;
+
+    // Widgets are built outside React, so the grip's mousedown reaches this
+    // component through the module-level bridge.
+    gripDragStart.onDown = (from, x, y) => {
+      const current = view.current;
+      if (!current) return;
+      const index = computeBubbles(current.state).findIndex(
+        (b) => current.state.doc.lineAt(b.from).from === from,
+      );
+      if (index < 0) return;
+      startBubbleDrag(x, y, index);
+    };
+
     return () => {
+      gripDragStart.onDown = null;
+      endBubbleDrag(false);
       editor.destroy();
       view.current = null;
     };
@@ -896,14 +1452,21 @@ export function Editor() {
       {bubbleMenu && active?.type === "idea" && (
         <div
           ref={menuRef}
-          className="bubble-model-menu"
+          className={menuFading ? "bubble-model-menu fading" : "bubble-model-menu"}
           style={{
             top: bubbleMenu.top,
             left: bubbleMenu.left,
             transform: bubbleMenu.below ? "none" : "translateY(-100%)",
           }}
-          onMouseEnter={cancelHide}
-          onMouseLeave={scheduleHide}
+          onMouseEnter={() => {
+            menuHeld.current = true;
+            cancelHide();
+            clearFade();
+          }}
+          onMouseLeave={() => {
+            menuHeld.current = false;
+            scheduleHide();
+          }}
         >
           <div className="bubble-model-row">
             <ModelPicker
@@ -914,14 +1477,43 @@ export function Editor() {
             />
             <button
               className="bubble-model-copy"
-              title="Copy bubble"
+              data-tooltip="Copy bubble"
               onClick={copyBubble}
               onMouseDown={(event) => event.stopPropagation()}
             >
               {copiedBubble ? "✓" : "⧉"}
             </button>
+            <button
+              className="bubble-model-copy"
+              data-tooltip="Cut bubble"
+              onClick={() => removeBubble(true)}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="4.6" cy="11.4" r="1.6" />
+                <circle cx="11.4" cy="11.4" r="1.6" />
+                <path d="M5.7 10.1 12.4 3M10.3 10.1 3.6 3" />
+              </svg>
+            </button>
+            <button
+              className="bubble-model-copy danger"
+              data-tooltip="Delete bubble"
+              onClick={() => removeBubble(false)}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.8 5h10.4M6.3 5V3h3.4v2M4.4 5l.7 8h5.8l.7-8" />
+              </svg>
+            </button>
           </div>
         </div>
+      )}
+
+      {dropAt && (
+        <div
+          className="bubble-drop-indicator"
+          style={{ top: dropAt.top, left: dropAt.left, width: dropAt.width }}
+        />
       )}
 
       {find && (
@@ -946,15 +1538,15 @@ export function Editor() {
           </span>
           <button
             className="find-nav"
-            title="Previous (Shift+Enter)"
+            data-tooltip="Previous (Shift+Enter)"
             onClick={() => findMove(-1)}
           >
             ↑
           </button>
-          <button className="find-nav" title="Next (Enter)" onClick={() => findMove(1)}>
+          <button className="find-nav" data-tooltip="Next (Enter)" onClick={() => findMove(1)}>
             ↓
           </button>
-          <button className="find-close" title="Close (Esc)" onClick={closeFind}>
+          <button className="find-close" data-tooltip="Close (Esc)" onClick={closeFind}>
             ×
           </button>
         </div>
