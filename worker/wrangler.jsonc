@@ -4,6 +4,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
+  // The desktop app calls https://sudonotes.com/api/v1 (ai.rs API_BASE), so the
+  // zone must route /api/* here rather than to the static site Worker. That
+  // route is added out of band: the deploy token has no Workers Routes
+  // permission on the zone, and declaring it here disables workers.dev as a
+  // side effect, which would take the API down when the route then fails.
+  "workers_dev": true,
   "observability": {
     "enabled": true,
     "logs": { "head_sampling_rate": 1 }
