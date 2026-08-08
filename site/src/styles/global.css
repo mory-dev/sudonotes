@@ -1,29 +1,12 @@
-/* The palette is lifted from the app's App.css so the site and the product read
-   as one thing. Prompts are blue, ideas are green, here as there. */
+/* The palette, radii and chrome dimensions come from the shared token file the
+   app imports too, so the site and the product cannot drift apart. The type
+   families (`--font-ui`, `--font-mono`) are self-hosted at build time and emitted
+   by Astro's experimental.fonts, so they are not declared here. */
+@import "../../../tokens.css";
+
 :root {
-  --bg: #16171a;
-  --panel: #1c1d21;
-  --panel-2: #232429;
-  --border: #2c2e34;
-  --text: #e4e5e9;
-  --muted: #8b8d96;
-  --accent: #7aa2f7;
-  --accent-soft: rgba(122, 162, 247, 0.14);
-  --danger: #f7768e;
-
-  --prompt: #7aa2f7;
-  --prompt-soft: rgba(122, 162, 247, 0.14);
-  --idea: #9ece6a;
-  --idea-soft: rgba(158, 206, 106, 0.14);
-
-  --font-ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Mono", "SF Mono", Consolas, monospace;
-
-  --radius: 10px;
   --measure: 68ch;
   --page: 1120px;
-
-  color-scheme: dark;
 }
 
 *,
@@ -32,14 +15,10 @@
   box-sizing: border-box;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+/* Highlighted text selection, matching App.css: a subtle neutral gray rather
+   than the browser's blue. */
+::selection {
+  background: var(--selection-bg);
 }
 
 body {
@@ -89,6 +68,18 @@ a {
 
 a:hover {
   text-decoration-color: var(--accent);
+}
+
+/* The same reset the app does in App.css. Without it every <button> in the
+   window previews sits on the UA's `buttonface`, which under `color-scheme:
+   dark` is a solid mid-gray — that is what made the titlebar controls and the
+   sidebar's "+" buttons look like gray chips. */
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
 code {
@@ -154,7 +145,7 @@ hr {
 
 .lede {
   font-size: clamp(1.02rem, 1.8vw, 1.2rem);
-  color: var(--muted);
+  color: var(--text-2);
   max-width: var(--measure);
 }
 
@@ -168,7 +159,12 @@ hr {
 
 section.band {
   padding-block: clamp(56px, 9vw, 104px);
-  border-top: 1px solid var(--border);
+}
+
+/* Alternate band surfaces replace the old hairline borders, so stacked
+   sections are told apart by tone rather than by a line. */
+section.band.alt {
+  background: var(--panel);
 }
 
 /* site chrome ------------------------------------------------------------- */
@@ -192,12 +188,28 @@ section.band {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  font-weight: 620;
+  font-family: var(--font-mono);
+  font-weight: 500;
   font-size: 15px;
+  letter-spacing: -0.01em;
   color: var(--text);
   text-decoration: none;
-  letter-spacing: -0.01em;
+}
+
+.brand-mark {
+  color: var(--accent);
+  margin-right: 5px;
+}
+
+.brand-word {
+  white-space: nowrap;
+}
+
+.brand-caret {
+  width: 7px;
+  height: 14px;
+  margin-left: 5px;
+  background: var(--accent);
 }
 
 .nav-links {
@@ -254,6 +266,16 @@ section.band {
 
 .site-footer .spacer {
   margin-left: auto;
+}
+
+.site-footer .github {
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-footer .github svg {
+  display: block;
+  transition: color 120ms ease;
 }
 
 /* buttons ----------------------------------------------------------------- */
@@ -317,7 +339,7 @@ section.band {
 
 .card p {
   font-size: 14.5px;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .note {
@@ -327,11 +349,7 @@ section.band {
   border-radius: 0 var(--radius) var(--radius) 0;
   background: var(--panel);
   font-size: 14.5px;
-  color: var(--muted);
-}
-
-.note.warn {
-  border-left-color: var(--idea);
+  color: var(--text-2);
 }
 
 /* prose ------------------------------------------------------------------- */
@@ -354,7 +372,7 @@ section.band {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .prose li strong {
@@ -363,7 +381,7 @@ section.band {
 }
 
 .prose p {
-  color: var(--muted);
+  color: var(--text);
 }
 
 table {
