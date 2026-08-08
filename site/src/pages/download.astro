@@ -1,5 +1,8 @@
 ---
 import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import Wordmark from "../components/Wordmark.astro";
+import { APPLE, GITHUB, LINUX, WINDOWS } from "../lib/icons";
 
 const repo = "https://github.com/mory-dev/sudonotes";
 ---
@@ -13,7 +16,7 @@ const repo = "https://github.com/mory-dev/sudonotes";
     <h1>Get sudonotes</h1>
 
     <div class="note warn">
-      <strong>There are no prebuilt installers yet.</strong> sudonotes is at v0.1.1 and the release
+      <strong>There are no prebuilt installers yet.</strong> <Wordmark /> is at v0.1.1 and the release
       pipeline — cross-platform builds, code signing and macOS notarization — is not finished.
       Rather than hand you an unsigned binary that your OS will warn you about, the honest answer
       today is: build it from source. It takes two commands and about a minute.
@@ -36,7 +39,14 @@ const repo = "https://github.com/mory-dev/sudonotes";
 
     <h2>What you get</h2>
     <ul>
-      <li><strong>Windows, macOS and Linux</strong> — one codebase, native builds.</li>
+      <li class="platform-line">
+        <span class="platforms">
+          <Icon path={WINDOWS} size={14} label="Windows" />
+          <Icon path={APPLE} size={14} label="macOS" />
+          <Icon path={LINUX} size={14} label="Linux" />
+        </span>
+        <span><strong>Windows, macOS and Linux</strong> — one codebase, native builds.</span>
+      </li>
       <li>
         <strong>About 20&nbsp;MB.</strong> Tauri uses your system's webview rather than shipping a
         browser.
@@ -53,8 +63,24 @@ const repo = "https://github.com/mory-dev/sudonotes";
     </p>
 
     <div class="actions">
-      <a class="button primary" href={repo}>Open the repository</a>
+      <a class="button primary" href={repo}><Icon path={GITHUB} size={16} />Open the repository</a>
       <a class="button" href="/docs/vault-format">See what it writes to disk</a>
     </div>
   </section>
 </Base>
+
+<style>
+  .platform-line {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+  }
+
+  .platforms {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transform: translateY(2px);
+  }
+</style>

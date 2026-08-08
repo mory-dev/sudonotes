@@ -1,7 +1,32 @@
 ---
-import AppPreview from "../components/AppPreview.astro";
 import Base from "../layouts/Base.astro";
-import "../styles/preview.css";
+
+const features = [
+  {
+    title: "Collections",
+    body: "Group a chain of prompts under one header note. Paste a multi-step prompt and sudonotes detects the steps, previews them, and only writes once you confirm.",
+  },
+  {
+    title: "Model assignment",
+    body: "Point a prompt — or one bubble of an idea — at a specific model, chosen from a live catalog with context and capability data.",
+  },
+  {
+    title: "Search and links",
+    body: "SQLite FTS5 over every note, ranked to favour titles. [[Wiki links]] between notes, with a panel showing everything that points at the one you have open.",
+  },
+  {
+    title: "Keyboard first",
+    body: "Ctrl N new note, Ctrl S flush, Ctrl K search, Ctrl Shift F find in the open note, and Ctrl + / − to scale the whole UI.",
+  },
+  {
+    title: "Plain files",
+    body: "Markdown with a small YAML header, in a watched folder. Edit a note in vim and sudonotes catches up without clobbering what you were typing.",
+  },
+  {
+    title: "Project linking",
+    body: "Mirror an idea into a repository's IDEAS.md, with an offer to add it to .gitignore. It detects the project's icon and name, and imports an existing IDEAS.md instead of overwriting it.",
+  },
+];
 ---
 
 <Base
@@ -18,94 +43,15 @@ import "../styles/preview.css";
       </p>
     </div>
 
-    <div style="margin-block: 40px">
-      <AppPreview />
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <h3>Prompts and ideas</h3>
-        <p>
-          Two kinds of note, blue and green throughout the app, so you always know which one you
-          are looking at.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Collections</h3>
-        <p>
-          Group a chain of prompts under one header note. Drag to reorder; the order is written back
-          into the files.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Paste splitting</h3>
-        <p>
-          Paste a multi-step prompt and sudonotes detects the steps, previews them, and only writes
-          once you confirm.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Model assignment</h3>
-        <p>
-          Point a prompt — or one bubble of an idea — at a specific model, chosen from a live
-          catalog with context and capability data.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Full-text search</h3>
-        <p>
-          SQLite FTS5 over every note, ranked to favour titles. <kbd>Ctrl K</kbd> from anywhere in
-          the app.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Links and backlinks</h3>
-        <p>
-          <code>[[Wiki links]]</code> between notes, with a panel showing everything that points at
-          the one you have open.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Project linking</h3>
-        <p>
-          Mirror an idea into a repository's <code>IDEAS.md</code>, with an offer to add it to
-          <code>.gitignore</code>.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Live external edits</h3>
-        <p>
-          The vault is watched. Edit a note in vim and the app catches up, without clobbering
-          whatever you were typing.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Optional AI</h3>
-        <p>
-          Automatic tagging, short titles for pasted text, and an explicit per-note review. One
-          switch per vault; no API key needed.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Find in note</h3>
-        <p>
-          <kbd>Ctrl Shift F</kbd> searches inside the open note with match counts and stepping.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Keyboard first</h3>
-        <p>
-          <kbd>Ctrl N</kbd> new note, <kbd>Ctrl S</kbd> flush, <kbd>Ctrl</kbd> <kbd>+</kbd> /
-          <kbd>−</kbd> to scale the whole UI.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Plain files</h3>
-        <p>
-          Markdown with a small YAML header. Nothing about your notes needs sudonotes to be
-          readable.
-        </p>
-      </div>
+    <div class="grid" style="margin-top:40px">
+      {
+        features.map((feature) => (
+          <div class="card">
+            <h3>{feature.title}</h3>
+            <p>{feature.body}</p>
+          </div>
+        ))
+      }
     </div>
   </section>
 </Base>
