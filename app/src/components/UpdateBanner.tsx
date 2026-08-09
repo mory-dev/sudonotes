@@ -1,13 +1,26 @@
 import { useEffect, useState } from "react";
 
+import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
-/** Don't hit the releases endpoint more than once a day. */
-const CHECK_KEY = "sudonotes.lastUpdateCheck";
+/** Don't hit the releases endpoint more than once a day after a successful check. */
+const CHECK_KEY = "sudonotes.lastSuccessfulUpdateCheck";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const CHECK_RETRY_MS = 15 * 60 * 1000;
 
-/** Auto-update banner: checks the GitHub releases for a newer build on startup
- *  (and once a day after that), and offers to download and install it. */
+// React Strict Mode mounts effects twice in development. Share an in-flight
+// request so that it still produces one check instead of two concurrent calls.
+let updateCheckInFlight: Promise<Update | null> | null = null;
+
+function fetchAvailableUpdate() {
+  updateCheckInFlight ??= check().finally(() => {
+    updateCheckInFlight = null;
+  });
+  return updateCheckInFlight;
+}
+
+/** Auto-update banner: checks on startup and once a day while the app remains
+ * open, then offers to download, install, and relaunch into the new version. */
 export function UpdateBanner() {
   const [update, setUpdate] = useState<Update | null>(null);
   const [status, setStatus] = useState<"idle" | "downloading" | "installing" | "error">("idle");
@@ -16,21 +29,40 @@ export function UpdateBanner() {
 
   useEffect(() => {
     let cancelled = false;
-    const run = async () => {
-      try {
-        const found = await check();
-        if (!cancelled && found) setUpdate(found);
-      } catch {
-        // Not under Tauri, offline, or the endpoint is unreachable — stay quiet.
+    let timer: number | undefined;
+
+    const schedule = (delay: number) => {
+      if (!cancelled) {
+        timer = window.setTimeout(() => void run(), Math.max(0, delay));
       }
     };
-    const last = Number(localStorage.getItem(CHECK_KEY)) || 0;
-    if (Date.now() - last > CHECK_INTERVAL_MS) {
-      localStorage.setItem(CHECK_KEY, String(Date.now()));
-      run();
+
+    async function run() {
+      const last = Number(localStorage.getItem(CHECK_KEY)) || 0;
+      const untilNextCheck = CHECK_INTERVAL_MS - (Date.now() - last);
+      if (untilNextCheck > 0) {
+        schedule(untilNextCheck);
+        return;
+      }
+
+      try {
+        const found = await fetchAvailableUpdate();
+        if (cancelled) return;
+
+        // A failed request must not suppress retries for the next 24 hours.
+        localStorage.setItem(CHECK_KEY, String(Date.now()));
+        setUpdate(found);
+        schedule(CHECK_INTERVAL_MS);
+      } catch (error) {
+        console.error("Could not check for a sudonotes update", error);
+        schedule(CHECK_RETRY_MS);
+      }
     }
+
+    void run();
     return () => {
       cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, []);
 
@@ -50,10 +82,13 @@ export function UpdateBanner() {
           if (total > 0) {
             setProgress(Math.min(100, Math.round((received / total) * 100)));
           }
+        } else if (event.event === "Finished") {
+          setStatus("installing");
         }
       });
-      setStatus("installing");
-    } catch {
+      await relaunch();
+    } catch (error) {
+      console.error("Could not install the sudonotes update", error);
       setStatus("error");
     }
   };
@@ -70,7 +105,7 @@ export function UpdateBanner() {
         </span>
       ) : status === "error" ? (
         <>
-          <span>Couldn't download the update.</span>
+          <span>Couldn't apply the update.</span>
           <button className="secondary" onClick={() => setStatus("idle")}>
             Try again
           </button>

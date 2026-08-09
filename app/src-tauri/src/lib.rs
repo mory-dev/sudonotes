@@ -1441,11 +1441,32 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod updater_configuration_tests {
+    #[test]
+    fn main_window_can_check_install_and_restart_after_updates() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json"))
+                .expect("default capability must be valid JSON");
+        let permissions = capability["permissions"]
+            .as_array()
+            .expect("default capability must list permissions");
+
+        for required in ["updater:default", "process:allow-restart"] {
+            assert!(
+                permissions.iter().any(|permission| permission == required),
+                "default capability is missing {required}"
+            );
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
