@@ -1,0 +1,28 @@
+---
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+}
+
+const headings = Astro.props.headings.filter((heading) => heading.depth === 2 || heading.depth === 3);
+---
+
+{
+  headings.length > 0 && (
+    <aside class="docs-on-this-page" aria-label="On this page">
+      <p>On this page</p>
+      <ol>
+        {headings.map((heading) => (
+          <li class:list={[heading.depth === 3 && "nested"]}>
+            <a href={`#${heading.slug}`}>{heading.text}</a>
+          </li>
+        ))}
+      </ol>
+    </aside>
+  )
+}

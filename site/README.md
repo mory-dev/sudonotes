@@ -1,6 +1,8 @@
 # sudonotes.com
 
-The marketing and docs site. Astro, static output, no client-side JavaScript.
+The marketing and docs site. Astro and static output. Documentation content and navigation work
+without client-side JavaScript; small progressive enhancements provide local search, in-page find,
+active headings, and copy buttons.
 
 ```bash
 cd site && npm install && npm run dev

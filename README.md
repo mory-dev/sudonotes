@@ -14,7 +14,7 @@ LLM prompts end up scattered across chat histories, scratch files, and half-aban
 - **Linked.** Wiki-style `[[links]]` with backlinks, so prompts and the ideas behind them stay connected.
 - **Open source.** MIT.
 
-AI assistance can analyze prompt/model fit, suggest refinements, and add tags. It is on by default and needs no API key of your own — requests go through the sudonotes API, which holds the provider key. Enabling it sends the note's content to that service; turn it off in the app and tagging falls back to a local keyword pass. Note bodies are never logged.
+AI assistance can analyze prompt/model fit, suggest refinements, and add tags. It is on by default and needs no API key of your own — requests go through the sudonotes API, which holds the provider key. Enabling it sends the note's content to that service; turn it off per vault to keep note content local. Note bodies are never logged by the sudonotes proxy, and a failed automatic-tag request can fall back to a local keyword pass.
 
 ## Project linking and IDEAS.md
 
@@ -28,6 +28,7 @@ already has that file, the app asks whether to import it into the idea or replac
 it instead of silently overwriting it.
 
 [Read the project-linking and IDEAS.md guide](https://sudonotes.com/docs/project-linking/).
+[Learn how to structure IDEAS.md for a local LLM or coding agent](https://sudonotes.com/docs/ideas-md-for-llms/).
 
 ## Vault layout
 
@@ -101,9 +102,11 @@ gives you a link — and `Backspace` peels the levels back off one at a time.
 | `Ctrl Shift F` | Find within the open note |
 | `Ctrl N` | New note, of whatever type you are looking at |
 | `Ctrl S` | Flush the pending save (saving is automatic) |
-| `Ctrl A` | Select the current bubble in an idea, then the whole note |
+| `Ctrl A` | Select the current bubble in an idea; on a blank separator, select the whole note |
 | `Ctrl` `+` / `-` / `0` | Scale the interface |
 | `Ctrl Enter` | From a prompt in a collection, back to the collection |
+
+[See the complete context-aware shortcut reference](https://sudonotes.com/docs/shortcuts/).
 
 ## Backups
 
@@ -131,6 +134,8 @@ Failing that, each archive is an ordinary ZIP despite the extension: rename it t
 `.zip`, unpack it into an empty folder, and open that folder as a vault. The
 `prompts/` and `ideas/` trees inside are exactly as they were, and nothing else
 in the archive is needed.
+
+[Read the full backup and recovery guide](https://sudonotes.com/docs/backups-and-recovery/).
 
 ## Repository
 

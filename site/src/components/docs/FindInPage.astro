@@ -1,0 +1,130 @@
+<div class="docs-find-wrap">
+  <button class="docs-find-trigger" type="button" data-docs-find-trigger>
+    Find on this page <kbd>Ctrl Shift F</kbd>
+  </button>
+  <div class="docs-find-panel" data-docs-find-panel hidden>
+    <label>
+      <span class="sr-only">Find on this page</span>
+      <input type="search" placeholder="Find on this page…" data-docs-find-input />
+    </label>
+    <span class="docs-find-count" data-docs-find-count aria-live="polite">0 / 0</span>
+    <button type="button" data-docs-find-prev aria-label="Previous match">↑</button>
+    <button type="button" data-docs-find-next aria-label="Next match">↓</button>
+    <button type="button" data-docs-find-close aria-label="Close find">×</button>
+  </div>
+</div>
+
+<script>
+  const trigger = document.querySelector<HTMLButtonElement>("[data-docs-find-trigger]");
+  const panel = document.querySelector<HTMLElement>("[data-docs-find-panel]");
+  const input = document.querySelector<HTMLInputElement>("[data-docs-find-input]");
+  const count = document.querySelector<HTMLElement>("[data-docs-find-count]");
+  const article = document.querySelector<HTMLElement>("[data-docs-article-body]");
+  let marks: HTMLElement[] = [];
+  let active = -1;
+  let timer = 0;
+
+  const updateCount = () => {
+    if (count) count.textContent = marks.length ? `${active + 1} / ${marks.length}` : "0 / 0";
+  };
+
+  const clearMarks = () => {
+    for (const mark of marks) mark.replaceWith(document.createTextNode(mark.textContent ?? ""));
+    article?.normalize();
+    marks = [];
+    active = -1;
+    updateCount();
+  };
+
+  const showActive = (index: number) => {
+    if (!marks.length) return;
+    marks[active]?.classList.remove("active");
+    active = (index + marks.length) % marks.length;
+    marks[active].classList.add("active");
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    marks[active].scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+    updateCount();
+  };
+
+  const search = () => {
+    clearMarks();
+    const query = input?.value.trim() ?? "";
+    if (!query || !article) return;
+    const needle = query.toLocaleLowerCase();
+    const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent || !node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
+        if (parent.closest("script, style, [data-docs-find-ignore], mark")) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes: Text[] = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+
+    for (const node of nodes) {
+      const text = node.data;
+      const lower = text.toLocaleLowerCase();
+      let from = 0;
+      let found = lower.indexOf(needle, from);
+      if (found < 0) continue;
+      const fragment = document.createDocumentFragment();
+      while (found >= 0) {
+        fragment.append(text.slice(from, found));
+        const mark = document.createElement("mark");
+        mark.dataset.docsFind = "";
+        mark.textContent = text.slice(found, found + query.length);
+        fragment.append(mark);
+        marks.push(mark);
+        from = found + query.length;
+        found = lower.indexOf(needle, from);
+      }
+      fragment.append(text.slice(from));
+      node.replaceWith(fragment);
+    }
+    if (marks.length) showActive(0);
+    else updateCount();
+  };
+
+  const openFind = () => {
+    if (!panel || !input) return;
+    panel.hidden = false;
+    trigger?.setAttribute("aria-expanded", "true");
+    input.focus();
+    input.select();
+  };
+
+  const closeFind = () => {
+    if (!panel) return;
+    panel.hidden = true;
+    trigger?.setAttribute("aria-expanded", "false");
+    clearMarks();
+    trigger?.focus();
+  };
+
+  trigger?.addEventListener("click", openFind);
+  input?.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(search, 90);
+  });
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      showActive(active + (event.shiftKey ? -1 : 1));
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeFind();
+    }
+  });
+  document.querySelector("[data-docs-find-prev]")?.addEventListener("click", () => showActive(active - 1));
+  document.querySelector("[data-docs-find-next]")?.addEventListener("click", () => showActive(active + 1));
+  document.querySelector("[data-docs-find-close]")?.addEventListener("click", closeFind);
+  window.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      openFind();
+    }
+  });
+</script>

@@ -1,0 +1,230 @@
+---
+import Base from "./Base.astro";
+import DocsSearch from "../components/docs/DocsSearch.astro";
+import DocsSidebar from "../components/docs/DocsSidebar.astro";
+import FindInPage from "../components/docs/FindInPage.astro";
+import OnThisPage from "../components/docs/OnThisPage.astro";
+import type { DocEntry } from "../data/docs";
+import { docHref, docsInOrder, sectionLabel } from "../data/docs";
+import "../styles/docs.css";
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  docs: DocEntry[];
+  current?: DocEntry;
+  headings?: Heading[];
+  home?: boolean;
+}
+
+const { docs, current, headings = [], home = false } = Astro.props;
+const ordered = docsInOrder(docs);
+const currentIndex = current ? ordered.findIndex((entry) => entry.id === current.id) : -1;
+const previous = currentIndex > 0 ? ordered[currentIndex - 1] : null;
+const next = currentIndex >= 0 && currentIndex < ordered.length - 1 ? ordered[currentIndex + 1] : null;
+const related = current
+  ? current.data.related
+      .map((slug) => docs.find((entry) => entry.id === slug))
+      .filter((entry): entry is DocEntry => Boolean(entry))
+  : [];
+const title = home ? "Documentation — sudonotes" : `${current?.data.title} — sudonotes docs`;
+const description = home
+  ? "Learn sudonotes from first vault to advanced project linking, shortcuts, backups, recovery, and plain Markdown reference."
+  : current!.data.description;
+---
+
+<Base
+  title={title}
+  description={description}
+  type={home ? "website" : "article"}
+  dateModified={current?.data.lastReviewed}
+  breadcrumbs={home ? [] : [{ label: "Docs", href: "/docs" }, { label: current!.data.title }]}
+>
+  <div class="docs-mobile-bar">
+    <button type="button" class="docs-mobile-nav-trigger" data-docs-nav-trigger aria-expanded="false" aria-controls="docs-navigation">
+      <span aria-hidden="true">☰</span> Browse docs
+    </button>
+    <button type="button" class="docs-mobile-search" data-docs-search-trigger aria-label="Search documentation">
+      <span class="docs-search-icon" aria-hidden="true"></span> Search
+    </button>
+  </div>
+
+  <div class="docs-nav-scrim" data-docs-nav-scrim hidden></div>
+  <div class="docs-shell">
+    <DocsSidebar docs={docs} current={current?.id} home={home} />
+
+    <article
+      class:list={["docs-article", home && "docs-home"]}
+      data-pagefind-body
+      data-pagefind-meta={`section:${current ? sectionLabel(current.data.section) : "Docs"}`}
+    >
+      <header class="docs-article-head" data-docs-find-ignore>
+        <p class="eyebrow">{home ? "Documentation" : sectionLabel(current!.data.section)}</p>
+        <h1 data-pagefind-meta="title">{home ? "Make your notes work harder" : current!.data.title}</h1>
+        <p class="lede">{description}</p>
+        {
+          current && (
+            <div class="docs-article-meta">
+              <span class:list={["docs-status", current.data.status]}>
+                {current.data.status === "planned" ? "Planned" : "Available now"}
+              </span>
+              <span>
+                {current.data.appliesTo === "desktop"
+                  ? "Desktop app"
+                  : current.data.appliesTo === "planned-web"
+                    ? "Planned web app"
+                    : "All surfaces"}
+              </span>
+              <span>Reviewed {current.data.lastReviewed}</span>
+              <FindInPage />
+            </div>
+          )
+        }
+      </header>
+
+      <div class="docs-article-body" data-docs-article-body>
+        <slot />
+      </div>
+
+      {
+        current && (
+          <footer class="docs-article-footer" data-docs-find-ignore data-pagefind-ignore>
+            {related.length > 0 && (
+              <section class="docs-related">
+                <h2>Related guides</h2>
+                <ul>
+                  {related.map((entry) => (
+                    <li>
+                      <a href={docHref(entry.id)}>
+                        <strong>{entry.data.title}</strong>
+                        <span>{entry.data.description}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <nav class="docs-prev-next" aria-label="Previous and next documentation">
+              {previous ? (
+                <a class="previous" href={docHref(previous.id)}>
+                  <span>Previous</span>
+                  <strong>← {previous.data.title}</strong>
+                </a>
+              ) : (
+                <span />
+              )}
+              {next ? (
+                <a class="next" href={docHref(next.id)}>
+                  <span>Next</span>
+                  <strong>{next.data.title} →</strong>
+                </a>
+              ) : (
+                <span />
+              )}
+            </nav>
+
+            <a
+              class="docs-edit-link"
+              href={`https://github.com/mory-dev/sudonotes/edit/master/site/src/content/docs/${current.id}.md`}
+            >
+              Edit this page on GitHub
+            </a>
+          </footer>
+        )
+      }
+    </article>
+
+    <OnThisPage headings={headings} />
+  </div>
+
+  <DocsSearch docs={docs} />
+</Base>
+
+<script>
+  const navTrigger = document.querySelector<HTMLButtonElement>("[data-docs-nav-trigger]");
+  const nav = document.querySelector<HTMLElement>("#docs-navigation");
+  const scrim = document.querySelector<HTMLElement>("[data-docs-nav-scrim]");
+
+  const closeNav = () => {
+    nav?.classList.remove("open");
+    if (scrim) scrim.hidden = true;
+    navTrigger?.setAttribute("aria-expanded", "false");
+    document.body.classList.remove("docs-nav-open");
+  };
+  const openNav = () => {
+    nav?.classList.add("open");
+    if (scrim) scrim.hidden = false;
+    navTrigger?.setAttribute("aria-expanded", "true");
+    document.body.classList.add("docs-nav-open");
+    nav?.querySelector<HTMLAnchorElement>("a")?.focus();
+  };
+  navTrigger?.addEventListener("click", () => (nav?.classList.contains("open") ? closeNav() : openNav()));
+  scrim?.addEventListener("click", closeNav);
+  nav?.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeNav));
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && nav?.classList.contains("open")) {
+      closeNav();
+      navTrigger?.focus();
+    }
+  });
+
+  const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>(".docs-on-this-page a")];
+  const headingMap = new Map(tocLinks.map((link) => [decodeURIComponent(link.hash.slice(1)), link]));
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      const link = visible.length ? headingMap.get(visible[0].target.id) : null;
+      if (!link) return;
+      tocLinks.forEach((item) => item.removeAttribute("aria-current"));
+      link.setAttribute("aria-current", "true");
+    },
+    { rootMargin: "-15% 0px -72%", threshold: [0, 1] },
+  );
+  document.querySelectorAll<HTMLElement>(".docs-article-body h2[id], .docs-article-body h3[id]").forEach((heading) => observer.observe(heading));
+
+  document.querySelectorAll<HTMLElement>(".docs-article-body h2[id], .docs-article-body h3[id]").forEach((heading) => {
+    const anchor = document.createElement("a");
+    anchor.className = "docs-heading-link";
+    anchor.href = `#${heading.id}`;
+    anchor.setAttribute("aria-label", `Link to ${heading.textContent ?? "this section"}`);
+    anchor.textContent = "#";
+    anchor.addEventListener("click", async () => {
+      const url = new URL(window.location.href);
+      url.hash = heading.id;
+      try {
+        await navigator.clipboard.writeText(url.href);
+        anchor.textContent = "✓";
+        window.setTimeout(() => (anchor.textContent = "#"), 900);
+      } catch {
+        // The hash navigation remains useful when clipboard permission is denied.
+      }
+    });
+    heading.prepend(anchor);
+  });
+
+  document.querySelectorAll<HTMLPreElement>(".docs-article-body pre").forEach((pre) => {
+    const code = pre.querySelector("code");
+    if (!code) return;
+    pre.classList.add("has-copy");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "docs-code-copy";
+    button.textContent = "Copy";
+    button.setAttribute("aria-label", "Copy code block");
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(code.textContent ?? "");
+        button.textContent = "Copied";
+        window.setTimeout(() => (button.textContent = "Copy"), 1100);
+      } catch {
+        button.textContent = "Select text";
+      }
+    });
+    pre.append(button);
+  });
+</script>

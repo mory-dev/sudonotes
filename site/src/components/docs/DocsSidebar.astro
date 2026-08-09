@@ -1,0 +1,50 @@
+---
+import type { DocEntry } from "../../data/docs";
+import { DOC_SECTIONS, docHref, docsInOrder } from "../../data/docs";
+
+interface Props {
+  docs: DocEntry[];
+  current?: string;
+  home?: boolean;
+}
+
+const { docs, current, home = false } = Astro.props;
+const ordered = docsInOrder(docs);
+---
+
+<aside class="docs-sidebar" id="docs-navigation" aria-label="Documentation navigation">
+  <div class="docs-sidebar-head">
+    <a class="docs-sidebar-title" href="/docs" aria-current={home ? "page" : undefined}>Docs</a>
+    <button class="docs-search-button" type="button" data-docs-search-trigger>
+      <span class="docs-search-icon" aria-hidden="true"></span>
+      <span>Search docs</span>
+      <kbd>Ctrl K</kbd>
+    </button>
+  </div>
+
+  <nav class="docs-tree">
+    {
+      DOC_SECTIONS.map((section) => {
+        const entries = ordered.filter((entry) => entry.data.section === section.id);
+        return (
+          <section>
+            <h2>{section.label}</h2>
+            <ul>
+              {entries.map((entry) => (
+                <li>
+                  <a
+                    href={docHref(entry.id)}
+                    aria-current={current === entry.id ? "page" : undefined}
+                  >
+                    {entry.data.title}
+                    {entry.data.status === "planned" && <span class="nav-status">Planned</span>}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })
+    }
+  </nav>
+</aside>

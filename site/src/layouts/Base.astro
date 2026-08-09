@@ -12,6 +12,8 @@ interface Props {
   schema?: "webpage" | "software";
   /** Visible breadcrumbs are also emitted as BreadcrumbList structured data. */
   breadcrumbs?: Array<{ label: string; href?: string }>;
+  /** Review date for article structured data. */
+  dateModified?: string;
 }
 
 const {
@@ -20,17 +22,17 @@ const {
   type = "website",
   schema: schemaType = "webpage",
   breadcrumbs = [],
+  dateModified,
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
 const og = new URL("/og.png", Astro.site).href;
 const path = Astro.url.pathname.replace(/\/$/, "") || "/";
 
+const navCurrent = (href: string) => path === href || (href === "/docs" && path.startsWith("/docs/"));
+
 const nav = [
-  { href: "/features", label: "Features" },
-  { href: "/docs", label: "Docs", wide: false },
-  { href: "/open-source", label: "Open source", wide: true },
-  { href: "/roadmap", label: "Roadmap", wide: true },
+  { href: "/docs", label: "Docs" },
   { href: "/download", label: "Download" },
 ];
 
@@ -43,13 +45,14 @@ const graph: Record<string, unknown>[] = [
     url: "https://sudonotes.com",
   },
   {
-    "@type": "WebPage",
+    "@type": type === "article" ? "TechArticle" : "WebPage",
     "@id": `${canonical}#webpage`,
     name: title,
     description,
     url: canonical,
     isPartOf: { "@id": websiteId },
     primaryImageOfPage: { "@type": "ImageObject", url: og },
+    ...(dateModified ? { dateModified } : {}),
   },
 ];
 
@@ -113,7 +116,7 @@ const structuredData = { "@context": "https://schema.org", "@graph": graph };
     <meta name="twitter:image" content={og} />
 
     <meta name="generator" content={Astro.generator} />
-    <script type="application/ld+json" set:html={JSON.stringify(structuredData)} />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(structuredData)} />
 
     <!-- Self-hosted faces, emitted at build time by experimental.fonts. -->
     <Font cssVariable="--font-ui" preload={true} />
@@ -134,8 +137,8 @@ const structuredData = { "@context": "https://schema.org", "@graph": graph };
             nav.map((item) => (
               <a
                 href={item.href}
-                class:list={[item.wide && "nav-hide", item.href === "/download" && "nav-download"]}
-                aria-current={path === item.href ? "page" : undefined}
+                class:list={[item.href === "/download" && "nav-download"]}
+                aria-current={navCurrent(item.href) ? "page" : undefined}
               >
                 {item.label}
               </a>
@@ -172,6 +175,8 @@ const structuredData = { "@context": "https://schema.org", "@graph": graph };
     <footer class="site-footer">
       <div class="page">
         <span class="footer-brand"><Wordmark /> — MIT licensed</span>
+        <a href="/features">Features</a>
+        <a href="/open-source">Open source</a>
         <a href="/docs/privacy">Privacy</a>
         <a href="/changelog">Changelog</a>
         <a href="/roadmap">Roadmap</a>

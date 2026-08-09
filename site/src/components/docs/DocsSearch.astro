@@ -1,0 +1,202 @@
+---
+import type { DocEntry } from "../../data/docs";
+import { docHref, sectionLabel } from "../../data/docs";
+
+interface Props {
+  docs: DocEntry[];
+}
+
+const fallback = Astro.props.docs.map((entry) => ({
+  url: docHref(entry.id),
+  title: entry.data.title,
+  description: entry.data.description,
+  section: sectionLabel(entry.data.section),
+  terms: entry.data.searchTerms.join(" "),
+}));
+---
+
+<div class="docs-search-dialog" data-docs-search-dialog hidden>
+  <button class="docs-search-backdrop" type="button" data-docs-search-close aria-label="Close search"></button>
+  <section class="docs-search-modal" role="dialog" aria-modal="true" aria-labelledby="docs-search-title">
+    <h2 class="sr-only" id="docs-search-title">Search documentation</h2>
+    <div class="docs-search-input-wrap">
+      <span class="docs-search-icon" aria-hidden="true"></span>
+      <input type="search" placeholder="Search guides, shortcuts, recovery…" data-docs-search-input />
+      <kbd>Esc</kbd>
+    </div>
+    <p class="docs-search-status" data-docs-search-status aria-live="polite">
+      Start typing to search the documentation.
+    </p>
+    <ol class="docs-search-results" data-docs-search-results></ol>
+    <footer>
+      <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
+      <span><kbd>Enter</kbd> open</span>
+      <span>Search stays on this device</span>
+    </footer>
+  </section>
+</div>
+<script is:inline type="application/json" id="docs-search-fallback" set:html={JSON.stringify(fallback)}></script>
+
+<script>
+  interface SearchItem {
+    url: string;
+    title: string;
+    description: string;
+    section: string;
+    terms?: string;
+    excerpt?: string;
+  }
+
+  const dialog = document.querySelector<HTMLElement>("[data-docs-search-dialog]");
+  const input = document.querySelector<HTMLInputElement>("[data-docs-search-input]");
+  const results = document.querySelector<HTMLOListElement>("[data-docs-search-results]");
+  const status = document.querySelector<HTMLElement>("[data-docs-search-status]");
+  const fallbackNode = document.querySelector<HTMLScriptElement>("#docs-search-fallback");
+  const fallback: SearchItem[] = JSON.parse(fallbackNode?.textContent ?? "[]");
+  let active = 0;
+  let visible: SearchItem[] = [];
+  let lastTrigger: HTMLElement | null = null;
+  let pagefind: any = null;
+  let pagefindFailed = false;
+  let timer = 0;
+
+  const escapeHtml = (value: string) =>
+    value.replace(/[&<>\"]/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+    })[character] ?? character);
+
+  const paintActive = () => {
+    const links = [...(results?.querySelectorAll<HTMLAnchorElement>("a") ?? [])];
+    links.forEach((link, index) => {
+      link.classList.toggle("active", index === active);
+      link.setAttribute("aria-selected", String(index === active));
+    });
+    links[active]?.scrollIntoView({ block: "nearest" });
+  };
+
+  const render = (items: SearchItem[], query: string) => {
+    visible = items;
+    active = 0;
+    if (!results || !status) return;
+    status.textContent = query
+      ? `${items.length} result${items.length === 1 ? "" : "s"} for “${query}”`
+      : "Start typing to search the documentation.";
+    if (!query) {
+      results.innerHTML = "";
+      return;
+    }
+    if (!items.length) {
+      results.innerHTML = `<li class="docs-search-empty"><strong>No matches yet.</strong><span>Try “backup”, “shortcut”, “IDEAS.md”, or “vault”.</span><a href="/docs/troubleshooting">Open troubleshooting</a></li>`;
+      return;
+    }
+    results.innerHTML = items
+      .map(
+        (item, index) => `<li><a href="${escapeHtml(item.url)}" role="option" aria-selected="${index === 0}">
+          <span class="docs-search-result-section">${escapeHtml(item.section)}</span>
+          <strong>${escapeHtml(item.title)}</strong>
+          <span>${item.excerpt ?? escapeHtml(item.description)}</span>
+        </a></li>`,
+      )
+      .join("");
+    paintActive();
+  };
+
+  const loadPagefind = async () => {
+    if (pagefind || pagefindFailed) return pagefind;
+    try {
+      const path = "/pagefind/pagefind.js";
+      pagefind = await import(/* @vite-ignore */ path);
+      await pagefind.init();
+      return pagefind;
+    } catch {
+      pagefindFailed = true;
+      return null;
+    }
+  };
+
+  const runSearch = async () => {
+    const query = input?.value.trim() ?? "";
+    if (!query) {
+      render([], "");
+      return;
+    }
+    const engine = await loadPagefind();
+    if (engine) {
+      const response = await engine.search(query);
+      const data = await Promise.all(response.results.slice(0, 12).map((result: any) => result.data()));
+      render(
+        data.map((item: any) => ({
+          url: item.url,
+          title: item.meta?.title ?? "Documentation",
+          description: item.meta?.description ?? "",
+          section: item.meta?.section ?? "Docs",
+          excerpt: item.excerpt,
+        })),
+        query,
+      );
+      return;
+    }
+    const needle = query.toLocaleLowerCase();
+    render(
+      fallback
+        .filter((item) => `${item.title} ${item.description} ${item.section} ${item.terms}`.toLocaleLowerCase().includes(needle))
+        .slice(0, 12),
+      query,
+    );
+  };
+
+  const openSearch = (source?: HTMLElement | null) => {
+    if (!dialog || !input) return;
+    lastTrigger = source ?? (document.activeElement as HTMLElement | null);
+    dialog.hidden = false;
+    document.body.classList.add("docs-search-open");
+    input.focus();
+    input.select();
+    void loadPagefind();
+  };
+
+  const closeSearch = () => {
+    if (!dialog) return;
+    dialog.hidden = true;
+    document.body.classList.remove("docs-search-open");
+    lastTrigger?.focus();
+  };
+
+  document.querySelectorAll<HTMLElement>("[data-docs-search-trigger]").forEach((button) => {
+    button.addEventListener("click", () => openSearch(button));
+  });
+  document.querySelectorAll("[data-docs-search-close]").forEach((button) => button.addEventListener("click", closeSearch));
+  input?.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => void runSearch(), 100);
+  });
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSearch();
+    else if (event.key === "ArrowDown" && visible.length) {
+      event.preventDefault();
+      active = Math.min(active + 1, visible.length - 1);
+      paintActive();
+    } else if (event.key === "ArrowUp" && visible.length) {
+      event.preventDefault();
+      active = Math.max(active - 1, 0);
+      paintActive();
+    } else if (event.key === "Enter" && visible[active]) {
+      event.preventDefault();
+      window.location.href = visible[active].url;
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    const target = event.target as HTMLElement | null;
+    const typing = target?.matches("input, textarea, select, [contenteditable='true']");
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      openSearch();
+    } else if (event.key === "/" && !typing && dialog?.hidden) {
+      event.preventDefault();
+      openSearch();
+    }
+  });
+</script>

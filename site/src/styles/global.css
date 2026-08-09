@@ -292,9 +292,9 @@ section.band.alt {
   align-items: center;
   gap: 7px;
   margin-left: 2px;
-  padding: 5px 10px;
+  padding: 6px 13px;
   border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
   line-height: 1.25;
