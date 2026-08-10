@@ -21,12 +21,19 @@ use crate::vault::Vault;
 const PREFIX: &str = "sudonotes-vault-";
 const SUFFIX: &str = ".bak";
 
-/// How many snapshots to keep. Markdown compresses to almost nothing, so this
-/// is generous without being worth a setting.
-const KEEP: usize = 20;
+/// How many snapshots to keep by default. Markdown compresses to almost
+/// nothing, so this is generous; the user can raise or lower it in settings.
+const DEFAULT_KEEP: usize = 12;
 
-/// Skip a run when the newest archive is younger than this.
-const MIN_INTERVAL_SECS: u64 = 6 * 60 * 60;
+/// How long to wait between automatic snapshots by default.
+const DEFAULT_INTERVAL_MINUTES: u64 = 60;
+
+/// The settings panel's allowed ranges, so a stray value cannot fill the disk
+/// with archives or silently stop the automatic run.
+const MIN_KEEP: usize = 1;
+const MAX_KEEP: usize = 100;
+const MIN_INTERVAL_MINUTES: u64 = 5;
+const MAX_INTERVAL_MINUTES: u64 = 7 * 24 * 60;
 
 const README: &str = "\
 This is a sudonotes vault backup.
@@ -35,8 +42,9 @@ Despite the .bak extension it is an ordinary ZIP archive: rename it to .zip to
 open it in Explorer, Finder or any unzip tool. Inside you will find the
 prompts/ and ideas/ folders exactly as they were in the vault.
 
-To restore, unzip it over an empty folder and open that folder as a vault.
-Nothing else in the archive is required.
+To restore, unzip it over the folder to become the vault. Any notes already in
+that folder are saved as another backup first, then replaced. Nothing else in
+the archive is required.
 ";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +61,10 @@ pub struct BackupInfo {
 #[serde(rename_all = "camelCase")]
 pub struct BackupSettings {
     pub enabled: bool,
+    /// How many archives to keep, oldest first; older ones are rotated away.
+    pub keep: usize,
+    /// Minimum minutes between automatic snapshots.
+    pub interval_minutes: u64,
     /// Where archives are written, so the UI can offer to open it.
     pub directory: String,
     pub last: Option<BackupInfo>,
@@ -65,25 +77,55 @@ fn settings_path(dir: &Path) -> PathBuf {
 #[derive(Serialize, Deserialize, Default)]
 struct StoredSettings {
     enabled: Option<bool>,
+    keep: Option<usize>,
+    interval_minutes: Option<u64>,
 }
 
-/// Backups are on unless turned off. A missing or unreadable file means the
-/// default, never an error — this must not be able to block a vault opening.
-pub fn enabled(dir: &Path) -> bool {
+/// A missing or unreadable file means the defaults, never an error — settings
+/// must not be able to block a vault opening.
+fn load(dir: &Path) -> StoredSettings {
     fs::read_to_string(settings_path(dir))
         .ok()
         .and_then(|raw| serde_json::from_str::<StoredSettings>(&raw).ok())
-        .and_then(|value| value.enabled)
-        .unwrap_or(true)
+        .unwrap_or_default()
+}
+
+fn save(dir: &Path, settings: &StoredSettings) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    fs::write(settings_path(dir), raw).map_err(|e| e.to_string())
+}
+
+/// Backups are on unless turned off.
+pub fn enabled(dir: &Path) -> bool {
+    load(dir).enabled.unwrap_or(true)
 }
 
 pub fn set_enabled(dir: &Path, value: bool) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
-    let raw = serde_json::to_string_pretty(&StoredSettings {
-        enabled: Some(value),
-    })
-    .map_err(|e| e.to_string())?;
-    fs::write(settings_path(dir), raw).map_err(|e| e.to_string())
+    let mut settings = load(dir);
+    settings.enabled = Some(value);
+    save(dir, &settings)
+}
+
+pub fn keep_count(dir: &Path) -> usize {
+    load(dir)
+        .keep
+        .unwrap_or(DEFAULT_KEEP)
+        .clamp(MIN_KEEP, MAX_KEEP)
+}
+
+pub fn interval_minutes(dir: &Path) -> u64 {
+    load(dir)
+        .interval_minutes
+        .unwrap_or(DEFAULT_INTERVAL_MINUTES)
+        .clamp(MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES)
+}
+
+pub fn set_retention(dir: &Path, keep: usize, interval_minutes: u64) -> Result<(), String> {
+    let mut settings = load(dir);
+    settings.keep = Some(keep.clamp(MIN_KEEP, MAX_KEEP));
+    settings.interval_minutes = Some(interval_minutes.clamp(MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES));
+    save(dir, &settings)
 }
 
 fn is_archive(path: &Path) -> bool {
@@ -123,12 +165,12 @@ pub fn list(dir: &Path) -> Vec<BackupInfo> {
     out
 }
 
-/// Delete all but the newest `KEEP` archives.
+/// Delete all but the newest `keep` archives.
 ///
 /// Only files this module named, only in the backup directory. Anything else
 /// the user has put there is left alone.
-fn rotate(dir: &Path) {
-    for stale in list(dir).into_iter().skip(KEEP) {
+fn rotate(dir: &Path, keep: usize) {
+    for stale in list(dir).into_iter().skip(keep) {
         let path = PathBuf::from(&stale.path);
         if path.starts_with(dir) && is_archive(&path) {
             let _ = fs::remove_file(path);
@@ -138,6 +180,11 @@ fn rotate(dir: &Path) {
 
 /// Write a snapshot of `vault` into `dir`, returning what was written.
 pub fn create(vault: &Vault, dir: &Path) -> Result<BackupInfo, String> {
+    write_snapshot(&vault.root, dir)
+}
+
+/// Zip every note under `root` (a `prompts/` + `ideas/` layout) into `dir`.
+fn write_snapshot(root: &Path, dir: &Path) -> Result<BackupInfo, String> {
     fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
 
     let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
@@ -155,10 +202,13 @@ pub fn create(vault: &Vault, dir: &Path) -> Result<BackupInfo, String> {
             .compression_method(zip::CompressionMethod::Deflated)
             .unix_permissions(0o644);
 
+        let vault = Vault {
+            root: root.to_path_buf(),
+        };
         for (note_type, path) in vault.scan() {
             // Store paths relative to the vault root, so an unzip reproduces
             // the prompts/ and ideas/ layout as-is.
-            let relative = path.strip_prefix(&vault.root).unwrap_or(&path);
+            let relative = path.strip_prefix(root).unwrap_or(&path);
             let name = relative.to_string_lossy().replace('\\', "/");
 
             let body = match fs::read(&path) {
@@ -187,7 +237,7 @@ pub fn create(vault: &Vault, dir: &Path) -> Result<BackupInfo, String> {
         format!("could not finish the archive: {e}")
     })?;
 
-    rotate(dir);
+    rotate(dir, keep_count(dir));
 
     let mut info = info_for(&final_path).ok_or("the archive vanished after being written")?;
     info.notes = notes;
@@ -226,25 +276,22 @@ fn safe_entry_path(name: &str) -> Option<PathBuf> {
 
 /// Unpack an archive into `dest`, returning how many notes were written.
 ///
-/// `dest` must be empty or absent. Restoring never merges into a folder that
-/// already holds anything: the whole feature exists to recover notes, and
-/// silently writing over a vault someone still had would be the one failure
-/// worse than the loss it is meant to fix.
-pub fn restore(archive: &Path, dest: &Path) -> Result<usize, String> {
-    if dest.exists() {
-        let mut entries =
-            fs::read_dir(dest).map_err(|e| format!("could not read {}: {e}", dest.display()))?;
-        if entries.next().is_some() {
-            return Err(format!(
-                "{} is not empty. Choose an empty folder, so nothing already there is overwritten.",
-                dest.display()
-            ));
-        }
-    }
-
+/// `dest` may already hold a vault. Overwriting is destructive, so before
+/// anything is replaced the folder's current notes are snapshotted into
+/// `safety_dir` (the app's backup directory), giving the restore a way back.
+pub fn restore(archive: &Path, dest: &Path, safety_dir: &Path) -> Result<usize, String> {
     let file = File::open(archive).map_err(|e| format!("could not open the archive: {e}"))?;
     let mut zip =
         zip::ZipArchive::new(file).map_err(|e| format!("that file is not a backup archive: {e}"))?;
+
+    // The folder is about to be overwritten, so its current notes go to the
+    // backup directory first. Empty or absent folders have nothing to protect.
+    let occupied = dest.exists()
+        && fs::read_dir(dest).is_ok_and(|mut entries| entries.next().is_some());
+    if occupied {
+        write_snapshot(dest, safety_dir)
+            .map_err(|e| format!("could not back up the existing folder first: {e}"))?;
+    }
 
     fs::create_dir_all(dest).map_err(|e| format!("could not create {}: {e}", dest.display()))?;
 
@@ -278,12 +325,13 @@ pub fn create_if_due(vault: &Vault, dir: &Path) -> Option<BackupInfo> {
     if !enabled(dir) {
         return None;
     }
+    let interval_secs = interval_minutes(dir) * 60;
     let due = match list(dir).first() {
         None => true,
         Some(latest) => chrono::DateTime::parse_from_rfc3339(&latest.created)
             .map(|t| {
                 (chrono::Utc::now() - t.with_timezone(&chrono::Utc)).num_seconds()
-                    >= MIN_INTERVAL_SECS as i64
+                    >= interval_secs as i64
             })
             .unwrap_or(true),
     };
@@ -394,8 +442,9 @@ mod tests {
         let info = create(&vault, out.path()).unwrap();
 
         let into = tempfile::tempdir().unwrap();
+        let safety = tempfile::tempdir().unwrap();
         let dest = into.path().join("recovered");
-        let count = restore(Path::new(&info.path), &dest).unwrap();
+        let count = restore(Path::new(&info.path), &dest, safety.path()).unwrap();
 
         assert_eq!(count, 2);
         assert_eq!(
@@ -407,20 +456,39 @@ mod tests {
         );
     }
 
+    /// Restoring over a folder that already holds notes must not destroy them:
+    /// the folder's notes are snapshotted first, then replaced by the archive.
     #[test]
-    fn restore_refuses_a_folder_that_has_anything_in_it() {
+    fn restore_overwrites_but_first_backs_up_the_folder() {
         let (_guard, vault) = fixture();
         let out = tempfile::tempdir().unwrap();
         let info = create(&vault, out.path()).unwrap();
 
         let occupied = tempfile::tempdir().unwrap();
-        let precious = occupied.path().join("my-notes.md");
-        fs::write(&precious, b"do not lose me").unwrap();
+        let safety = tempfile::tempdir().unwrap();
+        // Same path as an archived note, holding different content.
+        fs::create_dir(occupied.path().join("ideas")).unwrap();
+        fs::write(occupied.path().join("ideas/b.md"), b"old notes").unwrap();
 
-        let err = restore(Path::new(&info.path), occupied.path()).unwrap_err();
+        let count = restore(Path::new(&info.path), occupied.path(), safety.path()).unwrap();
 
-        assert!(err.contains("not empty"), "{err}");
-        assert_eq!(fs::read(&precious).unwrap(), b"do not lose me");
+        assert_eq!(count, 2);
+        assert_eq!(
+            fs::read(occupied.path().join("ideas/b.md")).unwrap(),
+            b"---\ntitle: B\n---\nbody b",
+            "the archived note replaced the one already there"
+        );
+        assert_eq!(
+            fs::read(occupied.path().join("prompts/a.md")).unwrap(),
+            b"---\ntitle: A\n---\nbody a",
+        );
+        let saved = list(safety.path());
+        assert_eq!(saved.len(), 1, "the old folder was snapshotted first");
+        let mut saved_zip = zip::ZipArchive::new(File::open(&saved[0].path).unwrap()).unwrap();
+        let old = saved_zip.by_name("ideas/b.md").unwrap();
+        let mut old_body = Vec::new();
+        std::io::copy(&mut std::io::BufReader::new(old), &mut old_body).unwrap();
+        assert_eq!(old_body, b"old notes", "the overwritten note is in the safety backup");
     }
 
     /// An archive naming an entry `../escaped.md` must not write above `dest`.
@@ -440,17 +508,56 @@ mod tests {
         let bystander = out.path().join("holiday-photos.zip");
         fs::write(&bystander, b"not ours").unwrap();
 
-        for i in 0..(KEEP + 5) {
+        for i in 0..(DEFAULT_KEEP + 5) {
             fs::write(
                 out.path().join(format!("{PREFIX}2026010{i:02}-000000{SUFFIX}")),
                 b"x",
             )
             .unwrap();
         }
-        rotate(out.path());
+        rotate(out.path(), DEFAULT_KEEP);
 
-        assert_eq!(list(out.path()).len(), KEEP);
+        assert_eq!(list(out.path()).len(), DEFAULT_KEEP);
         assert!(bystander.exists(), "rotation deleted an unrelated file");
+    }
+
+    #[test]
+    fn rotation_respects_the_configured_keep_count() {
+        let out = tempfile::tempdir().unwrap();
+        for i in 0..10 {
+            fs::write(
+                out.path().join(format!("{PREFIX}2026010{i:02}-000000{SUFFIX}")),
+                b"x",
+            )
+            .unwrap();
+        }
+        set_retention(out.path(), 3, 60).unwrap();
+
+        // `create` rotates with the stored value; force it through the real path.
+        assert_eq!(keep_count(out.path()), 3);
+        assert_eq!(interval_minutes(out.path()), 60);
+        let (_guard, vault) = fixture();
+        create(&vault, out.path()).unwrap();
+        assert_eq!(list(out.path()).len(), 3);
+    }
+
+    #[test]
+    fn retention_defaults_and_clamps() {
+        let dir = tempfile::tempdir().unwrap();
+        // Nothing stored: defaults.
+        assert_eq!(keep_count(dir.path()), DEFAULT_KEEP);
+        assert_eq!(interval_minutes(dir.path()), DEFAULT_INTERVAL_MINUTES);
+        // Out-of-range values are clamped, and a vault opening can never fail
+        // because of a bad settings file.
+        set_retention(dir.path(), 0, 0).unwrap();
+        assert_eq!(keep_count(dir.path()), MIN_KEEP);
+        assert_eq!(interval_minutes(dir.path()), MIN_INTERVAL_MINUTES);
+        set_retention(dir.path(), 10_000, 10_000_000).unwrap();
+        assert_eq!(keep_count(dir.path()), MAX_KEEP);
+        assert_eq!(interval_minutes(dir.path()), MAX_INTERVAL_MINUTES);
+        fs::write(settings_path(dir.path()), b"{").unwrap();
+        assert_eq!(keep_count(dir.path()), DEFAULT_KEEP);
+        assert_eq!(interval_minutes(dir.path()), DEFAULT_INTERVAL_MINUTES);
     }
 
     #[test]

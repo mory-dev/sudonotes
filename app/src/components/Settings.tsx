@@ -20,6 +20,9 @@ function formatWhen(value: string): string {
   });
 }
 
+const DEFAULT_KEEP = 12;
+const DEFAULT_INTERVAL_MINUTES = 60;
+
 /** Compressed snapshots of the vault, kept outside it.
  *
  *  The whole point is surviving the vault folder being lost, so the archives go
@@ -28,12 +31,17 @@ function BackupSection() {
   const setError = useStore((s) => s.setError);
   const setNotice = useStore((s) => s.setNotice);
   const hasVault = useStore((s) => !!s.vaultPath);
+  const vaultPath = useStore((s) => s.vaultPath);
   const setSettings = useStore((s) => s.setSettings);
   const requestConfirm = useStore((s) => s.requestConfirm);
   const openVault = useStore((s) => s.openVault);
 
   const [state, setState] = useState<BackupSettings | null>(null);
   const [busy, setBusy] = useState(false);
+  // Drafts of the retention settings, committed on blur/Enter so typing "100"
+  // does not fire an API call per keystroke.
+  const [keep, setKeep] = useState(DEFAULT_KEEP);
+  const [intervalMinutes, setIntervalMinutes] = useState(DEFAULT_INTERVAL_MINUTES);
 
   useEffect(() => {
     api
@@ -41,6 +49,12 @@ function BackupSection() {
       .then(setState)
       .catch(() => setState(null));
   }, []);
+
+  useEffect(() => {
+    if (!state) return;
+    setKeep(state.keep);
+    setIntervalMinutes(state.intervalMinutes);
+  }, [state]);
 
   const toggle = async (enabled: boolean) => {
     try {
@@ -50,11 +64,25 @@ function BackupSection() {
     }
   };
 
-  /** Pick a `.bak`, pick an empty folder, unpack into it, offer to open it.
+  const saveRetention = async () => {
+    if (!state) return;
+    const keepValue = Number.isFinite(keep) ? keep : state.keep;
+    const intervalValue = Number.isFinite(intervalMinutes) ? intervalMinutes : state.intervalMinutes;
+    if (keepValue === state.keep && intervalValue === state.intervalMinutes) return;
+    try {
+      setState(await api.setBackupRetention(keepValue, intervalValue));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  /** Pick a `.bak`, pick a destination, confirm the overwrite, unpack.
    *
-   *  Two dialogs rather than one because a restore must not be able to land on
-   *  top of a vault: the destination is chosen explicitly and the command
-   *  refuses anything that is not empty. The current vault is never touched. */
+   *  Restoring is destructive: notes already in the destination are replaced.
+   *  So the choice is confirmed first, and the destination's current notes are
+   *  snapshotted into the backup directory before anything is overwritten. When
+   *  a vault is already open, it is the destination — no folder picker. The
+   *  caller decides afterwards whether to open the result. */
   const restore = async () => {
     const archive = await open({
       title: "Choose a backup",
@@ -63,26 +91,42 @@ function BackupSection() {
     });
     if (typeof archive !== "string") return;
 
-    const destination = await open({
-      directory: true,
-      title: "Choose an empty folder to restore into",
-    });
-    if (typeof destination !== "string") return;
-
-    setBusy(true);
-    try {
-      const count = await api.restoreBackup(archive, destination);
-      setSettings(false);
-      requestConfirm(
-        `Restored ${count} notes into ${destination}. Open it as your vault?`,
-        () => void openVault(destination),
-        "Open it",
-      );
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
+    let destination = vaultPath;
+    if (!destination) {
+      const picked = await open({
+        directory: true,
+        title: "Choose where to restore the vault",
+      });
+      if (typeof picked !== "string") return;
+      destination = picked;
     }
+
+    setSettings(false);
+    requestConfirm(
+      `Restore the backup over ${destination}? Notes already in that folder will be replaced — its current contents are saved as a backup first.`,
+      async () => {
+        setBusy(true);
+        try {
+          const count = await api.restoreBackup(archive, destination);
+          setSettings(false);
+          // Reloading a vault that was just overwritten makes the app reflect
+          // the restored notes; reopening a fresh folder offers to make it vault.
+          const alreadyOpen = destination === vaultPath;
+          requestConfirm(
+            alreadyOpen
+              ? `Restored ${count} notes over the open vault. Reload it now?`
+              : `Restored ${count} notes into ${destination}. Open it as your vault?`,
+            () => void openVault(destination),
+            alreadyOpen ? "Reload" : "Open it",
+          );
+        } catch (e) {
+          setError(String(e));
+        } finally {
+          setBusy(false);
+        }
+      },
+      "Restore over it",
+    );
   };
 
   const runNow = async () => {
@@ -114,11 +158,48 @@ function BackupSection() {
       <p className="ai-tip">
         A compressed <code>.bak</code> of every note, written to the app's own folder — outside
         the vault, so losing the vault does not lose these. It is a ZIP: rename it to{" "}
-        <code>.zip</code> to open it. Runs at most every few hours, and the twenty most recent
-        are kept.
+        <code>.zip</code> to open it. The interval and keep-count below apply to automatic runs;
+        the oldest archives are deleted once the keep-count is reached.
       </p>
 
       <dl className="settings-meta">
+        <div className="meta-row">
+          <dt>Keep</dt>
+          <dd className="backup-number">
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={keep}
+              disabled={busy}
+              onChange={(event) => setKeep(Number(event.target.value))}
+              onBlur={() => void saveRetention()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+              }}
+            />
+            <span>backups</span>
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Every</dt>
+          <dd className="backup-number">
+            <input
+              type="number"
+              min={5}
+              max={10080}
+              step={5}
+              value={intervalMinutes}
+              disabled={busy}
+              onChange={(event) => setIntervalMinutes(Number(event.target.value))}
+              onBlur={() => void saveRetention()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+              }}
+            />
+            <span>minutes</span>
+          </dd>
+        </div>
         <div className="meta-row">
           <dt>Last</dt>
           <dd>

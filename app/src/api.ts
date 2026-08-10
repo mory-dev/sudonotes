@@ -113,6 +113,10 @@ export interface BackupInfo {
 
 export interface BackupSettings {
   enabled: boolean;
+  /** How many archives to keep before the oldest is rotated away. */
+  keep: number;
+  /** Minimum minutes between automatic snapshots. */
+  intervalMinutes: number;
   /** Where archives are written — outside the vault, so it can be shown. */
   directory: string;
   last: BackupInfo | null;
@@ -162,9 +166,13 @@ export const api = {
   backupState: () => invoke<BackupSettings>("backup_state"),
   setBackupEnabled: (enabled: boolean) =>
     invoke<BackupSettings>("set_backup_enabled", { enabled }),
+  /** Adjust how many archives are kept and how often one is written. */
+  setBackupRetention: (keep: number, intervalMinutes: number) =>
+    invoke<BackupSettings>("set_backup_retention", { keep, intervalMinutes }),
   /** Snapshot the open vault now, whatever the schedule says. */
   backupNow: () => invoke<BackupInfo>("backup_now"),
-  /** Unpack a .bak into an empty folder, returning how many notes came back. */
+  /** Unpack a .bak over a folder (existing notes are replaced, after being
+   *  saved to the backup directory first), returning how many notes came back. */
   restoreBackup: (archive: string, destination: string) =>
     invoke<number>("restore_backup", { archive, destination }),
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),

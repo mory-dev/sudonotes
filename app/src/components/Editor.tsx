@@ -9,7 +9,14 @@ import {
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
-import { EditorState, Prec, RangeSetBuilder, StateEffect, type Text } from "@codemirror/state";
+import {
+  EditorState,
+  Prec,
+  RangeSetBuilder,
+  StateEffect,
+  type Extension,
+  type Text,
+} from "@codemirror/state";
 import {
   Decoration,
   drawSelection,
@@ -970,6 +977,9 @@ export function Editor() {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const activeId = useRef<string | null>(null);
+  // The editor's configuration, built once at mount and reused whenever a note
+  // is swapped in, so each note gets a fresh document and its own undo history.
+  const extensionsRef = useRef<Extension[]>([]);
   // Set while the document is being replaced from disk, so the change listener
   // does not queue a save of content the user did not type.
   const applying = useRef(false);
@@ -1299,13 +1309,9 @@ export function Editor() {
   useEffect(() => {
     if (!host.current) return;
 
-    const editor = new EditorView({
-      parent: host.current,
-      state: EditorState.create({
-        doc: "",
-        extensions: [
-          history(),
-          drawSelection(),
+    const extensions: Extension[] = [
+      history(),
+      drawSelection(),
           // Typing a bracket over a selection wraps it instead of replacing it,
           // so `[` twice on a word gives [[word]].
           closeBrackets(),
@@ -1456,8 +1462,12 @@ export function Editor() {
             const id = activeId.current;
             if (id) useStore.getState().queueSave(id, update.state.doc.toString());
           }),
-        ],
-      }),
+    ];
+    extensionsRef.current = extensions;
+
+    const editor = new EditorView({
+      parent: host.current,
+      state: EditorState.create({ doc: "", extensions }),
     });
 
     view.current = editor;
@@ -1492,11 +1502,13 @@ export function Editor() {
     activeId.current = active?.id ?? null;
     setBubbleMenu(null);
     applying.current = true;
-    editor.dispatch({
-      changes: { from: 0, to: editor.state.doc.length, insert: active?.body ?? "" },
-      selection: { anchor: 0 },
-      scrollIntoView: true,
-    });
+    editor.setState(
+      EditorState.create({
+        doc: active?.body ?? "",
+        selection: { anchor: 0 },
+        extensions: extensionsRef.current,
+      }),
+    );
     applying.current = false;
     if (active) editor.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps

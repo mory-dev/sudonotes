@@ -971,6 +971,8 @@ fn backup_state_for(app: &tauri::AppHandle) -> Result<backup::BackupSettings> {
     let dir = backup_dir(app)?;
     Ok(backup::BackupSettings {
         enabled: backup::enabled(&dir),
+        keep: backup::keep_count(&dir),
+        interval_minutes: backup::interval_minutes(&dir),
         directory: dir.display().to_string(),
         last: backup::list(&dir).into_iter().next(),
     })
@@ -988,6 +990,19 @@ fn set_backup_enabled(enabled: bool, app: tauri::AppHandle) -> Result<backup::Ba
     backup_state_for(&app)
 }
 
+/// Adjust how many archives are kept and how often one is written. Values are
+/// clamped to the allowed ranges before they are stored.
+#[tauri::command]
+fn set_backup_retention(
+    keep: usize,
+    interval_minutes: u64,
+    app: tauri::AppHandle,
+) -> Result<backup::BackupSettings> {
+    let dir = backup_dir(&app)?;
+    backup::set_retention(&dir, keep, interval_minutes)?;
+    backup_state_for(&app)
+}
+
 /// Snapshot the open vault now, whatever the schedule says.
 #[tauri::command]
 fn backup_now(app: tauri::AppHandle, state: State<AppState>) -> Result<backup::BackupInfo> {
@@ -995,15 +1010,19 @@ fn backup_now(app: tauri::AppHandle, state: State<AppState>) -> Result<backup::B
     with_vault(&state, |open| Ok(backup::create(&open.vault, &dir)?))
 }
 
-/// Unpack a `.bak` into a folder the user picked, which must be empty.
-///
-/// Deliberately not "restore over the open vault": recovering is only ever
-/// additive here, and the caller decides afterwards whether to open the result.
+/// Unpack a `.bak` into a folder the user picked. Notes already there are
+/// replaced; before that happens their current state is snapshotted into the
+/// backup directory, so the restore is never the last copy of anything.
 #[tauri::command]
-fn restore_backup(archive: String, destination: String) -> Result<usize> {
+fn restore_backup(
+    archive: String,
+    destination: String,
+    app: tauri::AppHandle,
+) -> Result<usize> {
     Ok(backup::restore(
         std::path::Path::new(&archive),
         std::path::Path::new(&destination),
+        &backup_dir(&app)?,
     )?)
 }
 
@@ -1489,6 +1508,7 @@ pub fn run() {
             reorder_notes,
             backup_state,
             set_backup_enabled,
+            set_backup_retention,
             backup_now,
             restore_backup,
             write_note,
