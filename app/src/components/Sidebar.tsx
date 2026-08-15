@@ -24,6 +24,33 @@ function projectInitial(project: string | null | undefined): string {
   return (name.charAt(0) || "?").toUpperCase();
 }
 
+/** Heat color style for an idea note's bubble count in the sidebar,
+ *  scaling from warm amber to hot crimson relative to the max bubbles across ideas. */
+function bubbleCountHeatStyle(
+  bubbles: number,
+  maxBubbles: number,
+): React.CSSProperties | undefined {
+  if (!bubbles || bubbles <= 0) return undefined;
+  // Normalized heat relative to the most bubbles among all available ideas
+  const heat = maxBubbles <= 1 ? 0.6 : Math.min(1, Math.max(0.1, bubbles / maxBubbles));
+  // Heat color scheme matching the editor gutter heat bar:
+  // High heat (1.0) -> hue 6 (red/crimson)
+  // Moderate heat (0.5) -> hue 24 (warm orange)
+  // Low heat (0.1) -> hue 48 (amber/gold)
+  const hue = Math.round(6 + 42 * Math.min(1, (1 - heat) / 0.85));
+  const saturation = Math.round(65 + 30 * heat);
+  const lightness = Math.round(55 + 10 * heat);
+
+  return {
+    color: `hsl(${hue} ${saturation}% ${lightness}%)`,
+    backgroundColor: `hsl(${hue} ${saturation}% ${lightness}% / 0.15)`,
+    padding: "1px 5px",
+    borderRadius: "4px",
+    fontWeight: 600,
+    opacity: 1,
+  };
+}
+
 /** The bubbles of an idea note: each paragraph (and the list that follows it)
  *  with the body position its first line starts at. */
 function paragraphOutline(body: string): { start: number; label: string }[] {
@@ -48,7 +75,15 @@ function paragraphOutline(body: string): { start: number; label: string }[] {
   return out;
 }
 
-function NoteRow({ note, drag }: { note: NoteMeta; drag?: NoteDragHandlers }) {
+function NoteRow({
+  note,
+  drag,
+  maxBubbles,
+}: {
+  note: NoteMeta;
+  drag?: NoteDragHandlers;
+  maxBubbles?: number;
+}) {
   const activeId = useStore((s) => s.active?.id ?? null);
   const select = useStore((s) => s.select);
   const remove = useStore((s) => s.remove);
@@ -106,7 +141,13 @@ function NoteRow({ note, drag }: { note: NoteMeta; drag?: NoteDragHandlers }) {
         ) : null}
         <span className="note-title">{note.title}</span>
         {note.type === "idea" && (note.bubbles ?? 0) > 0 && (
-          <span className="count">{note.bubbles}</span>
+          <span
+            className="count"
+            style={bubbleCountHeatStyle(note.bubbles!, maxBubbles ?? note.bubbles!)}
+            data-tooltip={`${note.bubbles} idea bubble${note.bubbles === 1 ? "" : "s"}`}
+          >
+            {note.bubbles}
+          </span>
         )}
       </button>
     </li>
@@ -120,12 +161,14 @@ function Collection({
   notes,
   parent,
   drag,
+  maxBubbles,
 }: {
   name: string;
   notes: NoteMeta[];
   parent?: NoteMeta;
   /** Reorders the bucket among its siblings; the children have their own. */
   drag?: NoteDragHandlers;
+  maxBubbles?: number;
 }) {
   const activeId = useStore((s) => s.active?.id ?? null);
   const select = useStore((s) => s.select);
@@ -185,6 +228,7 @@ function Collection({
             <NoteRow
               key={note.id}
               note={note}
+              maxBubbles={maxBubbles}
               drag={{
                 ...childDrag.rowProps(note.id),
                 isDragging: childDrag.dragKey === note.id,
@@ -203,10 +247,12 @@ function Section({
   label,
   noteType,
   notes,
+  maxBubbles,
 }: {
   label: string;
   noteType: NoteType;
   notes: NoteMeta[];
+  maxBubbles?: number;
 }) {
   const create = useStore((s) => s.create);
 
@@ -325,6 +371,7 @@ function Section({
                 name={entry.name}
                 notes={entry.items}
                 parent={entry.parent}
+                maxBubbles={maxBubbles}
                 drag={{
                   ...drag.rowProps(entry.key),
                   isDragging: drag.dragKey === entry.key,
@@ -335,6 +382,7 @@ function Section({
               <NoteRow
                 key={entry.key}
                 note={entry.note}
+                maxBubbles={maxBubbles}
                 drag={{
                   ...drag.rowProps(entry.key),
                   isDragging: drag.dragKey === entry.key,
@@ -364,6 +412,11 @@ export function Sidebar() {
     [notes],
   );
 
+  const maxIdeaBubbles = useMemo(() => {
+    const counts = ideas.map((n) => n.bubbles ?? 0).filter((b) => b > 0);
+    return counts.length > 0 ? Math.max(1, ...counts) : 1;
+  }, [ideas]);
+
   const deleteBubbleAt = useStore((s) => s.deleteBubbleAt);
   const requestConfirm = useStore((s) => s.requestConfirm);
   const moveBubble = useStore((s) => s.moveBubble);
@@ -389,7 +442,7 @@ export function Sidebar() {
 
       <div className="sections">
         <Section label="Prompts" noteType="prompt" notes={prompts} />
-        <Section label="Ideas" noteType="idea" notes={ideas} />
+        <Section label="Ideas" noteType="idea" notes={ideas} maxBubbles={maxIdeaBubbles} />
 
         {active?.type === "idea" && ideaOutline.length > 1 && (
           <div className="idea-outline">

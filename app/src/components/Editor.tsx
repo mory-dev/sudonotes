@@ -371,21 +371,15 @@ function computeBubbles(state: EditorState): { from: number; to: number; heading
       continue;
     }
     if (!run) {
-      run = { from: node.from, to: node.to, heading: isHeading, seeded: !isHeading };
-      continue;
-    }
-    if (isHeading) {
-      closeRun();
-      run = { from: node.from, to: node.to, heading: true, seeded: false };
+      run = { from: node.from, to: node.to, heading: isHeading, seeded: true };
       continue;
     }
     const gapLines = doc.lineAt(node.from).number - doc.lineAt(run.to).number;
-    if ((run.heading && !run.seeded) || gapLines <= 1) {
-      run.seeded = true;
+    if (gapLines <= 1) {
       run.to = node.to;
     } else {
       closeRun();
-      run = { from: node.from, to: node.to, heading: false, seeded: true };
+      run = { from: node.from, to: node.to, heading: isHeading, seeded: true };
     }
   }
   closeRun();
