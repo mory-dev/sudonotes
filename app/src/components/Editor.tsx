@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  type CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
@@ -41,6 +47,70 @@ function normalizePastedText(text: string): string {
   const groups = text.split(/\n\s*\n/).map((g) => g.trim()).filter(Boolean);
   if (groups.length <= 1) return text;
   return `${groups.join("\n\n")}\n`;
+}
+
+function projectInitial(project: string | null | undefined): string {
+  const name = project?.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  return (name.charAt(0) || "?").toUpperCase();
+}
+
+/** Autocomplete dropdown when typing `[[` to link to notes in the vault. */
+function wikiLinkCompletionSource(context: CompletionContext): CompletionResult | null {
+  const match = context.matchBefore(/\[\[([^\]\n|]*)/);
+  if (!match) return null;
+
+  const query = match.text.slice(2);
+  const notes = useStore.getState().notes;
+  const activeId = useStore.getState().active?.id;
+
+  const needle = query.trim().toLowerCase();
+  const hits = notes
+    .filter((n) => !needle || n.title.toLowerCase().includes(needle))
+    .slice(0, 50);
+
+  if (hits.length === 0) return null;
+
+  return {
+    from: match.from + 2,
+    to: context.pos,
+    options: hits.map((note) => {
+      const typeLabel = note.type === "prompt" ? "prompt" : "idea";
+      const detail = note.collection
+        ? `in ${note.collection}`
+        : note.project
+        ? `project: ${projectInitial(note.project)}`
+        : typeLabel;
+
+      return {
+        label: note.title,
+        type: note.type,
+        detail,
+        boost: note.id === activeId ? -1 : 0,
+        apply: (view: EditorView, completion: { label: string }, from: number, to: number) => {
+          const doc = view.state.doc;
+          const after = doc.sliceString(to, to + 2);
+          let insert = completion.label;
+          let targetPos = from + insert.length;
+
+          if (after === "]]") {
+            targetPos += 2;
+          } else if (after.startsWith("]")) {
+            insert += "]";
+            targetPos += 2;
+          } else {
+            insert += "]]";
+            targetPos += 2;
+          }
+
+          view.dispatch({
+            changes: { from, to, insert },
+            selection: { anchor: targetPos },
+          });
+        },
+      };
+    }),
+    filter: false,
+  };
 }
 
 const WIKILINK = /\[\[([^[\]\n|]+)(?:\|([^[\]\n]+))?\]\]/g;
@@ -1039,6 +1109,60 @@ const theme = EditorView.theme(
       backgroundColor: "rgba(247, 168, 42, 0.42)",
       outline: "1px solid rgba(247, 168, 42, 0.75)",
     },
+    ".cm-tooltip.cm-tooltip-autocomplete": {
+      background: "var(--panel)",
+      border: "1px solid var(--border)",
+      borderRadius: "8px",
+      boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
+      padding: "4px",
+      minWidth: "220px",
+      maxWidth: "360px",
+      maxHeight: "260px",
+      overflow: "hidden",
+    },
+    ".cm-tooltip-autocomplete > ul": {
+      fontFamily: "var(--font-sans, inherit)",
+      fontSize: "12.5px",
+      maxHeight: "250px",
+      overflowY: "auto",
+      padding: "2px",
+      margin: 0,
+      listStyle: "none",
+    },
+    ".cm-tooltip-autocomplete > ul > li": {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "5px 8px",
+      borderRadius: "5px",
+      color: "var(--text)",
+      cursor: "pointer",
+    },
+    ".cm-tooltip-autocomplete > ul > li:hover": {
+      background: "var(--panel-2)",
+    },
+    ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+      background: "var(--accent-soft)",
+      color: "var(--accent)",
+    },
+    ".cm-completionLabel": {
+      fontWeight: 500,
+      flex: 1,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    },
+    ".cm-completionDetail": {
+      fontSize: "11px",
+      color: "var(--muted)",
+      fontStyle: "normal",
+      opacity: 0.8,
+    },
+    ".cm-completionMatchedText": {
+      color: "var(--accent)",
+      fontWeight: 700,
+      textDecoration: "underline",
+    },
     "&.cm-editor .cm-selectionBackground, ::selection": {
       backgroundColor: "var(--selection-bg)",
     },
@@ -1398,6 +1522,11 @@ export function Editor() {
           // Typing a bracket over a selection wraps it instead of replacing it,
           // so `[` twice on a word gives [[word]].
           closeBrackets(),
+          autocompletion({
+            override: [wikiLinkCompletionSource],
+            defaultKeymap: true,
+            icons: false,
+          }),
           EditorView.lineWrapping,
           markdown(),
           syntaxHighlighting(markdownHighlightStyle, { fallback: true }),
