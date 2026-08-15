@@ -24,6 +24,11 @@ const AUTO_TAG_COOLDOWN_MS = 60_000;
 /** Per note: when it was last auto-tagged and how long it was at the time. */
 const tagged = new Map<string, { at: number; length: number }>();
 
+/** Hover grace period timer for prompt collection cards, allowing the user
+ *  to smoothly move the cursor across the gap into the right details panel. */
+let hoverPromptTimer: ReturnType<typeof setTimeout> | null = null;
+const HOVER_GRACE_MS = 450;
+
 function shouldAutoTag(id: string, body: string): boolean {
   const length = body.trim().length;
   if (length < AUTO_TAG_MIN_CHARS) return false;
@@ -144,6 +149,8 @@ interface AppState {
    *  the cursor is what it falls back to when the mouse is elsewhere. */
   hoverBubble: string | null;
   cursorBubble: string | null;
+  /** The child prompt currently hovered in the prompt collection view. */
+  hoverPrompt: ChildPrompt | null;
   dirty: boolean;
   error: string | null;
   notice: string | null;
@@ -213,6 +220,9 @@ interface AppState {
   deleteBubbleAt: (start: number) => void;
   setHoverBubble: (label: string | null) => void;
   setCursorBubble: (label: string | null) => void;
+  setHoverPrompt: (prompt: ChildPrompt | null) => void;
+  holdHoverPrompt: () => void;
+  releaseHoverPrompt: () => void;
   setError: (error: string | null) => void;
   setNotice: (notice: string | null) => void;
   loadAiSettings: () => Promise<void>;
@@ -238,6 +248,7 @@ export const useStore = create<AppState>((set, get) => ({
   findCount: 0,
   hoverBubble: null,
   cursorBubble: null,
+  hoverPrompt: null,
   dirty: false,
   error: null,
   notice: null,
@@ -339,6 +350,33 @@ export const useStore = create<AppState>((set, get) => ({
   setCursorBubble: (label) => {
     if (get().cursorBubble !== label) set({ cursorBubble: label });
   },
+  setHoverPrompt: (hoverPrompt) => {
+    if (hoverPromptTimer) {
+      clearTimeout(hoverPromptTimer);
+      hoverPromptTimer = null;
+    }
+    if (hoverPrompt) {
+      if (get().hoverPrompt?.id !== hoverPrompt.id) set({ hoverPrompt });
+    } else {
+      hoverPromptTimer = setTimeout(() => {
+        hoverPromptTimer = null;
+        set({ hoverPrompt: null });
+      }, HOVER_GRACE_MS);
+    }
+  },
+  holdHoverPrompt: () => {
+    if (hoverPromptTimer) {
+      clearTimeout(hoverPromptTimer);
+      hoverPromptTimer = null;
+    }
+  },
+  releaseHoverPrompt: () => {
+    if (hoverPromptTimer) clearTimeout(hoverPromptTimer);
+    hoverPromptTimer = setTimeout(() => {
+      hoverPromptTimer = null;
+      set({ hoverPrompt: null });
+    }, HOVER_GRACE_MS);
+  },
 
   findMove: (dir) => {
     const find = get().find;
@@ -399,9 +437,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   select: async (id) => {
+    if (hoverPromptTimer) {
+      clearTimeout(hoverPromptTimer);
+      hoverPromptTimer = null;
+    }
     await get().flushSave();
     if (!id) {
-      set({ active: null, backlinks: [], children: [], analysis: null });
+      set({ active: null, backlinks: [], children: [], analysis: null, hoverPrompt: null });
       return;
     }
     try {
@@ -414,6 +456,7 @@ export const useStore = create<AppState>((set, get) => ({
         active,
         backlinks,
         children,
+        hoverPrompt: null,
         scrollTo: null,
         find: null,
         analysis: null,

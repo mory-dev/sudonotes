@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { api } from "../api";
 import { useStore } from "../store";
 import { AiReview } from "./AiReview";
 import { ModelPicker } from "./ModelPicker";
@@ -77,11 +78,18 @@ function placeholdersIn(body: string): string[] {
  *  Values live for the session only and are never written back: the note stays
  *  a reusable template, and what goes on the clipboard is the filled copy. */
 function Variables() {
-  const note = useStore((s) => s.active);
-  const body = note?.body ?? "";
-  const names = useMemo(() => (note?.type === "prompt" ? placeholdersIn(body) : []), [note?.type, body]);
+  const active = useStore((s) => s.active);
+  const hoverPrompt = useStore((s) => s.hoverPrompt);
+  const target = hoverPrompt ?? active;
+  const isPrompt = hoverPrompt ? true : active?.type === "prompt";
+  const body = target?.body ?? "";
+  const names = useMemo(() => (isPrompt ? placeholdersIn(body) : []), [isPrompt, body]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setValues({});
+  }, [target?.id]);
 
   if (names.length === 0) return null;
 
@@ -136,13 +144,71 @@ function Variables() {
 
 function Metadata() {
   const note = useStore((s) => s.active);
+  const hoverPrompt = useStore((s) => s.hoverPrompt);
+  const notes = useStore((s) => s.notes);
   const openLink = useStore((s) => s.openLink);
   const updateModel = useStore((s) => s.updateModel);
   const setBubbleModel = useStore((s) => s.setBubbleModel);
+  const refresh = useStore((s) => s.refresh);
   // Hover wins; the caret is what it falls back to when the mouse is elsewhere.
   const bubble = useStore((s) => s.hoverBubble ?? s.cursorBubble);
 
   if (!note) return null;
+
+  if (hoverPrompt) {
+    const meta = notes.find((n) => n.id === hoverPrompt.id);
+    return (
+      <section className="panel-section metadata" data-type="prompt">
+        <header className="section-header">
+          <span>Details</span>
+        </header>
+
+        {meta?.summary && <p className="meta-summary">{meta.summary}</p>}
+
+        <dl className="meta-list">
+          <Row label="Type">
+            <TypeBadge type="prompt" />
+          </Row>
+
+          <Row label="Collection">
+            <button className="meta-link" onClick={() => void openLink(note.title)}>
+              {note.title}
+              {hoverPrompt.position != null && <span className="count">#{hoverPrompt.position}</span>}
+            </button>
+          </Row>
+
+          <Row label="Tags">
+            {hoverPrompt.tags.length > 0 ? (
+              <ul className="meta-tags">
+                {hoverPrompt.tags.map((tag) => (
+                  <li key={tag}>
+                    <TagChip tag={tag} onClick={() => useStore.getState().openPalette(tag)} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="muted">None</span>
+            )}
+          </Row>
+
+          <Row label="Model">
+            <ModelPicker
+              key={hoverPrompt.id}
+              value={hoverPrompt.model ?? ""}
+              onChange={async (value) => {
+                try {
+                  await api.updateModel(hoverPrompt.id, value || null);
+                  await refresh();
+                } catch {}
+              }}
+            />
+          </Row>
+
+          {meta?.updated && <Row label="Updated">{formatDate(meta.updated)}</Row>}
+        </dl>
+      </section>
+    );
+  }
 
   // In an idea, the Model row addresses whichever bubble is live rather than
   // the note as a whole — that is the granularity a model is assigned at.
@@ -224,9 +290,15 @@ function Metadata() {
 
 export function RightPanel() {
   const isIdea = useStore((s) => s.active?.type === "idea");
+  const holdHoverPrompt = useStore((s) => s.holdHoverPrompt);
+  const releaseHoverPrompt = useStore((s) => s.releaseHoverPrompt);
 
   return (
-    <aside className="right-panel">
+    <aside
+      className="right-panel"
+      onMouseEnter={holdHoverPrompt}
+      onMouseLeave={releaseHoverPrompt}
+    >
       <div className="panel-split">
         <Backlinks />
       </div>

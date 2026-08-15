@@ -154,6 +154,12 @@ function Card({ prompt, drag }: { prompt: ChildPrompt; drag?: NoteDragHandlers }
         data-drag-key={drag?.["data-drag-key"]}
         data-drag-list={drag?.["data-drag-list"]}
         onDoubleClick={() => setEditing(true)}
+        onMouseEnter={() => useStore.getState().setHoverPrompt(prompt)}
+        onMouseLeave={() => {
+          if (useStore.getState().hoverPrompt?.id === prompt.id) {
+            useStore.getState().setHoverPrompt(null);
+          }
+        }}
         data-tooltip="Double-click to edit · Drag index to reorder"
       >
         <header className="card-head">
@@ -200,7 +206,15 @@ function Card({ prompt, drag }: { prompt: ChildPrompt; drag?: NoteDragHandlers }
   }
 
   return (
-    <li className="card editing">
+    <li
+      className="card editing"
+      onMouseEnter={() => useStore.getState().setHoverPrompt(prompt)}
+      onMouseLeave={() => {
+        if (useStore.getState().hoverPrompt?.id === prompt.id) {
+          useStore.getState().setHoverPrompt(null);
+        }
+      }}
+    >
       <header className="card-head">
         {prompt.position != null && <span className="card-index">{prompt.position}</span>}
         <input
@@ -308,7 +322,10 @@ export function PromptCards() {
       }
     };
     window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("paste", onPaste);
+      useStore.getState().setHoverPrompt(null);
+    };
   }, []);
 
   const body = active?.body ?? "";
