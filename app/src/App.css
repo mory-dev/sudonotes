@@ -1856,6 +1856,7 @@ body.row-dragging {
 /* ---------- collection page ---------- */
 
 .cards {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1906,6 +1907,18 @@ body.row-dragging {
 .card.drop-target {
   border-color: var(--type-color);
   box-shadow: inset 0 2px 0 0 var(--type-color);
+}
+
+.card.current-find-card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cm-find-match,
+mark.cm-find-match {
+  background-color: rgba(247, 168, 42, 0.25);
+  color: inherit;
+  border-radius: 2px;
 }
 
 .card:hover {

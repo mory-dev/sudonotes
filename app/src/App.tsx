@@ -105,16 +105,21 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey;
       if (!mod) return;
-      const { setPalette, create, flushSave, active: current } = useStore.getState();
+      const { setPalette, openFind, create, flushSave, active: current } = useStore.getState();
       const key = event.key.toLowerCase();
 
-      if (key === "f" || key === "k") {
+      if (event.shiftKey && key === "f") {
+        event.preventDefault();
+        if (current) {
+          openFind();
+        }
+      } else if (!event.shiftKey && (key === "f" || key === "k")) {
         event.preventDefault();
         setPalette(true);
-      } else if (key === "n") {
+      } else if (!event.shiftKey && key === "n") {
         event.preventDefault();
         void create(current?.type ?? "prompt", "");
-      } else if (key === "s") {
+      } else if (!event.shiftKey && key === "s") {
         event.preventDefault();
         void flushSave();
       } else if (SUPPRESSED_MOD_KEYS.has(key)) {

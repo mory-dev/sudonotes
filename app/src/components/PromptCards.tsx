@@ -8,9 +8,31 @@ import { ProviderIcon, providerOf, shortModelName } from "./ProviderMarks";
 import { TagChip } from "./TagChip";
 import { TagInput } from "./TagInput";
 
+function HighlightMatches({ text, query }: { text: string; query: string }) {
+  if (!query || !query.trim()) return <>{text}</>;
+  const parts: ReactNode[] = [];
+  const lower = text.toLowerCase();
+  const needle = query.toLowerCase();
+  let last = 0;
+  let key = 0;
+  let idx = lower.indexOf(needle, last);
+  while (idx !== -1) {
+    if (idx > last) parts.push(text.slice(last, idx));
+    parts.push(
+      <mark key={key++} className="cm-find-match">
+        {text.slice(idx, idx + needle.length)}
+      </mark>,
+    );
+    last = idx + needle.length;
+    idx = lower.indexOf(needle, last);
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+
 /** Render `[[Target]]` (and `[[Target|alias]]`) as clickable links, everything
  *  else as plain text. Newlines are preserved by the caller's white-space. */
-function Wikilinks({ text }: { text: string }) {
+function Wikilinks({ text, query }: { text: string; query?: string }) {
   const openLink = useStore((s) => s.openLink);
 
   const parts: ReactNode[] = [];
@@ -19,9 +41,13 @@ function Wikilinks({ text }: { text: string }) {
   let key = 0;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text))) {
-    if (match.index > last) parts.push(text.slice(last, match.index));
+    if (match.index > last) {
+      const slice = text.slice(last, match.index);
+      parts.push(query ? <HighlightMatches key={key++} text={slice} query={query} /> : slice);
+    }
     const target = match[1].trim();
     const alias = match[2]?.trim();
+    const labelText = alias || target;
     parts.push(
       <button
         key={key++}
@@ -30,12 +56,15 @@ function Wikilinks({ text }: { text: string }) {
         data-tooltip={`Open "${target}"`}
         onClick={() => void openLink(target)}
       >
-        {alias || target}
+        {query ? <HighlightMatches text={labelText} query={query} /> : labelText}
       </button>,
     );
     last = match.index + match[0].length;
   }
-  if (last < text.length) parts.push(text.slice(last));
+  if (last < text.length) {
+    const slice = text.slice(last);
+    parts.push(query ? <HighlightMatches key={key++} text={slice} query={query} /> : slice);
+  }
 
   return parts.length > 0 ? <>{parts}</> : null;
 }
@@ -71,7 +100,17 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
 }
 
 /** Rendered view of one prompt; double-click turns it into a form. */
-function Card({ prompt, drag }: { prompt: ChildPrompt; drag?: NoteDragHandlers }) {
+function Card({
+  prompt,
+  drag,
+  query,
+  isCurrentMatch,
+}: {
+  prompt: ChildPrompt;
+  drag?: NoteDragHandlers;
+  query?: string;
+  isCurrentMatch?: boolean;
+}) {
   const select = useStore((s) => s.select);
   const refresh = useStore((s) => s.refresh);
   const setError = useStore((s) => s.setError);
@@ -144,12 +183,14 @@ function Card({ prompt, drag }: { prompt: ChildPrompt; drag?: NoteDragHandlers }
       "card",
       drag?.isOver ? "drop-target" : "",
       drag?.isDragging ? "dragging" : "",
+      isCurrentMatch ? "current-find-card" : "",
     ]
       .filter(Boolean)
       .join(" ");
 
     return (
       <li
+        id={`prompt-card-${prompt.id}`}
         className={classes}
         data-drag-key={drag?.["data-drag-key"]}
         data-drag-list={drag?.["data-drag-list"]}
@@ -177,13 +218,13 @@ function Card({ prompt, drag }: { prompt: ChildPrompt; drag?: NoteDragHandlers }
             data-tooltip="Open this prompt"
             onClick={() => void select(prompt.id)}
           >
-            {prompt.title}
+            <HighlightMatches text={prompt.title} query={query ?? ""} />
           </button>
           <CopyButton text={prompt.body} />
         </header>
 
         <pre className="card-body">
-          <Wikilinks text={prompt.body} />
+          <Wikilinks text={prompt.body} query={query} />
         </pre>
 
         {(prompt.tags.length > 0 || prompt.model) && (
@@ -207,6 +248,7 @@ function Card({ prompt, drag }: { prompt: ChildPrompt; drag?: NoteDragHandlers }
 
   return (
     <li
+      id={`prompt-card-${prompt.id}`}
       className="card editing"
       onMouseEnter={() => useStore.getState().setHoverPrompt(prompt)}
       onMouseLeave={() => {
@@ -296,6 +338,11 @@ export function PromptCards() {
   const type = useStore((s) => s.active?.type);
   const addPrompt = useStore((s) => s.addPrompt);
   const reorderChildren = useStore((s) => s.reorderChildren);
+  const find = useStore((s) => s.find);
+  const findCount = useStore((s) => s.findCount);
+  const closeFind = useStore((s) => s.closeFind);
+  const setFindQuery = useStore((s) => s.setFindQuery);
+  const findMove = useStore((s) => s.findMove);
 
   const cardDrag = useListDrag(
     `collection-cards:${active?.id ?? "active"}`,
@@ -309,6 +356,37 @@ export function PromptCards() {
       if (next) void reorderChildren(active.id, next);
     },
   );
+
+  const matchingPromptIds = useMemo(() => {
+    if (!find?.query?.trim()) return [];
+    const q = find.query.toLowerCase();
+    return children
+      .filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          c.body.toLowerCase().includes(q) ||
+          c.tags.some((t) => t.toLowerCase().includes(q)),
+      )
+      .map((c) => c.id);
+  }, [children, find?.query]);
+
+  useEffect(() => {
+    if (find?.query?.trim()) {
+      useStore.setState({ findCount: matchingPromptIds.length });
+    } else if (find) {
+      useStore.setState({ findCount: 0 });
+    }
+  }, [find?.query, matchingPromptIds.length]);
+
+  useEffect(() => {
+    if (!find || matchingPromptIds.length === 0) return;
+    const index = Math.max(0, Math.min(find.index, matchingPromptIds.length - 1));
+    const targetId = matchingPromptIds[index];
+    if (targetId) {
+      const el = document.getElementById(`prompt-card-${targetId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [find?.index, find?.move, matchingPromptIds]);
 
   // Pasting a batch into a collection offers to split it into prompts, exactly
   // as the editor does for a single note. A single prompt lands directly.
@@ -330,6 +408,7 @@ export function PromptCards() {
 
   const body = active?.body ?? "";
   const all = children.map((c) => `## ${c.title}\n\n${c.body}`).join("\n\n");
+  const currentMatchId = matchingPromptIds[find?.index ?? 0];
 
   return (
     <section className="cards" data-type={type}>
@@ -349,9 +428,45 @@ export function PromptCards() {
         </div>
       </header>
 
+      {find && (
+        <div className="find-bar" role="search">
+          <input
+            autoFocus
+            value={find.query}
+            placeholder="Find in this collection…"
+            onChange={(event) => setFindQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                findMove(event.shiftKey ? -1 : 1);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                closeFind();
+              }
+            }}
+          />
+          <span className="find-count">
+            {findCount > 0 ? `${Math.min(find.index + 1, findCount)} / ${findCount}` : "0 / 0"}
+          </span>
+          <button
+            className="find-nav"
+            data-tooltip="Previous (Shift+Enter)"
+            onClick={() => findMove(-1)}
+          >
+            ↑
+          </button>
+          <button className="find-nav" data-tooltip="Next (Enter)" onClick={() => findMove(1)}>
+            ↓
+          </button>
+          <button className="find-close" data-tooltip="Close (Esc)" onClick={closeFind}>
+            ×
+          </button>
+        </div>
+      )}
+
       {body.trim() && (
         <div className="collection-index" data-tooltip="[[links]] between these prompts">
-          <Wikilinks text={body.trim()} />
+          <Wikilinks text={body.trim()} query={find?.query} />
         </div>
       )}
 
@@ -369,6 +484,8 @@ export function PromptCards() {
             <Card
               key={prompt.id}
               prompt={prompt}
+              query={find?.query}
+              isCurrentMatch={Boolean(find?.query && currentMatchId === prompt.id)}
               drag={{
                 ...cardDrag.rowProps(prompt.id),
                 isDragging: cardDrag.dragKey === prompt.id,
