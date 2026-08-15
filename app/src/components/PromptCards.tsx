@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, type ChildPrompt } from "../api";
 import { useStore } from "../store";
+import { useListDrag, reordered, type NoteDragHandlers } from "../useListDrag";
 import { ModelPicker } from "./ModelPicker";
 import { ProviderIcon, providerOf, shortModelName } from "./ProviderMarks";
 import { TagChip } from "./TagChip";
@@ -70,7 +71,7 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
 }
 
 /** Rendered view of one prompt; double-click turns it into a form. */
-function Card({ prompt }: { prompt: ChildPrompt }) {
+function Card({ prompt, drag }: { prompt: ChildPrompt; drag?: NoteDragHandlers }) {
   const select = useStore((s) => s.select);
   const refresh = useStore((s) => s.refresh);
   const setError = useStore((s) => s.setError);
@@ -139,14 +140,32 @@ function Card({ prompt }: { prompt: ChildPrompt }) {
   };
 
   if (!editing) {
+    const classes = [
+      "card",
+      drag?.isOver ? "drop-target" : "",
+      drag?.isDragging ? "dragging" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     return (
       <li
-        className="card"
+        className={classes}
+        data-drag-key={drag?.["data-drag-key"]}
+        data-drag-list={drag?.["data-drag-list"]}
         onDoubleClick={() => setEditing(true)}
-        data-tooltip="Double-click to edit"
+        data-tooltip="Double-click to edit · Drag index to reorder"
       >
         <header className="card-head">
-          {prompt.position != null && <span className="card-index">{prompt.position}</span>}
+          <span
+            className="card-index"
+            data-drag-key={drag?.["data-drag-key"]}
+            data-drag-list={drag?.["data-drag-list"]}
+            data-tooltip="Drag to reorder"
+            onPointerDown={drag?.onPointerDown}
+          >
+            {prompt.position != null ? prompt.position : "•"}
+          </span>
           <button
             className="card-title"
             data-tooltip="Open this prompt"
@@ -262,6 +281,20 @@ export function PromptCards() {
   const children = useStore((s) => s.children);
   const type = useStore((s) => s.active?.type);
   const addPrompt = useStore((s) => s.addPrompt);
+  const reorderChildren = useStore((s) => s.reorderChildren);
+
+  const cardDrag = useListDrag(
+    `collection-cards:${active?.id ?? "active"}`,
+    (fromId, toId) => {
+      if (!active) return;
+      const next = reordered(
+        children.map((c) => c.id),
+        fromId,
+        toId,
+      );
+      if (next) void reorderChildren(active.id, next);
+    },
+  );
 
   // Pasting a batch into a collection offers to split it into prompts, exactly
   // as the editor does for a single note. A single prompt lands directly.
@@ -316,7 +349,15 @@ export function PromptCards() {
       ) : (
         <ul className="card-list">
           {children.map((prompt) => (
-            <Card key={prompt.id} prompt={prompt} />
+            <Card
+              key={prompt.id}
+              prompt={prompt}
+              drag={{
+                ...cardDrag.rowProps(prompt.id),
+                isDragging: cardDrag.dragKey === prompt.id,
+                isOver: cardDrag.overKey === prompt.id && cardDrag.dragKey !== prompt.id,
+              }}
+            />
           ))}
         </ul>
       )}
