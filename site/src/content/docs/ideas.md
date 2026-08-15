@@ -30,7 +30,7 @@ Ideas also have two specialized behaviors: blank-line-separated bubbles and proj
 
 ## Work with bubbles
 
-Separate thoughts with a blank line. Each paragraph becomes a bubble in the editor:
+Separate thoughts with a blank line. Each non-blank block (including headings, subheadings, lists, and paragraphs) forms a cohesive bubble in the editor:
 
 ```markdown
 Offline alert queue
@@ -40,6 +40,8 @@ Preserve the original timestamp and retry in order.
 
 Keep the queue bounded and make overflow visible.
 ```
+
+In the sidebar, each idea displays its total bubble count dynamically color-coded with a heat palette (transitioning from amber to hot crimson relative to other ideas in your vault).
 
 Move the pointer over a bubble to reveal its controls. You can:
 

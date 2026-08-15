@@ -56,7 +56,11 @@ no useful multi-section structure becomes one child prompt instead.
 ## Use the collection view
 
 The collection page shows every child as a card in order. From the header you can add a prompt or
-**Copy all**. A card can be copied directly or double-clicked for inline editing.
+**Copy all**. A card can be copied directly, double-clicked for inline editing, or dragged by its index badge to reorder prompts directly on the page.
+
+Hovering over any prompt card updates the right **Details** and **Variables** panels in real time, letting you inspect and adjust tags, model assignments, and placeholder variables with a comfortable hover grace period.
+
+Press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> while viewing a collection to search across the prompt cards, highlight matches, and cycle through matching prompts.
 
 While editing a card:
 
@@ -64,11 +68,10 @@ While editing a card:
 - press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> to save;
 - press <kbd>Esc</kbd> to discard the card edit.
 
-Drag children in the sidebar to persist a new order. From a child editor, press
+Drag children in the sidebar or directly in the card list to persist a new order. From a child editor, press
 <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> to flush the child and return to its collection.
 
 ## Rename safely
 
 Renaming the parent moves its collection directory and updates the children’s parent reference.
-Renaming a child updates the link in the parent index. External renames are reconciled when the
-vault opens, but the safest path is to rename through the app while the collection is visible.
+Renaming a child updates the link in the parent index and all wiki links pointing to it across your vault automatically. External renames are reconciled when the vault opens, but the safest path is to rename through the app while the collection is visible.

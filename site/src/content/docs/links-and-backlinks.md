@@ -23,14 +23,13 @@ searchTerms:
 
 ## Link to a note
 
-Write a title inside double square brackets:
+Type `[[` anywhere in the editor to trigger the autocomplete dropdown. It searches and lists existing notes across your vault as you type; use <kbd>ArrowDown</kbd>/<kbd>ArrowUp</kbd> and press <kbd>Enter</kbd> or <kbd>Tab</kbd> to insert the link and automatically close the brackets.
 
 ```markdown
 Use the rubric in [[Review standards]].
 ```
 
-The brackets become visually quiet while reading and return when the caret enters the link. Hold
-<kbd>Ctrl</kbd> or <kbd>Cmd</kbd> and click it to open the target.
+The brackets become visually quiet while reading and return when the caret enters the link. If the linked target is connected to a software project, its project favicon (or initial placeholder) appears directly beside the link. Hold <kbd>Ctrl</kbd> or <kbd>Cmd</kbd> and click it to open the target.
 
 To display different words, separate the target and label with a pipe:
 
@@ -62,8 +61,6 @@ answer “why does this exist?” and the place to inspect before a rename or de
 Backlinks are derived from the current Markdown and search index. If an externally edited link has
 not appeared, reopen the vault or allow the file watcher to refresh the index.
 
-## Rename with care
+## Automatic link updates on rename
 
-Wiki links match titles. Renaming a note changes its own title and filename, but text written in
-other notes may still use the old title. Review **Linked from**, rename, then update those source
-notes so they continue to resolve.
+When you rename a note, sudonotes automatically updates all `[[wiki links]]` pointing to it across every note in your vault while preserving existing custom aliases. The file, collection folders, and cross-references stay synchronized effortlessly.

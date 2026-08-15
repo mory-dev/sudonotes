@@ -45,10 +45,12 @@ browser find-next. They are not sudonotes shortcuts.
 
 | Shortcut | Action |
 | --- | --- |
-| <kbd>Mod</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | Find within the open note |
+| <kbd>Mod</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | Find within the open note or prompt collection |
 | <kbd>Enter</kbd> in find | Next match |
 | <kbd>Shift</kbd> + <kbd>Enter</kbd> in find | Previous match |
 | <kbd>Esc</kbd> in find | Close find |
+| `[[` | Open note linking autocomplete dropdown |
+| <kbd>Enter</kbd> / <kbd>Tab</kbd> in autocomplete | Insert selected note link |
 | <kbd>Mod</kbd> + <kbd>Z</kbd> | Undo editor change |
 | <kbd>Mod</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> | Redo on every platform |
 | <kbd>Mod</kbd> + <kbd>Y</kbd> | Redo where supported by the standard editor keymap |
