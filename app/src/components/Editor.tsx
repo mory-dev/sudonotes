@@ -63,6 +63,42 @@ const label = (target: string) =>
     },
   });
 
+class LinkProjectIconWidget extends WidgetType {
+  constructor(
+    readonly icon: string | null | undefined,
+    readonly project: string,
+  ) {
+    super();
+  }
+
+  eq(other: LinkProjectIconWidget) {
+    return this.icon === other.icon && this.project === other.project;
+  }
+
+  toDOM() {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-wikilink-project-wrap";
+    if (this.icon) {
+      const img = document.createElement("img");
+      img.className = "cm-wikilink-project-icon";
+      img.src = this.icon;
+      img.alt = "";
+      img.setAttribute("data-tooltip", this.project);
+      wrap.appendChild(img);
+    } else {
+      const span = document.createElement("span");
+      span.className = "cm-wikilink-project-icon placeholder";
+      const initial = (
+        this.project.replace(/[\\/]+$/, "").split(/[\\/]/).pop()?.charAt(0) || "?"
+      ).toUpperCase();
+      span.textContent = initial;
+      span.setAttribute("data-tooltip", this.project);
+      wrap.appendChild(span);
+    }
+    return wrap;
+  }
+}
+
 /**
  * Render `[[Target]]` as just `Target`, highlighted — the brackets only appear
  * while the cursor is inside the link, so it stays editable without ever
@@ -71,6 +107,7 @@ const label = (target: string) =>
 function buildLinkDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const cursor = view.state.selection.main;
+  const notes = useStore.getState().notes;
 
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.doc.sliceString(from, to);
@@ -82,9 +119,20 @@ function buildLinkDecorations(view: EditorView): DecorationSet {
       const end = start + match[0].length;
       const target = match[1].trim();
       const alias = match[2];
+      const targetNote = notes.find((n) => n.title.toLowerCase() === target.toLowerCase());
 
       // Reveal the raw syntax when the caret is in or beside the link.
       if (cursor.from <= end && cursor.to >= start) {
+        if (targetNote?.project) {
+          builder.add(
+            start,
+            start,
+            Decoration.widget({
+              widget: new LinkProjectIconWidget(targetNote.icon, targetNote.project),
+              side: -1,
+            }),
+          );
+        }
         builder.add(start, end, label(target));
         continue;
       }
@@ -92,6 +140,17 @@ function buildLinkDecorations(view: EditorView): DecorationSet {
       builder.add(start, start + 2, hidden);
       const inner = start + 2;
       const closing = end - 2;
+
+      if (targetNote?.project) {
+        builder.add(
+          inner,
+          inner,
+          Decoration.widget({
+            widget: new LinkProjectIconWidget(targetNote.icon, targetNote.project),
+            side: 1,
+          }),
+        );
+      }
 
       if (alias === undefined) {
         builder.add(inner, closing, label(target));
@@ -826,6 +885,30 @@ const theme = EditorView.theme(
       cursor: "pointer",
     },
     ".cm-wikilink:hover": { backgroundColor: "var(--selection)" },
+    ".cm-wikilink-project-wrap": {
+      display: "inline-flex",
+      alignItems: "center",
+      verticalAlign: "middle",
+      marginRight: "4px",
+    },
+    ".cm-wikilink-project-icon": {
+      display: "inline-block",
+      width: "13px",
+      height: "13px",
+      borderRadius: "3px",
+      objectFit: "contain",
+      verticalAlign: "middle",
+      background: "var(--panel-2)",
+    },
+    ".cm-wikilink-project-icon.placeholder": {
+      display: "inline-grid",
+      placeItems: "center",
+      fontSize: "8px",
+      fontWeight: "700",
+      lineHeight: "1",
+      color: "var(--muted)",
+      border: "1px solid var(--border)",
+    },
     ".cm-heading1": { fontSize: "1.1em", fontWeight: 600 },
     ".cm-heading2": { fontSize: "1.05em", fontWeight: 600 },
     ".cm-heading3": { fontSize: "1em", fontWeight: 600 },

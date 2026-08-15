@@ -2042,8 +2042,11 @@ mark.cm-find-match {
 /* A [[wiki link]] rendered outside the editor — clickable like the in-editor
  * ones, inheriting the surrounding monospace/body font. */
 .wiki-link {
-  display: inline;
-  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+  padding: 0 4px;
   font-family: inherit;
   font-size: inherit;
   font-weight: inherit;
@@ -2051,6 +2054,15 @@ mark.cm-find-match {
   background: var(--accent-soft);
   border-radius: 3px;
   cursor: pointer;
+}
+
+.wiki-link .note-project-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.wiki-link .note-project-icon.placeholder {
+  font-size: 8px;
 }
 
 .wiki-link:hover {

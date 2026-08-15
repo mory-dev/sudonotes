@@ -34,6 +34,7 @@ function HighlightMatches({ text, query }: { text: string; query: string }) {
  *  else as plain text. Newlines are preserved by the caller's white-space. */
 function Wikilinks({ text, query }: { text: string; query?: string }) {
   const openLink = useStore((s) => s.openLink);
+  const notes = useStore((s) => s.notes);
 
   const parts: ReactNode[] = [];
   const re = /\[\[([^[\]\n|]+)(?:\|([^[\]\n]+))?\]\]/g;
@@ -48,6 +49,8 @@ function Wikilinks({ text, query }: { text: string; query?: string }) {
     const target = match[1].trim();
     const alias = match[2]?.trim();
     const labelText = alias || target;
+    const targetNote = notes.find((n) => n.title.toLowerCase() === target.toLowerCase());
+
     parts.push(
       <button
         key={key++}
@@ -56,6 +59,15 @@ function Wikilinks({ text, query }: { text: string; query?: string }) {
         data-tooltip={`Open "${target}"`}
         onClick={() => void openLink(target)}
       >
+        {targetNote?.project ? (
+          targetNote.icon ? (
+            <img className="note-project-icon" src={targetNote.icon} alt="" data-tooltip={targetNote.project} />
+          ) : (
+            <span className="note-project-icon placeholder" data-tooltip={targetNote.project}>
+              {(targetNote.project.replace(/[\\/]+$/, "").split(/[\\/]/).pop()?.charAt(0) || "?").toUpperCase()}
+            </span>
+          )
+        ) : null}
         {query ? <HighlightMatches text={labelText} query={query} /> : labelText}
       </button>,
     );
