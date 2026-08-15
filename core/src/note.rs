@@ -423,6 +423,62 @@ pub fn slugify(title: &str) -> String {
     }
 }
 
+/// Replace wiki-style `[[target]]` and `[[target|alias]]` links that match `old_title`
+/// with `[[new_title]]` (or `[[new_title|alias]]`), case-insensitively.
+/// Returns the updated body and a boolean indicating whether any link was changed.
+pub fn replace_links(body: &str, old_title: &str, new_title: &str) -> (String, bool) {
+    let old_trimmed = old_title.trim();
+    let new_trimmed = new_title.trim();
+    if old_trimmed.is_empty() || new_trimmed.is_empty() || old_trimmed.eq_ignore_ascii_case(new_trimmed) {
+        return (body.to_string(), false);
+    }
+
+    let chars: Vec<char> = body.chars().collect();
+    let mut out = String::with_capacity(body.len());
+    let mut i = 0;
+    let mut changed = false;
+
+    while i < chars.len() {
+        if i + 1 < chars.len() && chars[i] == '[' && chars[i + 1] == '[' {
+            let start = i + 2;
+            let mut j = start;
+            while j + 1 < chars.len() && !(chars[j] == ']' && chars[j + 1] == ']') {
+                if chars[j] == '\n' {
+                    break;
+                }
+                j += 1;
+            }
+            if j + 1 < chars.len() && chars[j] == ']' && chars[j + 1] == ']' {
+                let inner: String = chars[start..j].iter().collect();
+                let mut parts = inner.splitn(2, '|');
+                let target_part = parts.next().unwrap_or("");
+                let alias_part = parts.next();
+
+                if target_part.trim().eq_ignore_ascii_case(old_trimmed) {
+                    changed = true;
+                    out.push_str("[[");
+                    out.push_str(new_trimmed);
+                    if let Some(alias) = alias_part {
+                        out.push('|');
+                        out.push_str(alias);
+                    }
+                    out.push_str("]]");
+                } else {
+                    out.push_str("[[");
+                    out.push_str(&inner);
+                    out.push_str("]]");
+                }
+                i = j + 2;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+
+    (out, changed)
+}
+
 /// Extract wiki-style `[[target]]` link targets, ignoring the `|alias` part.
 pub fn extract_links(body: &str) -> Vec<String> {
     let bytes: Vec<char> = body.chars().collect();
@@ -550,8 +606,29 @@ mod tests {
     }
 
     #[test]
-    fn ignores_non_links() {
-        assert!(extract_links("a [single] bracket and [[unclosed\nnext line").is_empty());
-        assert!(extract_links("[[]]").is_empty());
+    fn replaces_wiki_links_and_preserves_aliases() {
+        let body = "See [[Alpha]] and [[alpha|custom alias]], plus [[Beta]] and [[Alpha]].";
+        let (updated, changed) = replace_links(body, "Alpha", "Gamma");
+        assert!(changed);
+        assert_eq!(
+            updated,
+            "See [[Gamma]] and [[Gamma|custom alias]], plus [[Beta]] and [[Gamma]]."
+        );
+    }
+
+    #[test]
+    fn leaves_unrelated_links_alone_when_replacing() {
+        let body = "See [[Beta]] and [[Beta|alias]].";
+        let (updated, changed) = replace_links(body, "Alpha", "Gamma");
+        assert!(!changed);
+        assert_eq!(updated, body);
+    }
+
+    #[test]
+    fn ignores_non_links_when_replacing() {
+        let body = "a [single] bracket and [[unclosed\nnext line";
+        let (updated, changed) = replace_links(body, "single", "double");
+        assert!(!changed);
+        assert_eq!(updated, body);
     }
 }

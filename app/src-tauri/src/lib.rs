@@ -354,6 +354,7 @@ fn link_project(
                 note.write_to(&note_path)
                     .map_err(|e| err("could not write note", e))?;
                 retitle_files(&note_path, &old_title, &folder);
+                update_vault_references(&open.vault, &old_title, &folder);
                 retitled = true;
             }
         }
@@ -433,6 +434,7 @@ fn import_project_idea(
                 note.write_to(&note_path)
                     .map_err(|e| err("could not write note", e))?;
                 retitle_files(&note_path, &old_title, &folder);
+                update_vault_references(&open.vault, &old_title, &folder);
                 retitled = true;
             }
         }
@@ -563,6 +565,26 @@ fn retitle_files(old_path: &std::path::Path, old_title: &str, new_title: &str) {
     }
 }
 
+/// When a note is renamed, update all `[[old_title]]` wiki links pointing to it
+/// across all markdown files in the vault to `[[new_title]]`, preserving any custom aliases.
+fn update_vault_references(vault: &Vault, old_title: &str, new_title: &str) {
+    if old_title.trim().eq_ignore_ascii_case(new_title.trim()) {
+        return;
+    }
+    for (_note_type, path) in vault.scan() {
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let mut note = Note::parse(&raw, &title_from_path(&path));
+        let (updated_body, changed) = note::replace_links(&note.body, old_title, new_title);
+        if changed {
+            note.body = updated_body;
+            note.frontmatter.updated = note::now_rfc3339();
+            let _ = note.write_to(&path);
+        }
+    }
+}
+
 /// Save every editable field of a note at once — used by the inline card
 /// editor, which changes title, body, tags and model together.
 #[tauri::command]
@@ -603,6 +625,7 @@ fn update_note(
 
         if old_title != note.frontmatter.title {
             retitle_files(&path, &old_title, &note.frontmatter.title);
+            update_vault_references(&open.vault, &old_title, &note.frontmatter.title);
         }
         sync_mirror(&note);
 
@@ -1110,6 +1133,7 @@ fn rename_note(id: String, title: String, state: State<AppState>) -> Result<()> 
             .map_err(|e| err("could not write note", e))?;
 
         retitle_files(&old_path, &old_title, &title);
+        update_vault_references(&open.vault, &old_title, &title);
 
         // The mirror is always IDEAS.md, so a rename just rewrites it.
         sync_mirror(&note);
