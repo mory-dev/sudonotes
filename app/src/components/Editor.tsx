@@ -232,6 +232,11 @@ function pageLinkCompletionSource(context: CompletionContext): CompletionResult 
 
 const PAGELINK = /\(\(([^()\n]+)\)\)/g;
 
+/** Where an in-page ((link)) jump target lands, measured down from the editor's
+ *  top edge (layout px). Fixed rather than centered so it never sits flush
+ *  under the window chrome and the note's title bar, whatever the document. */
+const PAGE_JUMP_HEADROOM = 88;
+
 /** Hides the syntax so a link reads as ordinary highlighted text. */
 const hidden = Decoration.replace({});
 
@@ -1670,7 +1675,8 @@ export function Editor() {
   const onEditorMouseLeave = () => scheduleHide();
 
   /** Smooth-scroll to an in-page ((reference)), remembering where we came from
-   *  so the back pill can return there. */
+   *  so the back pill can return there. The target is revealed a fixed
+   *  distance below the editor's top edge, clear of the chrome and title bar. */
   const jumpToPageReference = (target: string) => {
     const editor = view.current;
     if (!editor) return;
@@ -1678,8 +1684,19 @@ export function Editor() {
     if (!anchor) return;
     setPageBack(editor.scrollDOM.scrollTop);
     const dom = editor.domAtPos(anchor.pos);
-    const el = dom.node instanceof Element ? dom.node : dom.node.parentElement;
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const node = dom.node instanceof Element ? dom.node : dom.node.parentElement;
+    // Scroll the actual line block, not whatever tiny inline node sits at the
+    // position — and never the content box itself, which would clamp to the top.
+    const el = node?.closest(".cm-line") ?? node;
+    if (el) {
+      // DOM rects are viewport px, while scroll offsets are layout px, so the
+      // delta is converted like every other floating placement in the app.
+      const scroller = editor.scrollDOM;
+      const delta = viewportToLayout(
+        el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - PAGE_JUMP_HEADROOM,
+      );
+      scroller.scrollBy({ top: delta, behavior: "smooth" });
+    }
     editor.focus();
   };
 
