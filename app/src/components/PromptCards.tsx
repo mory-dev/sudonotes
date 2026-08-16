@@ -491,21 +491,30 @@ export function PromptCards() {
           </p>
         </div>
       ) : (
-        <ul className="card-list">
-          {children.map((prompt) => (
-            <Card
-              key={prompt.id}
-              prompt={prompt}
-              query={find?.query}
-              isCurrentMatch={Boolean(find?.query && currentMatchId === prompt.id)}
-              drag={{
-                ...cardDrag.rowProps(prompt.id),
-                isDragging: cardDrag.dragKey === prompt.id,
-                isOver: cardDrag.overKey === prompt.id && cardDrag.dragKey !== prompt.id,
-              }}
-            />
-          ))}
-        </ul>
+        <>
+          <ul className="card-list">
+            {children.map((prompt) => (
+              <Card
+                key={prompt.id}
+                prompt={prompt}
+                query={find?.query}
+                isCurrentMatch={Boolean(find?.query && currentMatchId === prompt.id)}
+                drag={{
+                  ...cardDrag.rowProps(prompt.id),
+                  isDragging: cardDrag.dragKey === prompt.id,
+                  isOver: cardDrag.overKey === prompt.id && cardDrag.dragKey !== prompt.id,
+                }}
+              />
+            ))}
+          </ul>
+          <button
+            className="add-prompt-bottom"
+            onClick={() => void addPrompt()}
+            data-tooltip="Add a prompt to this collection"
+          >
+            + Add prompt
+          </button>
+        </>
       )}
     </section>
   );
