@@ -1689,26 +1689,18 @@ body.row-dragging {
   overflow: auto;
 }
 
-/* The bubble a ((link)) just jumped to blinks briefly so the eye lands on it.
-   Applied to each .cm-line of the bubble via a line decoration. */
-@keyframes cm-jump-blink {
+/* The bubble a ((link)) just jumped to fades in and out gently so the eye
+   lands on it without a flashing blink. Applied to each .cm-line of the
+   bubble via a line decoration. */
+@keyframes cm-jump-glow {
   0% {
     background-color: rgba(122, 162, 247, 0);
   }
-  15% {
-    background-color: rgba(122, 162, 247, 0.3);
+  28% {
+    background-color: rgba(122, 162, 247, 0.2);
   }
-  30% {
-    background-color: rgba(122, 162, 247, 0);
-  }
-  45% {
-    background-color: rgba(122, 162, 247, 0.3);
-  }
-  60% {
-    background-color: rgba(122, 162, 247, 0);
-  }
-  80% {
-    background-color: rgba(122, 162, 247, 0.14);
+  62% {
+    background-color: rgba(122, 162, 247, 0.06);
   }
   100% {
     background-color: rgba(122, 162, 247, 0);
@@ -1716,7 +1708,7 @@ body.row-dragging {
 }
 
 .cm-jump-highlight {
-  animation: cm-jump-blink 1.4s ease-in-out 1;
+  animation: cm-jump-glow 1.8s cubic-bezier(0.33, 0, 0.2, 1) 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

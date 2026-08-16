@@ -233,13 +233,13 @@ function pageLinkCompletionSource(context: CompletionContext): CompletionResult 
 const PAGELINK = /\(\(([^()\n]+)\)\)/g;
 
 /** Where an in-page ((link)) jump target lands, measured down from the editor's
- *  top edge. Fixed rather than centered so it never sits flush under the window
- *  chrome and the note's title bar, whatever the document. */
+ *  top edge, in CodeMirror's document coordinates. Fixed rather than centered
+ *  so it never sits flush under the window chrome and the note's title bar. */
 const PAGE_JUMP_HEADROOM = 88;
 
-/** How long the bubble a ((link)) jumped to keeps blinking. Slightly longer
- *  than the blink animation, so the flash finishes before the decoration goes. */
-const JUMP_HIGHLIGHT_MS = 1800;
+/** How long the bubble a ((link)) jumped to keeps glowing. Slightly longer
+ *  than the glow animation, so it finishes before the decoration goes. */
+const JUMP_HIGHLIGHT_MS = 2100;
 
 /** Hides the syntax so a link reads as ordinary highlighted text. */
 const hidden = Decoration.replace({});
@@ -1730,29 +1730,24 @@ export function Editor() {
   /** Smooth-scroll to an in-page ((reference)), remembering where we came from
    *  so the back pill can return there. The target is revealed a fixed
    *  distance below the editor's top edge, clear of the chrome and title bar,
-   *  and the bubble it landed in blinks so the eye is drawn to it. */
+   *  and the bubble it landed in glows so the eye is drawn to it. */
   const jumpToPageReference = (target: string) => {
     const editor = view.current;
     if (!editor) return;
     const anchor = resolvePageAnchor(pageAnchors(editor.state), target);
     if (!anchor) return;
     setPageBack(editor.scrollDOM.scrollTop);
-    const dom = editor.domAtPos(anchor.from);
-    const node = dom.node instanceof Element ? dom.node : dom.node.parentElement;
-    // Scroll the actual line block, not whatever tiny inline node sits at the
-    // position — and never the content box itself, which would clamp to the top.
-    const el = node?.closest(".cm-line") ?? node;
-    if (el) {
-      // getBoundingClientRect and scroll offsets share one coordinate space, so
-      // no zoom conversion — dividing here overshoots when the UI is scaled.
-      const scroller = editor.scrollDOM;
-      const delta =
-        el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - PAGE_JUMP_HEADROOM;
-      scroller.scrollBy({ top: delta, behavior: "smooth" });
-    }
+    // Reveal the line in CodeMirror's own coordinate space: lineBlockAt and
+    // scrollTop are measured consistently, so this stays exact at any UI zoom
+    // (DOM rects drift under Ctrl +/- scaling and overshoot when zoomed out).
+    const line = editor.lineBlockAt(anchor.from);
+    editor.scrollDOM.scrollTo({
+      top: Math.max(0, line.top - PAGE_JUMP_HEADROOM),
+      behavior: "smooth",
+    });
     editor.focus();
 
-    // Blink the whole bubble; CodeMirror draws the decoration as its lines
+    // Glow the whole bubble; CodeMirror draws the decoration as its lines
     // enter the viewport, so the flash follows even a very long smooth scroll.
     editor.dispatch({ effects: jumpHighlightEffect.of({ from: anchor.from, to: anchor.to }) });
     if (jumpTimer.current) clearTimeout(jumpTimer.current);
