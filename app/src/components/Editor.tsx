@@ -505,13 +505,20 @@ const headingLevel = (nodeName: string): number | null => {
 };
 
 /** Scale headings so `#` reads largest, `######` smallest, and the leading
- *  hash marks stay subtle instead of shouting. */
+ *  hash marks stay subtle instead of shouting. Each heading's line also gets
+ *  breathing room and a divider, so a heading reads as a section break and not
+ *  just slightly larger text. */
 function buildHeadingDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({ from, to, enter: (node) => {
       const level = headingLevel(node.name);
       if (!level) return;
+      // The heading's line gets room to breathe and a divider. Added first:
+      // it sits at the heading's start with side -2, which sorts ahead of the
+      // marks below, and RangeSetBuilder demands strictly ascending (from, side).
+      const docLine = view.state.doc.lineAt(node.from);
+      builder.add(docLine.from, docLine.from, Decoration.line({ class: "cm-heading-line", side: -2 }));
       const line = view.state.sliceDoc(node.from, node.to);
       const text = line.replace(/^#{1,6}\s*/, "");
       const markStart = node.from;
@@ -1230,6 +1237,15 @@ const theme = EditorView.theme(
       color: "var(--muted)",
       opacity: 0.55,
       fontWeight: 600,
+    },
+    // The heading's line: room to breathe above and below, and a quiet divider.
+    // Padding (not margin) so CodeMirror's line measurement stays intact, and
+    // only where the heading is not already a bubble header, which draws its
+    // own divider.
+    ".cm-heading-line:not(.cm-bubble-header)": {
+      paddingTop: "1.15em",
+      paddingBottom: "0.45em",
+      borderBottom: "1px solid rgba(255, 255, 255, 0.07)",
     },
     ".cm-para": {
       borderLeft: "1px solid rgba(255,255,255,0.08)",
