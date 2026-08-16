@@ -86,9 +86,12 @@ function BackupSection() {
    *  a vault is already open, it is the destination — no folder picker. The
    *  caller decides afterwards whether to open the result. */
   const restore = async () => {
+    // Start in the configured backups folder, since that is where the archives
+    // the user is about to pick are written.
     const archive = await open({
       title: "Choose a backup",
       multiple: false,
+      defaultPath: state?.directory,
       filters: [{ name: "sudonotes backup", extensions: ["bak", "zip"] }],
     });
     if (typeof archive !== "string") return;
