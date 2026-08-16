@@ -1643,6 +1643,8 @@ export function Editor() {
                 y: event.clientY,
                 hasSelection: !view.state.selection.main.empty,
                 link: link ?? null,
+                note: null,
+                bubble: null,
               });
               return true;
             },

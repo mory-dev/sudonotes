@@ -113,7 +113,10 @@ function NoteRow({
         className={classes}
         data-drag-key={drag?.["data-drag-key"]}
         data-drag-list={drag?.["data-drag-list"]}
-        data-tooltip={`${note.summary ?? note.title}\nDrag to reorder · Middle-click to delete`}
+        data-note-id={note.id}
+        data-note-title={note.title}
+        data-note-type={note.type}
+        data-tooltip={`${note.summary ?? note.title}\nDrag to reorder · Right-click for actions · Middle-click to delete`}
         onClick={() => void select(note.id)}
         onAuxClick={onAuxClick}
         onPointerDown={drag?.onPointerDown}
@@ -206,7 +209,12 @@ function Collection({
 
   return (
     <li className="collection" data-type={parent?.type ?? notes[0]?.type ?? "prompt"}>
-      <div className={headClasses}>
+      <div
+        className={headClasses}
+        data-note-id={parent?.id}
+        data-note-title={parent?.title ?? name}
+        data-note-type={parent?.type ?? notes[0]?.type ?? "prompt"}
+      >
         <button
           className="collection-open"
           data-drag-key={drag?.["data-drag-key"]}
@@ -417,8 +425,6 @@ export function Sidebar() {
     return counts.length > 0 ? Math.max(1, ...counts) : 1;
   }, [ideas]);
 
-  const deleteBubbleAt = useStore((s) => s.deleteBubbleAt);
-  const requestConfirm = useStore((s) => s.requestConfirm);
   const moveBubble = useStore((s) => s.moveBubble);
 
   // Outline rows are keyed by index: a bubble has no id, and its position in
@@ -468,18 +474,12 @@ export function Sidebar() {
                       className={classes}
                       data-drag-key={rows["data-drag-key"]}
                       data-drag-list={rows["data-drag-list"]}
+                      data-bubble-label={item.label}
+                      data-bubble-start={item.start}
                       data-tooltip={`${item.label}
-Drag to reorder · Right-click to delete this bubble`}
+Drag to reorder · Right-click for actions`}
                       onClick={() => scrollToPos(item.start)}
                       onPointerDown={rows.onPointerDown}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        requestConfirm(
-                          `Delete the bubble "${item.label}"?`,
-                          () => deleteBubbleAt(item.start),
-                          "Delete",
-                        );
-                      }}
                     >
                       <span className="idea-outline-mark">{index + 1}</span>
                       <span className="idea-outline-label">{item.label}</span>

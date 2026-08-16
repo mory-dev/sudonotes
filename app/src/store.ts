@@ -134,7 +134,16 @@ interface AppState {
   /** Whether the settings dialog, opened from the status bar, is showing. */
   settingsOpen: boolean;
   /** Right-click menu position in the editor, or null when closed. */
-  menuAt: { x: number; y: number; hasSelection: boolean; link: string | null } | null;
+  menuAt: {
+    x: number;
+    y: number;
+    hasSelection: boolean;
+    link: string | null;
+    /** The note the menu was opened on, when the right-click hit a sidebar row. */
+    note: { id: string; title: string; type: NoteType } | null;
+    /** The idea bubble the menu was opened on, when it hit the sidebar outline. */
+    bubble: { label: string; start: number } | null;
+  } | null;
   linkPickerOpen: boolean;
   /** A note title the editor should insert as a [[link]], then clear. */
   insertLink: string | null;
@@ -211,7 +220,14 @@ interface AppState {
   requestConfirm: (message: string, onConfirm: () => void, confirmLabel?: string) => void;
   requestChoice: (request: DialogRequest) => void;
   cancelConfirm: () => void;
-  openMenu: (at: { x: number; y: number; hasSelection: boolean; link: string | null }) => void;
+  openMenu: (at: {
+    x: number;
+    y: number;
+    hasSelection: boolean;
+    link: string | null;
+    note: { id: string; title: string; type: NoteType } | null;
+    bubble: { label: string; start: number } | null;
+  }) => void;
   closeMenu: () => void;
   setLinkPicker: (open: boolean) => void;
   requestLink: (title: string | null) => void;

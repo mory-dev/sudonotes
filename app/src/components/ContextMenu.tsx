@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import type { NoteType } from "../api";
 import { useStore } from "../store";
 import { getUiZoom, viewportToLayout } from "../uiScale";
 
@@ -42,6 +43,14 @@ function ClipIcon() {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.8 5h10.4M6.3 5V3h3.4v2M4.4 5l.7 8h5.8l.7-8" />
+    </svg>
+  );
+}
+
 function Item({
   icon,
   label,
@@ -79,6 +88,9 @@ export function ContextMenu() {
   const requestLink = useStore((s) => s.requestLink);
   const openLink = useStore((s) => s.openLink);
   const create = useStore((s) => s.create);
+  const select = useStore((s) => s.select);
+  const remove = useStore((s) => s.remove);
+  const deleteBubbleAt = useStore((s) => s.deleteBubbleAt);
   const activeType = useStore((s) => s.active?.type);
 
   const ref = useRef<HTMLDivElement>(null);
@@ -109,7 +121,9 @@ export function ContextMenu() {
 
   // Right-click anywhere replaces the webview's default menu with this one.
   // The editor handles its own right-clicks (it knows the editor selection)
-  // and stops propagation, so every other right-click lands here.
+  // and stops propagation, so every other right-click lands here. Sidebar
+  // rows are detected here too, so one handler serves both the note menu and
+  // the selection menu.
   useEffect(() => {
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
@@ -119,11 +133,33 @@ export function ContextMenu() {
       const selection = window.getSelection();
       const hasSelection =
         !!selection && !selection.isCollapsed && selection.toString().trim().length > 0;
+
+      const row = target?.closest<HTMLElement>(".note-item, .collection-head");
+      const noteId = row?.getAttribute("data-note-id");
+      const note = noteId
+        ? {
+            id: noteId,
+            title: row?.getAttribute("data-note-title") ?? "",
+            type: (row?.getAttribute("data-note-type") as NoteType | null) ?? "prompt",
+          }
+        : null;
+
+      const outlineItem = target?.closest<HTMLElement>(".idea-outline-item");
+      const bubbleLabel = outlineItem?.getAttribute("data-bubble-label");
+      const bubble = bubbleLabel
+        ? {
+            label: bubbleLabel,
+            start: Number(outlineItem?.getAttribute("data-bubble-start") ?? "-1"),
+          }
+        : null;
+
       useStore.getState().openMenu({
         x: event.clientX,
         y: event.clientY,
         hasSelection,
         link,
+        note,
+        bubble,
       });
     };
     window.addEventListener("contextmenu", onContextMenu);
@@ -131,6 +167,50 @@ export function ContextMenu() {
   }, []);
 
   if (!menuAt) return null;
+
+  // A right-click on a sidebar row is a note (or bubble) menu, not a
+  // selection menu: the whole row is the target, so selection-based actions
+  // would be nonsense there.
+  if (menuAt.note || menuAt.bubble) {
+    return (
+      <div className="menu-layer" onMouseDown={closeMenu} onContextMenu={(e) => e.preventDefault()}>
+        <div
+          ref={ref}
+          className="menu"
+          style={{ left: pos.x, top: pos.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <p className="menu-head">{menuAt.note?.title ?? menuAt.bubble?.label}</p>
+          <ul>
+            {menuAt.note && (
+              <>
+                <Item
+                  icon={<OpenIcon />}
+                  label="Open note"
+                  onClick={() => {
+                    closeMenu();
+                    void select(menuAt.note!.id);
+                  }}
+                />
+                <li className="menu-divider" />
+              </>
+            )}
+            <Item
+              icon={<TrashIcon />}
+              label={menuAt.note ? "Delete note" : "Delete bubble"}
+              danger
+              onClick={() => {
+                const { note, bubble } = menuAt;
+                closeMenu();
+                if (note) void remove(note.id);
+                else if (bubble) deleteBubbleAt(bubble.start);
+              }}
+            />
+          </ul>
+        </div>
+      </div>
+    );
+  }
 
   const selection = window.getSelection()?.toString().trim() ?? "";
   const selectionShort =
