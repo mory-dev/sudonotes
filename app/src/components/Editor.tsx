@@ -147,13 +147,13 @@ function shortenAnchor(label: string): string {
 }
 
 /** The in-page references of the open note: each bubble's first line in its
- *  linkable plain-text form, keyed by where the bubble starts. */
-function pageAnchors(state: EditorState): { label: string; pos: number }[] {
+ *  linkable plain-text form, plus the bubble's full range. */
+function pageAnchors(state: EditorState): { label: string; from: number; to: number }[] {
   const doc = state.doc;
-  const out: { label: string; pos: number }[] = [];
+  const out: { label: string; from: number; to: number }[] = [];
   for (const block of computeBubbles(state)) {
     const label = anchorText(doc.lineAt(block.from).text);
-    if (label) out.push({ label, pos: block.from });
+    if (label) out.push({ label, from: block.from, to: block.to });
   }
   return out;
 }
@@ -162,9 +162,9 @@ function pageAnchors(state: EditorState): { label: string; pos: number }[] {
  *  without reproducing it: exact, then a shortened exact form, then prefix,
  *  then substring — the most specific match wins. */
 function resolvePageAnchor(
-  anchors: { label: string; pos: number }[],
+  anchors: { label: string; from: number; to: number }[],
   target: string,
-): { label: string; pos: number } | null {
+): { label: string; from: number; to: number } | null {
   const needle = anchorText(target).toLowerCase();
   if (!needle) return null;
   const shortened = shortenAnchor(needle);
@@ -233,9 +233,13 @@ function pageLinkCompletionSource(context: CompletionContext): CompletionResult 
 const PAGELINK = /\(\(([^()\n]+)\)\)/g;
 
 /** Where an in-page ((link)) jump target lands, measured down from the editor's
- *  top edge (layout px). Fixed rather than centered so it never sits flush
- *  under the window chrome and the note's title bar, whatever the document. */
+ *  top edge. Fixed rather than centered so it never sits flush under the window
+ *  chrome and the note's title bar, whatever the document. */
 const PAGE_JUMP_HEADROOM = 88;
+
+/** How long the bubble a ((link)) jumped to keeps blinking. Slightly longer
+ *  than the blink animation, so the flash finishes before the decoration goes. */
+const JUMP_HIGHLIGHT_MS = 1800;
 
 /** Hides the syntax so a link reads as ordinary highlighted text. */
 const hidden = Decoration.replace({});
@@ -445,6 +449,53 @@ const pageLinks = ViewPlugin.fromClass(
     provide: (plugin) =>
       EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations ?? Decoration.none),
   },
+);
+
+/** Set the range of the bubble a ((link)) just jumped to, so it can blink.
+ *  null clears it. */
+const jumpHighlightEffect = StateEffect.define<{ from: number; to: number } | null>();
+
+/** Full-width line highlights over a bubble, so the flash covers the whole
+ *  referenced section rather than just its text runs. */
+function buildJumpHighlight(view: EditorView, range: { from: number; to: number }): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+  const first = doc.lineAt(range.from).number;
+  const last = doc.lineAt(range.to).number;
+  // `side` must differ from the line decorations other plugins place (the
+  // bubble boxes use 0, the heat widgets -1/+1), or the ranges collide.
+  for (let n = first; n <= last; n++) {
+    builder.add(doc.line(n).from, doc.line(n).from, Decoration.line({ class: "cm-jump-highlight", side: 2 }));
+  }
+  return builder.finish();
+}
+
+/** A transient highlight on the bubble a ((link)) jumped to, so the eye lands
+ *  on it. Drawn as a decoration (not DOM classes) because the target's lines
+ *  may not be rendered yet when a far jump starts — CodeMirror draws them as
+ *  the smooth scroll brings them into view. */
+const jumpHighlight = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet = Decoration.none;
+    range: { from: number; to: number } | null = null;
+    update(update: ViewUpdate) {
+      let range = this.range;
+      for (const tr of update.transactions) {
+        for (const effect of tr.effects) {
+          if (effect.is(jumpHighlightEffect)) range = effect.value;
+        }
+      }
+      // Keep the flash pinned to its bubble if the user edits mid-blink.
+      if (update.docChanged && range) {
+        const from = update.changes.mapPos(range.from, 1);
+        const to = update.changes.mapPos(range.to, -1);
+        range = from < to ? { from, to } : null;
+      }
+      this.range = range;
+      this.decorations = range ? buildJumpHighlight(update.view, range) : Decoration.none;
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
 );
 
 /** The markdown heading level of an ATX node, or null for other nodes. */
@@ -1397,6 +1448,8 @@ export function Editor() {
   // The editor's scroll offset to return to after an in-page ((link)) jump, or
   // null when there is nowhere to go back to. The back pill shows while set.
   const [pageBack, setPageBack] = useState<number | null>(null);
+  // Clears the post-jump bubble blink after it has served its purpose.
+  const jumpTimer = useRef<number | null>(null);
   // The menu retires on its own ~1.5s after it appears, so a mouse resting in
   // the note is not left with a panel floating over the text. Held open for as
   // long as the pointer is actually inside it.
@@ -1676,14 +1729,15 @@ export function Editor() {
 
   /** Smooth-scroll to an in-page ((reference)), remembering where we came from
    *  so the back pill can return there. The target is revealed a fixed
-   *  distance below the editor's top edge, clear of the chrome and title bar. */
+   *  distance below the editor's top edge, clear of the chrome and title bar,
+   *  and the bubble it landed in blinks so the eye is drawn to it. */
   const jumpToPageReference = (target: string) => {
     const editor = view.current;
     if (!editor) return;
     const anchor = resolvePageAnchor(pageAnchors(editor.state), target);
     if (!anchor) return;
     setPageBack(editor.scrollDOM.scrollTop);
-    const dom = editor.domAtPos(anchor.pos);
+    const dom = editor.domAtPos(anchor.from);
     const node = dom.node instanceof Element ? dom.node : dom.node.parentElement;
     // Scroll the actual line block, not whatever tiny inline node sits at the
     // position — and never the content box itself, which would clamp to the top.
@@ -1698,6 +1752,14 @@ export function Editor() {
       scroller.scrollBy({ top: delta, behavior: "smooth" });
     }
     editor.focus();
+
+    // Blink the whole bubble; CodeMirror draws the decoration as its lines
+    // enter the viewport, so the flash follows even a very long smooth scroll.
+    editor.dispatch({ effects: jumpHighlightEffect.of({ from: anchor.from, to: anchor.to }) });
+    if (jumpTimer.current) clearTimeout(jumpTimer.current);
+    jumpTimer.current = window.setTimeout(() => {
+      view.current?.dispatch({ effects: jumpHighlightEffect.of(null) });
+    }, JUMP_HIGHLIGHT_MS);
   };
 
   const goBackFromReference = () => {
@@ -1758,6 +1820,7 @@ export function Editor() {
           syntaxHighlighting(markdownHighlightStyle, { fallback: true }),
           wikiLinks,
           pageLinks,
+          jumpHighlight,
           headings,
           paragraphBoxes,
           heatBars,
@@ -1936,6 +1999,7 @@ export function Editor() {
     return () => {
       gripDragStart.onDown = null;
       endBubbleDrag(false);
+      if (jumpTimer.current) clearTimeout(jumpTimer.current);
       editor.destroy();
       view.current = null;
     };
@@ -1951,6 +2015,10 @@ export function Editor() {
     activeId.current = active?.id ?? null;
     setBubbleMenu(null);
     setPageBack(null);
+    if (jumpTimer.current) {
+      clearTimeout(jumpTimer.current);
+      jumpTimer.current = null;
+    }
     applying.current = true;
     editor.setState(
       EditorState.create({

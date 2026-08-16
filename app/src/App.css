@@ -1689,6 +1689,43 @@ body.row-dragging {
   overflow: auto;
 }
 
+/* The bubble a ((link)) just jumped to blinks briefly so the eye lands on it.
+   Applied to each .cm-line of the bubble via a line decoration. */
+@keyframes cm-jump-blink {
+  0% {
+    background-color: rgba(122, 162, 247, 0);
+  }
+  15% {
+    background-color: rgba(122, 162, 247, 0.3);
+  }
+  30% {
+    background-color: rgba(122, 162, 247, 0);
+  }
+  45% {
+    background-color: rgba(122, 162, 247, 0.3);
+  }
+  60% {
+    background-color: rgba(122, 162, 247, 0);
+  }
+  80% {
+    background-color: rgba(122, 162, 247, 0.14);
+  }
+  100% {
+    background-color: rgba(122, 162, 247, 0);
+  }
+}
+
+.cm-jump-highlight {
+  animation: cm-jump-blink 1.4s ease-in-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-jump-highlight {
+    animation: none;
+    background-color: rgba(122, 162, 247, 0.18);
+  }
+}
+
 /* The subtle pill that appears after jumping along an in-page ((link)), so the
    reader can return to where the jump started. */
 .page-back {
