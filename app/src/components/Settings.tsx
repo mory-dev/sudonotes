@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { open } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 
 import { api, type BackupSettings } from "../api";
 import { useStore } from "../store";
@@ -234,6 +236,92 @@ function BackupSection() {
  *
  *  The AI switch used to be a permanent section of the right panel, where it
  *  spent a lot of vertical space on a preference that is set once per vault. */
+function UpdateSection() {
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [status, setStatus] = useState<
+    "idle" | "checking" | "available" | "downloading" | "installing" | "current" | "error"
+  >("idle");
+  const [progress, setProgress] = useState(0);
+
+  const checkForUpdates = async () => {
+    setStatus("checking");
+    setUpdate(null);
+    try {
+      const found = await check();
+      if (found) {
+        setUpdate(found);
+        setStatus("available");
+      } else {
+        setStatus("current");
+      }
+    } catch (e) {
+      console.error("Could not check for updates", e);
+      setStatus("error");
+    }
+  };
+
+  const install = async () => {
+    if (!update) return;
+    setStatus("downloading");
+    setProgress(0);
+    let total = 0;
+    let received = 0;
+    try {
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+        } else if (event.event === "Progress") {
+          received += event.data.chunkLength;
+          if (total > 0) {
+            setProgress(Math.min(100, Math.round((received / total) * 100)));
+          }
+        } else if (event.event === "Finished") {
+          setStatus("installing");
+        }
+      });
+      setStatus("installing");
+      await relaunch();
+    } catch (e) {
+      console.error("Could not install the update", e);
+      setStatus("error");
+    }
+  };
+
+  const busy = status === "checking" || status === "downloading" || status === "installing";
+
+  return (
+    <section className="settings-section">
+      <h3>Updates</h3>
+      {status === "error" ? (
+        <p className="ai-tip">Couldn't check for updates right now. Please try again later.</p>
+      ) : status === "available" && update ? (
+        <p className="ai-tip">
+          <strong>{update.version}</strong> is available — update sudonotes.
+        </p>
+      ) : status === "current" ? (
+        <p className="ai-tip">sudonotes is up to date.</p>
+      ) : null}
+      <div className="settings-actions">
+        <button
+          className="ai-analyze"
+          onClick={() => void (status === "available" && update ? install() : checkForUpdates())}
+          disabled={busy}
+        >
+          {status === "checking"
+            ? "Checking…"
+            : status === "downloading"
+            ? `Downloading… ${progress > 0 ? `${progress}%` : ""}`
+            : status === "installing"
+            ? "Applying update…"
+            : status === "available"
+            ? "Download and install"
+            : "Check for updates"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function Settings() {
   const open = useStore((s) => s.settingsOpen);
   const setSettings = useStore((s) => s.setSettings);
@@ -299,6 +387,8 @@ export function Settings() {
         </section>
 
         <BackupSection />
+
+        <UpdateSection />
 
         <section className="settings-section">
           <h3>About</h3>
