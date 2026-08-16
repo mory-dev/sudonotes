@@ -1689,6 +1689,48 @@ body.row-dragging {
   overflow: auto;
 }
 
+/* The subtle pill that appears after jumping along an in-page ((link)), so the
+   reader can return to where the jump started. */
+.page-back {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px 5px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  opacity: 0.9;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+.page-back:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+.page-back svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Simple find-in-file bar, overlaid on the editor like a browser's. */
 .find-bar {
   position: absolute;

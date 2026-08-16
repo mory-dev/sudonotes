@@ -115,6 +115,68 @@ function wikiLinkCompletionSource(context: CompletionContext): CompletionResult 
 
 const WIKILINK = /\[\[([^[\]\n|]+)(?:\|([^[\]\n]+))?\]\]/g;
 
+/** The in-page references of the open note: each bubble's first line, with any
+ *  markdown heading marks stripped, keyed by where the bubble starts. */
+function pageAnchors(state: EditorState): { label: string; pos: number }[] {
+  const doc = state.doc;
+  const out: { label: string; pos: number }[] = [];
+  for (const block of computeBubbles(state)) {
+    const label = doc.lineAt(block.from).text.replace(/^#{1,6}\s+/, "").trim();
+    if (label) out.push({ label, pos: block.from });
+  }
+  return out;
+}
+
+/** Autocomplete dropdown when typing `((` to reference a bubble of the same
+ *  note — the editor's in-page links, kept deliberately apart from `[[wiki]]`
+ *  links that open another note. */
+function pageLinkCompletionSource(context: CompletionContext): CompletionResult | null {
+  const match = context.matchBefore(/\(\(([^()\n]*)/);
+  if (!match) return null;
+
+  const query = match.text.slice(2);
+  const needle = query.trim().toLowerCase();
+  const hits = pageAnchors(context.state)
+    .filter((anchor) => !needle || anchor.label.toLowerCase().includes(needle))
+    .slice(0, 50);
+
+  if (hits.length === 0) return null;
+
+  return {
+    from: match.from + 2,
+    to: context.pos,
+    options: hits.map((anchor) => ({
+      label: anchor.label,
+      type: "reference",
+      detail: "in this note",
+      apply: (view: EditorView, completion: { label: string }, from: number, to: number) => {
+        const doc = view.state.doc;
+        const after = doc.sliceString(to, to + 2);
+        let insert = completion.label;
+        let targetPos = from + insert.length;
+
+        if (after === "))") {
+          targetPos += 2;
+        } else if (after.startsWith(")")) {
+          insert += ")";
+          targetPos += 2;
+        } else {
+          insert += "))";
+          targetPos += 2;
+        }
+
+        view.dispatch({
+          changes: { from, to, insert },
+          selection: { anchor: targetPos },
+        });
+      },
+    })),
+    filter: false,
+  };
+}
+
+const PAGELINK = /\(\(([^()\n]+)\)\)/g;
+
 /** Hides the syntax so a link reads as ordinary highlighted text. */
 const hidden = Decoration.replace({});
 
@@ -255,6 +317,69 @@ const wikiLinks = ViewPlugin.fromClass(
   {
     decorations: (plugin) => plugin.decorations,
     // Arrow keys step over a collapsed link rather than into hidden brackets.
+    provide: (plugin) =>
+      EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations ?? Decoration.none),
+  },
+);
+
+/** A jump target inside the same note, rendered like a wiki link but only when
+ *  it resolves to one of the note's own bubbles. */
+const pageLinkLabel = (target: string) =>
+  Decoration.mark({
+    class: "cm-pagelink",
+    attributes: {
+      "data-target": target,
+      "data-tooltip": `Jump to "${target}" in this note`,
+    },
+  });
+
+function buildPageLinkDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const cursor = view.state.selection.main;
+  const anchors = new Map(pageAnchors(view.state).map((a) => [a.label.toLowerCase(), a.pos]));
+
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.doc.sliceString(from, to);
+    PAGELINK.lastIndex = 0;
+
+    let match: RegExpExecArray | null;
+    while ((match = PAGELINK.exec(text))) {
+      const start = from + match.index;
+      const end = start + match[0].length;
+      const target = match[1].trim();
+      // An unresolved reference stays as ordinary text — the parens only hide
+      // once there is somewhere to jump to.
+      if (!anchors.has(target.toLowerCase())) continue;
+
+      // Reveal the raw syntax when the caret is in or beside the link.
+      if (cursor.from <= end && cursor.to >= start) {
+        builder.add(start, end, pageLinkLabel(target));
+        continue;
+      }
+
+      builder.add(start, start + 2, hidden);
+      builder.add(start + 2, end - 2, pageLinkLabel(target));
+      builder.add(end - 2, end, hidden);
+    }
+  }
+
+  return builder.finish();
+}
+
+const pageLinks = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildPageLinkDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        this.decorations = buildPageLinkDecorations(update.view);
+      }
+    }
+  },
+  {
+    decorations: (plugin) => plugin.decorations,
     provide: (plugin) =>
       EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations ?? Decoration.none),
   },
@@ -949,6 +1074,15 @@ const theme = EditorView.theme(
       cursor: "pointer",
     },
     ".cm-wikilink:hover": { backgroundColor: "var(--selection)" },
+    ".cm-pagelink": {
+      color: "var(--accent)",
+      backgroundColor: "var(--accent-soft)",
+      borderRadius: "3px",
+      padding: "1px 3px",
+      cursor: "pointer",
+      textDecoration: "underline dotted",
+    },
+    ".cm-pagelink:hover": { backgroundColor: "var(--selection)" },
     ".cm-wikilink-project-wrap": {
       display: "inline-flex",
       alignItems: "center",
@@ -1198,6 +1332,9 @@ export function Editor() {
     to: number;
   } | null>(null);
   const [copiedBubble, setCopiedBubble] = useState(false);
+  // The editor's scroll offset to return to after an in-page ((link)) jump, or
+  // null when there is nowhere to go back to. The back pill shows while set.
+  const [pageBack, setPageBack] = useState<number | null>(null);
   // The menu retires on its own ~1.5s after it appears, so a mouse resting in
   // the note is not left with a panel floating over the text. Held open for as
   // long as the pointer is actually inside it.
@@ -1475,6 +1612,29 @@ export function Editor() {
 
   const onEditorMouseLeave = () => scheduleHide();
 
+  /** Smooth-scroll to an in-page ((reference)), remembering where we came from
+   *  so the back pill can return there. */
+  const jumpToPageReference = (target: string) => {
+    const editor = view.current;
+    if (!editor) return;
+    const anchor = pageAnchors(editor.state).find(
+      (a) => a.label.toLowerCase() === target.toLowerCase(),
+    );
+    if (!anchor) return;
+    setPageBack(editor.scrollDOM.scrollTop);
+    const dom = editor.domAtPos(anchor.pos);
+    const el = dom.node instanceof Element ? dom.node : dom.node.parentElement;
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    editor.focus();
+  };
+
+  const goBackFromReference = () => {
+    const editor = view.current;
+    if (!editor || pageBack == null) return;
+    editor.scrollDOM.scrollTo({ top: pageBack, behavior: "smooth" });
+    setPageBack(null);
+  };
+
   // Fade out at 1.3s, gone at 1.5s. Restarted whenever the menu moves to
   // another bubble, because `bubbleMenu` keeps its identity while it stays put.
   useEffect(() => {
@@ -1517,7 +1677,7 @@ export function Editor() {
           // so `[` twice on a word gives [[word]].
           closeBrackets(),
           autocompletion({
-            override: [wikiLinkCompletionSource],
+            override: [wikiLinkCompletionSource, pageLinkCompletionSource],
             defaultKeymap: true,
             icons: false,
           }),
@@ -1525,6 +1685,7 @@ export function Editor() {
           markdown(),
           syntaxHighlighting(markdownHighlightStyle, { fallback: true }),
           wikiLinks,
+          pageLinks,
           headings,
           paragraphBoxes,
           heatBars,
@@ -1623,6 +1784,14 @@ export function Editor() {
             mousedown: (event) => {
               // Note: a grip's mousedown is handled on the grip element itself
               // (see BubbleGripWidget), so it never reaches here.
+              // In-page ((links)) jump on a plain click, no modifier needed.
+              const pageLink = (event.target as HTMLElement).closest(".cm-pagelink");
+              const pageTarget = pageLink?.getAttribute("data-target");
+              if (pageTarget) {
+                event.preventDefault();
+                jumpToPageReference(pageTarget);
+                return true;
+              }
               if (!event.ctrlKey && !event.metaKey) return false;
               const link = (event.target as HTMLElement).closest(".cm-wikilink");
               const target = link?.getAttribute("data-target");
@@ -1709,6 +1878,7 @@ export function Editor() {
 
     activeId.current = active?.id ?? null;
     setBubbleMenu(null);
+    setPageBack(null);
     applying.current = true;
     editor.setState(
       EditorState.create({
@@ -1833,6 +2003,19 @@ export function Editor() {
           className="bubble-drop-indicator"
           style={{ top: dropAt.top, left: dropAt.left, width: dropAt.width }}
         />
+      )}
+
+      {pageBack != null && (
+        <button
+          className="page-back"
+          onClick={goBackFromReference}
+          data-tooltip="Back to where you were before this jump"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M10 3.5 5 8l5 4.5" />
+          </svg>
+          Back
+        </button>
       )}
 
       {find && (
