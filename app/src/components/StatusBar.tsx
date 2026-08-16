@@ -27,6 +27,8 @@ const CogMark = () => (
  *  put whether or not a note (and with it the right panel) is open. */
 export function StatusBar() {
   const aiEnabled = useStore((s) => s.aiSettings.enabled);
+  const aiHealth = useStore((s) => s.aiHealth);
+  const checkAiHealth = useStore((s) => s.checkAiHealth);
   const setSettings = useStore((s) => s.setSettings);
 
   const [version, setVersion] = useState("");
@@ -34,12 +36,39 @@ export function StatusBar() {
   // its intended shape, and it only toggles its own appearance.
   const [vim, setVim] = useState(false);
 
+  // While AI is on, keep the health probe current — on mount and then on a
+  // slow tick, so a service outage is reflected within a minute at most.
+  useEffect(() => {
+    if (!aiEnabled) return;
+    void checkAiHealth();
+    const timer = setInterval(() => void checkAiHealth(), 60_000);
+    return () => clearInterval(timer);
+  }, [aiEnabled, checkAiHealth]);
+
   useEffect(() => {
     api
       .appVersion()
       .then(setVersion)
       .catch(() => setVersion(""));
   }, []);
+
+  // Gray when off (or still being checked), green when the health probe
+  // answers, orange when it is on but the service is having trouble.
+  const dotClass = !aiEnabled
+    ? "status-dot"
+    : aiHealth === "ok"
+      ? "status-dot on"
+      : aiHealth === "error"
+        ? "status-dot warn"
+        : "status-dot";
+
+  const aiTooltip = !aiEnabled
+    ? "AI assistance is off — tagging falls back to a local keyword pass"
+    : aiHealth === "ok"
+      ? "AI assistance is on and the service is healthy"
+      : aiHealth === "error"
+        ? "AI assistance is on, but the service is having trouble right now"
+        : "AI assistance is on — checking the service…";
 
   return (
     <footer className="status-bar">
@@ -54,15 +83,8 @@ export function StatusBar() {
 
       <span className="status-sep" />
 
-      <span
-        className="status-item"
-        data-tooltip={
-          aiEnabled
-            ? "AI assistance is on for this vault"
-            : "AI assistance is off — tagging falls back to a local keyword pass"
-        }
-      >
-        <span className={aiEnabled ? "status-dot on" : "status-dot"} />
+      <span className="status-item" data-tooltip={aiTooltip}>
+        <span className={dotClass} />
         AI
       </span>
 

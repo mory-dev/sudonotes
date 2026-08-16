@@ -185,8 +185,28 @@ async fn complete(app: &AppHandle, system: &str, prompt: &str) -> Result<Value, 
     json_content(response)
 }
 
-fn normalize_tags(value: &Value) -> Vec<String> {
-    let Some(items) = value.as_array() else {
+/// Whether the AI proxy is up: the status-bar dot turns green only when this
+/// answers. Reachable-but-unhealthy is what keeps the dot orange instead.
+pub async fn health() -> bool {
+    let client = reqwest::Client::new();
+    let url = format!("{}/health", api_base());
+    match client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => response
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|value| value.get("status").and_then(Value::as_str).map(str::to_string))
+            .is_some_and(|status| status == "ok"),
+        _ => false,
+    }
+}
+
+fn normalize_tags(value: &Value) -> Vec<String> {    let Some(items) = value.as_array() else {
         return Vec::new();
     };
     let mut tags = Vec::new();

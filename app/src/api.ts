@@ -140,6 +140,8 @@ export const api = {
   lastVault: () => invoke<string | null>("last_vault"),
   getAiSettings: () => invoke<AiSettings>("get_ai_settings"),
   setAiSettings: (enabled: boolean) => invoke<AiSettings>("set_ai_settings", { enabled }),
+  /** Whether the AI proxy answers its health endpoint. */
+  aiHealth: () => invoke<boolean>("ai_health"),
   appVersion: () => invoke<string>("app_version"),
   modelCatalog: (force = false) => invoke<ModelCatalog>("model_catalog", { force }),
   autoTagNote: (id: string) => invoke<string[]>("auto_tag_note", { id }),

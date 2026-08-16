@@ -162,8 +162,13 @@ interface AppState {
   /** Whether the AI proxy actually answered. null until a call has been tried —
    *  the settings only say AI is *configured*, never that it is reachable. */
   aiReachable: boolean | null;
+  /** Health probe result: ok is green, error is orange, null is gray while
+   *  disabled or before the first check lands. */
+  aiHealth: "ok" | "error" | null;
   /** Records the outcome of an AI call so the UI can stop claiming it works. */
   noteAiResult: (ok: boolean) => void;
+  /** Ping the proxy's /health endpoint and store the outcome. */
+  checkAiHealth: () => Promise<void>;
   /** The last review of the open note, or null. Only ever set by `analyze`. */
   analysis: AnalysisResult | null;
   analyzing: boolean;
@@ -256,6 +261,7 @@ export const useStore = create<AppState>((set, get) => ({
   pastedText: "",
   aiSettings: { enabled: true, configured: true },
   aiReachable: null,
+  aiHealth: null,
   analysis: null,
   analyzing: false,
 
@@ -281,12 +287,25 @@ export const useStore = create<AppState>((set, get) => ({
   clearAnalysis: () => set({ analysis: null }),
 
   noteAiResult: (ok) => {
-    if (get().aiReachable === ok) return;
-    set({ aiReachable: ok });
-    if (!ok) {
-      set({
-        notice: "AI is unreachable right now — tagging is falling back to a local pass.",
-      });
+    if (get().aiReachable !== ok) {
+      set({ aiReachable: ok });
+      if (!ok) {
+        set({
+          notice: "AI is unreachable right now — tagging is falling back to a local pass.",
+        });
+      }
+    }
+    // The status dot reflects the latest signal, successful or not, so a failed
+    // call flips it orange even between health checks.
+    if (get().aiHealth !== (ok ? "ok" : "error")) {
+      set({ aiHealth: ok ? "ok" : "error" });
+    }
+  },
+
+  checkAiHealth: async () => {
+    const ok = await api.aiHealth().catch(() => false);
+    if (get().aiHealth !== (ok ? "ok" : "error")) {
+      set({ aiHealth: ok ? "ok" : "error" });
     }
   },
 

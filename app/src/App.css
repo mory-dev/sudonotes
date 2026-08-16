@@ -3076,6 +3076,10 @@ button.status-item:hover {
   background: var(--idea);
 }
 
+.status-dot.warn {
+  background: var(--warning);
+}
+
 /* ---------- settings ---------- */
 
 .settings {

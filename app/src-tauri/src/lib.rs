@@ -181,6 +181,12 @@ fn set_ai_settings(state: State<AppState>, enabled: bool) -> Result<ai::AiSettin
     ai::save_settings(&vault_root(&state)?, enabled)
 }
 
+/// Whether the AI proxy answers its health endpoint, for the status-bar dot.
+#[tauri::command]
+async fn ai_health() -> bool {
+    ai::health().await
+}
+
 /// The running app version, e.g. "0.1.1", for the title-bar hover tooltip.
 #[tauri::command]
 fn app_version(app: tauri::AppHandle) -> String {
@@ -1517,6 +1523,7 @@ pub fn run() {
             last_vault,
             get_ai_settings,
             set_ai_settings,
+            ai_health,
             app_version,
             model_catalog,
             analyze_note,

@@ -264,6 +264,17 @@ async function handleModels(request: Request, env: Env): Promise<Response> {
   return new Response(upstream.body, { status: 200, headers });
 }
 
+/** The desktop app's status-bar probe: reachable and answering is healthy. */
+function handleHealth(request: Request, env: Env): Response {
+  const headers = corsHeaders(request.headers.get("Origin"), env);
+  headers.set("Content-Type", "application/json");
+  headers.set("Cache-Control", "no-store");
+  return new Response(JSON.stringify({ status: "ok", service: "sudonotes-api" }), {
+    status: 200,
+    headers,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -276,6 +287,9 @@ export default {
     try {
       if (url.pathname === "/v1/chat/completions" && request.method === "POST") {
         return await handleChat(request, env, ctx);
+      }
+      if (url.pathname === "/health" && request.method === "GET") {
+        return handleHealth(request, env);
       }
       if (url.pathname === "/v1/models" && request.method === "GET") {
         return await handleModels(request, env);

@@ -18,6 +18,8 @@
   /* Very light, neutral gray for highlighted text (drag selection). */
   --selection-bg: rgba(170, 176, 186, 0.22);
   --danger: #f7768e;
+  /* Amber — reachable but not healthy, e.g. the AI status dot's orange. */
+  --warning: #e0af68;
 
   /* Prompts read blue, ideas read green, everywhere in the app. */
   --prompt: #7aa2f7;

@@ -119,6 +119,13 @@ describe("routing and CORS", () => {
     // The desktop client parses models.dev's own shape, so it must survive intact.
     expect(await response.json()).toEqual({ deepseek: { models: {} } });
   });
+
+  it("answers the health probe with a plain ok", async () => {
+    const response = await call({ method: "GET", body: undefined }, "https://api.sudonotes.com/health");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ status: "ok", service: "sudonotes-api" });
+  });
 });
 
 describe("request validation", () => {
