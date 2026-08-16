@@ -27,6 +27,9 @@ import "./App.css";
 /** Keep the splash on screen long enough to read, even on a fast start. */
 const MIN_SPLASH_MS = 900;
 
+/** Toasts (errors and notices) retire themselves after this long. */
+const TOAST_DISMISS_MS = 5000;
+
 /** Browser chrome the webview still offers but a desktop note app has no use
  *  for: print, open-file, view-source, downloads, bookmark, find-next. Ctrl+P
  *  in particular was reaching the print dialog. The editor's own keymap sees
@@ -180,6 +183,20 @@ export default function App() {
     });
     return () => void unlisten.then((stop) => stop());
   }, []);
+
+  // A toast never outlives its point: an error or notice dismisses itself
+  // after a few seconds, or as soon as a newer one replaces it.
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), TOAST_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [error, setError]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), TOAST_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [notice, setNotice]);
 
   // Never lose an in-flight edit when the window goes away.
   useEffect(() => {
