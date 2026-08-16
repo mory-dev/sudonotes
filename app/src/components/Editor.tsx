@@ -1743,12 +1743,11 @@ export function Editor() {
     // position — and never the content box itself, which would clamp to the top.
     const el = node?.closest(".cm-line") ?? node;
     if (el) {
-      // DOM rects are viewport px, while scroll offsets are layout px, so the
-      // delta is converted like every other floating placement in the app.
+      // getBoundingClientRect and scroll offsets share one coordinate space, so
+      // no zoom conversion — dividing here overshoots when the UI is scaled.
       const scroller = editor.scrollDOM;
-      const delta = viewportToLayout(
-        el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - PAGE_JUMP_HEADROOM,
-      );
+      const delta =
+        el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - PAGE_JUMP_HEADROOM;
       scroller.scrollBy({ top: delta, behavior: "smooth" });
     }
     editor.focus();
