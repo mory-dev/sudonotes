@@ -2972,6 +2972,12 @@ body.bubble-dragging * {
   background: var(--accent-soft);
 }
 
+/* The shared `.danger` control fill must not leak onto a menu row — the
+   delete item reads in red text, not as a solid red button. */
+.menu-item.danger {
+  background: none;
+}
+
 .menu-item.danger:hover:not(:disabled) {
   color: var(--danger);
 }
@@ -3007,8 +3013,11 @@ body.bubble-dragging * {
   color: #fff;
 }
 
+/* Danger actions read in red text only — no red fill, which would shout over
+   the rest of the menu. */
 .menu-item.danger:hover:not(:disabled) .menu-icon {
-  background: var(--danger);
+  background: var(--panel-2);
+  color: var(--danger);
 }
 
 .menu-icon svg {
