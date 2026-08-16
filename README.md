@@ -94,6 +94,19 @@ which is what to check before renaming or deleting something.
 Selecting a word and pressing `[` wraps it, one bracket per press — so `[` twice
 gives you a link — and `Backspace` peels the levels back off one at a time.
 
+### `((references))` — jumping within a note
+
+Type `((` to reference another section of the same note — a heading or bubble:
+
+```markdown
+See ((The cutover plan)) below for the steps.
+```
+
+The parens hide while you read, exactly like wiki-link brackets, and a click
+smooth-scrolls to that section, glows it briefly, and offers a subtle **Back**
+pill that returns you to where you jumped from. A long heading can be matched by
+a short, distinctive prefix, so a reference never has to repeat the whole line.
+
 ### Keyboard
 
 | | |
@@ -179,7 +192,9 @@ cd app && npm run tauri build
 
 ## Status
 
-Early. The core loop — capture, link, search — is in place, along with project-folder linking, collection splitting, and per-note model assignment. A browser build that connects to the same vault, and vim keybindings, are planned.
+Early. The core loop — capture, link, search — is in place, along with project-folder linking,
+collection splitting, in-page references, automatic backups, and per-note model assignment. A
+browser build that connects to the same vault, and vim keybindings, are planned.
 
 ## License
 
