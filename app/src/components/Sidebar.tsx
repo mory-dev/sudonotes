@@ -99,6 +99,13 @@ function NoteRow({
     );
   };
 
+  // The webview starts autoscrolling on a middle-button mousedown; that must
+  // be stopped before the click, or the delete below never fires.
+  const onMouseDown = (event: React.MouseEvent) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+  };
+
   const classes = [
     note.id === activeId ? "note-item active" : "note-item",
     drag?.isOver ? "drop-target" : "",
@@ -119,6 +126,7 @@ function NoteRow({
         data-tooltip={`${note.summary ?? note.title}\nDrag to reorder · Right-click for actions · Middle-click to delete`}
         onClick={() => void select(note.id)}
         onAuxClick={onAuxClick}
+        onMouseDown={onMouseDown}
         onPointerDown={drag?.onPointerDown}
       >
         {note.project ? (
@@ -175,6 +183,8 @@ function Collection({
 }) {
   const activeId = useStore((s) => s.active?.id ?? null);
   const select = useStore((s) => s.select);
+  const remove = useStore((s) => s.remove);
+  const requestConfirm = useStore((s) => s.requestConfirm);
 
   const [open, setOpen] = useState(() => notes.some((n) => n.id === activeId));
 
@@ -199,6 +209,24 @@ function Collection({
 
   const onDoubleClick = () => setOpen((v) => !v);
 
+  // Middle-click deletes the collection and everything split out of it, with
+  // the same confirmation the loose notes get. Only when it owns a note.
+  const onAuxClick = (event: React.MouseEvent) => {
+    if (event.button !== 1 || !parent) return;
+    event.preventDefault();
+    requestConfirm(
+      `Delete "${parent.title}"? This also deletes its ${notes.length} prompt${notes.length === 1 ? "" : "s"} and cannot be undone.`,
+      () => void remove(parent.id),
+      "Delete",
+    );
+  };
+
+  // Stop the webview's autoscroll before it swallows the middle click.
+  const onMouseDown = (event: React.MouseEvent) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+  };
+
   const headClasses = [
     isParentActive ? "collection-head active" : "collection-head",
     drag?.isOver ? "drop-target" : "",
@@ -221,9 +249,11 @@ function Collection({
           data-drag-list={drag?.["data-drag-list"]}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
+          onAuxClick={onAuxClick}
+          onMouseDown={onMouseDown}
           onPointerDown={drag?.onPointerDown}
           aria-expanded={open}
-          data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"} · Drag to reorder`}
+          data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"} · Drag to reorder · Middle-click to delete`}
         >
           <span className="collection-name">{name}</span>
         </button>
