@@ -115,27 +115,76 @@ function wikiLinkCompletionSource(context: CompletionContext): CompletionResult 
 
 const WIKILINK = /\[\[([^[\]\n|]+)(?:\|([^[\]\n]+))?\]\]/g;
 
-/** The in-page references of the open note: each bubble's first line, with any
- *  markdown heading marks stripped, keyed by where the bubble starts. */
+/** Strip markdown that does not read as plain text, so a link target never has
+ *  to reproduce a bubble's raw syntax (heading marks, bold, code, links).
+ *  A single underscore is left alone — it is more often a snake_case name than
+ *  emphasis, and `_` survives either way thanks to prefix matching. */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*~`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The plain-text form a `((link))` actually targets: markdown stripped and
+ *  parentheses collapsed to spaces, since `( )` delimit the link itself. */
+function anchorText(text: string): string {
+  return stripMarkdown(text).replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Long anchors would bloat a link and its autocomplete; shorten them to a
+ *  clean, prefix-matchable cut. The full label stays in the tooltip. */
+const MAX_ANCHOR_LABEL = 48;
+
+function shortenAnchor(label: string): string {
+  if (label.length <= MAX_ANCHOR_LABEL) return label;
+  const cut = label.slice(0, MAX_ANCHOR_LABEL);
+  const space = cut.lastIndexOf(" ");
+  return space > MAX_ANCHOR_LABEL * 0.6 ? cut.slice(0, space) : cut;
+}
+
+/** The in-page references of the open note: each bubble's first line in its
+ *  linkable plain-text form, keyed by where the bubble starts. */
 function pageAnchors(state: EditorState): { label: string; pos: number }[] {
   const doc = state.doc;
   const out: { label: string; pos: number }[] = [];
   for (const block of computeBubbles(state)) {
-    const label = doc.lineAt(block.from).text.replace(/^#{1,6}\s+/, "").trim();
+    const label = anchorText(doc.lineAt(block.from).text);
     if (label) out.push({ label, pos: block.from });
   }
   return out;
 }
 
+/** Resolve a `((target))` against the note's anchors. A long bubble is matched
+ *  without reproducing it: exact, then a shortened exact form, then prefix,
+ *  then substring — the most specific match wins. */
+function resolvePageAnchor(
+  anchors: { label: string; pos: number }[],
+  target: string,
+): { label: string; pos: number } | null {
+  const needle = anchorText(target).toLowerCase();
+  if (!needle) return null;
+  const shortened = shortenAnchor(needle);
+  return (
+    anchors.find((a) => a.label.toLowerCase() === needle) ??
+    anchors.find((a) => shortenAnchor(a.label.toLowerCase()) === shortened) ??
+    anchors.find((a) => a.label.toLowerCase().startsWith(needle)) ??
+    anchors.find((a) => a.label.toLowerCase().includes(needle)) ??
+    null
+  );
+}
+
 /** Autocomplete dropdown when typing `((` to reference a bubble of the same
  *  note — the editor's in-page links, kept deliberately apart from `[[wiki]]`
- *  links that open another note. */
+ *  links that open another note. Long anchors are offered abbreviated. */
 function pageLinkCompletionSource(context: CompletionContext): CompletionResult | null {
   const match = context.matchBefore(/\(\(([^()\n]*)/);
   if (!match) return null;
 
-  const query = match.text.slice(2);
-  const needle = query.trim().toLowerCase();
+  const needle = anchorText(match.text.slice(2)).toLowerCase();
   const hits = pageAnchors(context.state)
     .filter((anchor) => !needle || anchor.label.toLowerCase().includes(needle))
     .slice(0, 50);
@@ -145,32 +194,38 @@ function pageLinkCompletionSource(context: CompletionContext): CompletionResult 
   return {
     from: match.from + 2,
     to: context.pos,
-    options: hits.map((anchor) => ({
-      label: anchor.label,
-      type: "reference",
-      detail: "in this note",
-      apply: (view: EditorView, completion: { label: string }, from: number, to: number) => {
-        const doc = view.state.doc;
-        const after = doc.sliceString(to, to + 2);
-        let insert = completion.label;
-        let targetPos = from + insert.length;
+    options: hits.map((anchor) => {
+      // The inserted label is the shortened, prefix-matchable form, so a big
+      // bubble does not force a link that is as long as the bubble itself.
+      const insert = shortenAnchor(anchor.label);
+      return {
+        label: insert,
+        displayLabel: insert === anchor.label ? anchor.label : `${insert}…`,
+        type: "reference",
+        detail: "in this note",
+        apply: (view: EditorView, completion: { label: string }, from: number, to: number) => {
+          const doc = view.state.doc;
+          const after = doc.sliceString(to, to + 2);
+          let insert = completion.label;
+          let targetPos = from + insert.length;
 
-        if (after === "))") {
-          targetPos += 2;
-        } else if (after.startsWith(")")) {
-          insert += ")";
-          targetPos += 2;
-        } else {
-          insert += "))";
-          targetPos += 2;
-        }
+          if (after === "))") {
+            targetPos += 2;
+          } else if (after.startsWith(")")) {
+            insert += ")";
+            targetPos += 2;
+          } else {
+            insert += "))";
+            targetPos += 2;
+          }
 
-        view.dispatch({
-          changes: { from, to, insert },
-          selection: { anchor: targetPos },
-        });
-      },
-    })),
+          view.dispatch({
+            changes: { from, to, insert },
+            selection: { anchor: targetPos },
+          });
+        },
+      };
+    }),
     filter: false,
   };
 }
@@ -323,20 +378,21 @@ const wikiLinks = ViewPlugin.fromClass(
 );
 
 /** A jump target inside the same note, rendered like a wiki link but only when
- *  it resolves to one of the note's own bubbles. */
-const pageLinkLabel = (target: string) =>
+ *  it resolves to one of the note's own bubbles. The tooltip names the full
+ *  target, which can be longer than the abbreviated link text. */
+const pageLinkLabel = (target: string, resolved: string) =>
   Decoration.mark({
     class: "cm-pagelink",
     attributes: {
       "data-target": target,
-      "data-tooltip": `Jump to "${target}" in this note`,
+      "data-tooltip": `Jump to "${resolved}"`,
     },
   });
 
 function buildPageLinkDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const cursor = view.state.selection.main;
-  const anchors = new Map(pageAnchors(view.state).map((a) => [a.label.toLowerCase(), a.pos]));
+  const anchors = pageAnchors(view.state);
 
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.doc.sliceString(from, to);
@@ -349,16 +405,17 @@ function buildPageLinkDecorations(view: EditorView): DecorationSet {
       const target = match[1].trim();
       // An unresolved reference stays as ordinary text — the parens only hide
       // once there is somewhere to jump to.
-      if (!anchors.has(target.toLowerCase())) continue;
+      const resolved = resolvePageAnchor(anchors, target);
+      if (!resolved) continue;
 
       // Reveal the raw syntax when the caret is in or beside the link.
       if (cursor.from <= end && cursor.to >= start) {
-        builder.add(start, end, pageLinkLabel(target));
+        builder.add(start, end, pageLinkLabel(target, resolved.label));
         continue;
       }
 
       builder.add(start, start + 2, hidden);
-      builder.add(start + 2, end - 2, pageLinkLabel(target));
+      builder.add(start + 2, end - 2, pageLinkLabel(target, resolved.label));
       builder.add(end - 2, end, hidden);
     }
   }
@@ -1617,9 +1674,7 @@ export function Editor() {
   const jumpToPageReference = (target: string) => {
     const editor = view.current;
     if (!editor) return;
-    const anchor = pageAnchors(editor.state).find(
-      (a) => a.label.toLowerCase() === target.toLowerCase(),
-    );
+    const anchor = resolvePageAnchor(pageAnchors(editor.state), target);
     if (!anchor) return;
     setPageBack(editor.scrollDOM.scrollTop);
     const dom = editor.domAtPos(anchor.pos);
