@@ -5,7 +5,7 @@ section: find
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-08-16"
 sources:
   - app/src/App.tsx
   - app/src/components/Editor.tsx
@@ -21,6 +21,7 @@ searchTerms:
   - Ctrl K
   - Cmd K
   - Ctrl Shift F
+  - in-page link
 ---
 
 Use <kbd>Ctrl</kbd> on Windows and Linux. Use <kbd>Cmd</kbd> on macOS. “Mod” below means the
@@ -50,6 +51,7 @@ browser find-next. They are not sudonotes shortcuts.
 | <kbd>Shift</kbd> + <kbd>Enter</kbd> in find | Previous match |
 | <kbd>Esc</kbd> in find | Close find |
 | `[[` | Open note linking autocomplete dropdown |
+| `((` | Open in-page reference autocomplete for the open note |
 | <kbd>Enter</kbd> / <kbd>Tab</kbd> in autocomplete | Insert selected note link |
 | <kbd>Mod</kbd> + <kbd>Z</kbd> | Undo editor change |
 | <kbd>Mod</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> | Redo on every platform |
@@ -57,6 +59,7 @@ browser find-next. They are not sudonotes shortcuts.
 | <kbd>[</kbd> with a selection | Wrap one bracket level; press twice for `[[selection]]` |
 | <kbd>Backspace</kbd> on a recognized wrapper | Peel one bracket level |
 | <kbd>Mod</kbd> + <kbd>click</kbd> a wiki link | Open the target note |
+| Click an in-page `((reference))` | Jump to that section of the open note |
 
 Standard cursor movement, selection, clipboard, deletion, and Markdown typing follow the native
 CodeMirror/browser conventions for the platform.

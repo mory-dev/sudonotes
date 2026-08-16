@@ -5,12 +5,13 @@ section: start
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-08-16"
 sources:
   - app/src/App.tsx
   - app/src/components/Sidebar.tsx
   - app/src/components/RightPanel.tsx
   - app/src/components/Settings.tsx
+  - app/src/components/StatusBar.tsx
 related:
   - getting-started
   - search-and-navigation
@@ -20,6 +21,8 @@ searchTerms:
   - sidebar
   - right panel
   - editor
+  - status bar
+  - AI indicator
 ---
 
 ## The working area
@@ -32,6 +35,9 @@ use context about the note on the right.
 The sidebar separates **Prompts** and **Ideas**. Each section can create a note and shows both
 top-level notes and collections. Select a row to open it. Dragging reorders items within the list;
 press <kbd>Esc</kbd> to cancel a drag.
+
+Right-click a note (or a collection) for a short menu with **Open note** and **Delete note**.
+Middle-click asks for confirmation before deleting; it no longer autoscrolls the list.
 
 A linked idea shows the project icon when one can be found. An unlinked idea uses a quiet placeholder
 so project drafts remain visually distinct.
@@ -57,6 +63,12 @@ The upper half lists **Linked from** backlinks. The lower half changes with the 
 For an idea, the model row follows the bubble under the pointer or caret, so a model assignment can
 belong to one bubble rather than the whole idea.
 
+### Status bar
+
+The bottom-right status bar shows the app version and an AI indicator. The dot is gray when AI
+assistance is off, green when it is on and the service is healthy, and amber when it is on but the
+service is struggling or unreachable.
+
 ## Palettes and dialogs
 
 Vault search, note linking, model selection, and tag suggestions use compact pickers. They share the
@@ -78,7 +90,8 @@ Settings closes with its close button, by clicking outside, or with <kbd>Esc</kb
 ## Notices, errors, and saves
 
 Short notices confirm successful work such as linking a project or writing a backup. Errors stay
-visible long enough to read and do not replace the Markdown note with a partial result.
+visible long enough to read and do not replace the Markdown note with a partial result. Both dismiss
+themselves after a few seconds; the close button clears them sooner.
 
 Saving is automatic. sudonotes also flushes an in-flight edit when the window closes. If another
 program changes a file while that same note has unsaved edits, the open buffer is left alone rather

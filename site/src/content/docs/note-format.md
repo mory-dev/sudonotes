@@ -5,7 +5,7 @@ section: reference
 order: 10
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-08-16"
 sources:
   - core/src/note.rs
   - app/src-tauri/src/note.rs
@@ -20,6 +20,7 @@ searchTerms:
   - schema
   - models field
   - source field
+  - in-page link
 ---
 
 Each note is one UTF-8 Markdown file with a small YAML-like frontmatter block.
@@ -93,6 +94,12 @@ On the next app write, sudonotes normalizes the file to its own inline format.
 - `[[Target title|visible label]]` uses an alias.
 - A newline before closing brackets invalidates the link.
 - Duplicate links in one body produce one target in the extracted link list.
+
+### In-page references
+
+- `((Section))` references a heading or bubble first line within the same note.
+- The reference is resolved by a short prefix, so a long heading can be linked by a few words.
+- Clicking the reference jumps to it; the parens are ordinary characters in other editors.
 
 ### Placeholders
 

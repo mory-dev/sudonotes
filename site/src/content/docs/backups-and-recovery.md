@@ -5,7 +5,7 @@ section: data
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-08-16"
 sources:
   - app/src-tauri/src/backup.rs
   - app/src/components/Settings.tsx
@@ -20,6 +20,7 @@ searchTerms:
   - restore backup
   - backup folder
   - zip
+  - restore picker
 ---
 
 sudonotes writes compressed snapshots outside the vault. Recovery always creates a separate vault;
@@ -82,7 +83,8 @@ file that looks restorable.
 </div>
 
 1. Open Settings and choose **Restore a backup…**.
-2. Select a `.bak` or `.zip` archive.
+2. Select a `.bak` or `.zip` archive — the picker opens in the configured backups folder, where
+   the archives live.
 3. Select an empty folder, or create a new folder for the recovered vault.
 4. Wait for the restored-note count.
 5. Choose **Open it** when asked, or inspect the folder first and open it later.

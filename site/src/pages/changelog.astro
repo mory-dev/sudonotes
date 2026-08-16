@@ -4,6 +4,25 @@ import Base from "../layouts/Base.astro";
 /** Releases, newest first. Dates are the actual tag dates — nothing backdated. */
 const releases = [
   {
+    version: "0.3.2",
+    date: "2026-08-16",
+    changes: [
+      "In-page ((references)): autocomplete as you type, click to jump with a soft glow on the target, and a Back pill that returns to where you were.",
+      "AI health indicator in the status bar — green when the service is healthy, amber when it is struggling, gray when off.",
+      "Right-click a sidebar note for Open and Delete; middle-click still asks before deleting, and no longer triggers autoscroll.",
+      "Toast notices dismiss themselves after a few seconds instead of staying on screen.",
+      "Add prompt is also available below a collection's cards, and restoring a backup opens the picker in the backups folder.",
+      "Markdown headings gain breathing room and a quiet divider, and long bubbles can be linked by a short fuzzy match.",
+    ],
+  },
+  {
+    version: "0.3.1",
+    date: "2026-08-16",
+    changes: [
+      "Manual check for updates in Settings, separate from the automatic updater.",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-08-16",
     changes: [

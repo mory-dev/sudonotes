@@ -5,7 +5,7 @@ section: write
 order: 30
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-08-16"
 sources:
   - app/src/components/PromptCards.tsx
   - app/src/components/SplitPreview.tsx
@@ -19,6 +19,7 @@ searchTerms:
   - split paste
   - batch prompts
   - child prompt
+  - add prompt
 ---
 
 ## Turn a note into a collection
@@ -56,7 +57,9 @@ no useful multi-section structure becomes one child prompt instead.
 ## Use the collection view
 
 The collection page shows every child as a card in order. From the header you can add a prompt or
-**Copy all**. A card can be copied directly, double-clicked for inline editing, or dragged by its index badge to reorder prompts directly on the page.
+**Copy all**. The same **Add prompt** button also appears below the cards, so a long collection does
+not need scrolling back to the top to grow. A card can be copied directly, double-clicked for
+inline editing, or dragged by its index badge to reorder prompts directly on the page.
 
 Hovering over any prompt card updates the right **Details** and **Variables** panels in real time, letting you inspect and adjust tags, model assignments, and placeholder variables with a comfortable hover grace period.
 

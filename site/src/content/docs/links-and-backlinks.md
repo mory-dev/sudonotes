@@ -1,11 +1,11 @@
 ---
 title: Links and backlinks
-description: Connect prompts and ideas with wiki links, aliases, keyboard wrapping, missing targets, and the Linked from panel.
+description: Connect prompts and ideas with wiki links, aliases, in-page references, keyboard wrapping, missing targets, and the Linked from panel.
 section: write
 order: 50
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-08-16"
 sources:
   - app/src/components/Editor.tsx
   - app/src/components/RightPanel.tsx
@@ -19,6 +19,8 @@ searchTerms:
   - backlink
   - linked from
   - alias
+  - in-page link
+  - reference
 ---
 
 ## Link to a note
@@ -60,6 +62,23 @@ answer “why does this exist?” and the place to inspect before a rename or de
 
 Backlinks are derived from the current Markdown and search index. If an externally edited link has
 not appeared, reopen the vault or allow the file watcher to refresh the index.
+
+## Link within a note
+
+Type `((` in the editor to reference another part of the same note — a heading or bubble of the
+note you are writing, not a different note. The autocomplete lists the note's own sections; pick
+one and the closing parentheses are inserted for you.
+
+```markdown
+See ((Release checklist)) below for the steps.
+```
+
+Clicking the reference smooth-scrolls to that section and briefly glows it so the target is
+obvious. A subtle **Back** pill appears and returns you to where you jumped from.
+
+The parens stay visible while you type and quieten once the reference resolves, exactly like wiki
+link brackets. A long first line is matched by a short, distinctive prefix — `((release))` can
+point at a bubble whose heading is much longer — and hovering the link shows the full target.
 
 ## Automatic link updates on rename
 
