@@ -8,7 +8,7 @@ mod split;
 mod vault;
 mod watcher;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -17,7 +17,7 @@ use tauri::{Manager, State};
 #[cfg(not(target_os = "windows"))]
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-use index::{file_mtime, Index, NoteMeta, SearchHit};
+use index::{file_mtime, Index, NoteMeta, SearchBubble, SearchHit};
 use note::{filename_for, Note, NoteType, WriteNote};
 use vault::{title_from_path, Vault};
 
@@ -1318,11 +1318,383 @@ fn remove_index_link(open: &OpenVault, child_path: &std::path::Path, collection:
 
 #[tauri::command]
 fn search(query: String, limit: Option<u32>, state: State<AppState>) -> Result<Vec<SearchHit>> {
-    with_vault(&state, |open| {
+    with_vault(&state, |open| search_vault(open, &query, limit.unwrap_or(50)))
+}
+
+const BUBBLE_START: &str = "<!-- bubble -->";
+const BUBBLE_END: &str = "<!-- /bubble -->";
+
+#[derive(Debug, Default)]
+struct SearchSpec {
+    text: String,
+    tag: Option<String>,
+}
+
+/// Parse the deliberately small search syntax. A query beginning with
+/// `tag:` is tag-only; quoted values keep spaces in a tag such as
+/// `tag:"Opus 5"` together. Other input remains ordinary full-text search.
+fn parse_search_spec(input: &str) -> SearchSpec {
+    let trimmed = input.trim();
+    let Some(prefix) = trimmed.get(..4) else {
+        return SearchSpec {
+            text: trimmed.to_string(),
+            tag: None,
+        };
+    };
+    if !prefix.eq_ignore_ascii_case("tag:") {
+        return SearchSpec {
+            text: trimmed.to_string(),
+            tag: None,
+        };
+    }
+
+    let rest = trimmed[4..].trim_start();
+    if rest.is_empty() {
+        return SearchSpec {
+            text: trimmed.to_string(),
+            tag: None,
+        };
+    }
+
+    if let Some(quoted) = rest.strip_prefix('"') {
+        if let Some(end) = quoted.find('"') {
+            let value = quoted[..end].trim();
+            if !value.is_empty() && quoted[end + 1..].trim().is_empty() {
+                return SearchSpec {
+                    text: String::new(),
+                    tag: Some(value.to_string()),
+                };
+            }
+        }
+    } else {
+        return SearchSpec {
+            text: String::new(),
+            tag: Some(rest.to_string()),
+        };
+    }
+
+    SearchSpec {
+        text: trimmed.to_string(),
+        tag: None,
+    }
+}
+
+/// Normalise model ids, model names, and tag values so users can search with
+/// human-friendly spacing (`Opus 5`) even when frontmatter stores a provider id
+/// such as `anthropic/claude-opus-5`.
+fn normalise_search_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_alphanumeric() {
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(' ');
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn metadata_matches(value: &str, query: &str) -> bool {
+    let value = normalise_search_text(value);
+    let query = normalise_search_text(query);
+    if value.is_empty() || query.is_empty() {
+        return false;
+    }
+    if value.contains(&query) {
+        return true;
+    }
+
+    // Also tolerate a user omitting separators, e.g. `opus5` for `opus-5`.
+    let compact_value: String = value.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let compact_query: String = query.chars().filter(|ch| !ch.is_whitespace()).collect();
+    !compact_query.is_empty() && compact_value.contains(&compact_query)
+}
+
+/// Return one `(label, UTF-16 start offset)` per bubble. Marker pairs are
+/// treated as a single bubble even when they contain blank lines, matching the
+/// editor's bubble grouping rules closely enough for search navigation.
+fn bubble_entries(body: &str) -> Vec<(String, usize)> {
+    let mut entries = Vec::new();
+    let mut active: Option<(Option<(String, usize)>, bool)> = None;
+    let mut offset = 0usize;
+
+    for raw_line in body.split_inclusive('\n') {
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let trimmed = line.trim();
+
+        if trimmed == BUBBLE_START {
+            if let Some((Some((label, start)), _)) = active.take() {
+                entries.push((label, start));
+            }
+            active = Some((None, true));
+            offset += raw_line.len();
+            continue;
+        }
+
+        if trimmed == BUBBLE_END {
+            if let Some((Some((label, start)), _)) = active.take() {
+                entries.push((label, start));
+            }
+            offset += raw_line.len();
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            let closes_regular_bubble = active
+                .as_ref()
+                .map(|(_, in_marker)| !*in_marker)
+                .unwrap_or(false);
+            if closes_regular_bubble {
+                if let Some((Some((label, start)), _)) = active.take() {
+                    entries.push((label, start));
+                }
+            }
+            offset += raw_line.len();
+            continue;
+        }
+
+        match &mut active {
+            Some((label @ None, _)) => {
+                *label = Some((trimmed.to_string(), offset));
+            }
+            Some(_) => {}
+            None => {
+                active = Some((Some((trimmed.to_string(), offset)), false));
+            }
+        }
+        offset += raw_line.len();
+    }
+
+    if let Some((Some((label, start)), _)) = active {
+        entries.push((label, start));
+    }
+
+    entries
+        .into_iter()
+        .map(|(label, byte_start)| {
+            let utf16_start = body[..byte_start].encode_utf16().count();
+            (label, utf16_start)
+        })
+        .collect()
+}
+
+fn hit_key(hit: &SearchHit) -> String {
+    match &hit.bubble {
+        Some(bubble) => format!("{}:bubble:{}", hit.id, bubble.start),
+        None => format!("{}:note", hit.id),
+    }
+}
+
+fn add_search_hit(hits: &mut Vec<SearchHit>, seen: &mut HashSet<String>, hit: SearchHit) {
+    if seen.insert(hit_key(&hit)) {
+        hits.push(hit);
+    }
+}
+
+/// Search both the indexed note text and metadata that intentionally stays out
+/// of the FTS table (frontmatter models and per-bubble assignments). The latter
+/// is read from markdown on demand so the files remain the source of truth.
+fn search_vault(open: &mut OpenVault, query: &str, requested_limit: u32) -> Result<Vec<SearchHit>> {
+    let spec = parse_search_spec(query);
+    let limit = requested_limit.clamp(1, 200) as usize;
+
+    // Fetch extra text hits before adding metadata hits; otherwise a vault with
+    // many body matches could crowd out the model/bubble results the user asked
+    // for.
+    let text_limit = (limit.saturating_mul(4)).min(200) as u32;
+    let mut hits = if spec.tag.is_none() && !spec.text.trim().is_empty() {
         open.index
-            .search(&query, limit.unwrap_or(50))
-            .map_err(|e| err("search failed", e))
-    })
+            .search(&spec.text, text_limit)
+            .map_err(|e| err("search failed", e))?
+    } else {
+        Vec::new()
+    };
+    let mut seen: HashSet<String> = hits.iter().map(hit_key).collect();
+
+    let notes = open
+        .index
+        .list(None)
+        .map_err(|e| err("search metadata lookup failed", e))?;
+    for meta in notes {
+        let Some(path) = open
+            .index
+            .path_of(&meta.id)
+            .map_err(|e| err("search path lookup failed", e))?
+        else {
+            continue;
+        };
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let note = Note::parse(&raw, &title_from_path(&path));
+
+        if let Some(tag_query) = spec.tag.as_deref() {
+            let matching_note_tags: Vec<String> = note
+                .frontmatter
+                .tags
+                .iter()
+                .filter(|tag| metadata_matches(tag, tag_query))
+                .cloned()
+                .collect();
+            if !matching_note_tags.is_empty() {
+                add_search_hit(
+                    &mut hits,
+                    &mut seen,
+                    SearchHit {
+                        id: meta.id.clone(),
+                        title: note.frontmatter.title.clone(),
+                        note_type: meta.note_type,
+                        snippet: format!("Tags: {}", matching_note_tags.join(", ")),
+                        bubble: None,
+                        model: None,
+                        tags: matching_note_tags,
+                    },
+                );
+            }
+
+            if meta.note_type == NoteType::Idea {
+                for (label, start) in bubble_entries(&note.body) {
+                    let Some(tags) = note.frontmatter.bubble_tags.get(&label) else {
+                        continue;
+                    };
+                    let matching_tags: Vec<String> = tags
+                        .iter()
+                        .filter(|tag| metadata_matches(tag, tag_query))
+                        .cloned()
+                        .collect();
+                    if matching_tags.is_empty() {
+                        continue;
+                    }
+                    add_search_hit(
+                        &mut hits,
+                        &mut seen,
+                        SearchHit {
+                            id: meta.id.clone(),
+                            title: note.frontmatter.title.clone(),
+                            note_type: meta.note_type,
+                            snippet: format!("Bubble · Tags: {}", matching_tags.join(", ")),
+                            bubble: Some(SearchBubble { label, start }),
+                            model: None,
+                            tags: matching_tags,
+                        },
+                    );
+                }
+            }
+            continue;
+        }
+
+        let matching_note_tags: Vec<String> = note
+            .frontmatter
+            .tags
+            .iter()
+            .filter(|tag| metadata_matches(tag, &spec.text))
+            .cloned()
+            .collect();
+        if !matching_note_tags.is_empty() {
+            let key = format!("{}:note", meta.id);
+            if seen.contains(&key) {
+                if let Some(existing) = hits
+                    .iter_mut()
+                    .find(|hit| hit.id == meta.id && hit.bubble.is_none())
+                {
+                    existing.tags = matching_note_tags.clone();
+                    existing.snippet = format!(
+                        "{} · Tags: {}",
+                        existing.snippet,
+                        matching_note_tags.join(", ")
+                    );
+                }
+            } else {
+                add_search_hit(
+                    &mut hits,
+                    &mut seen,
+                    SearchHit {
+                        id: meta.id.clone(),
+                        title: note.frontmatter.title.clone(),
+                        note_type: meta.note_type,
+                        snippet: format!("Tags: {}", matching_note_tags.join(", ")),
+                        bubble: None,
+                        model: None,
+                        tags: matching_note_tags,
+                    },
+                );
+            }
+        }
+
+        if let Some(model) = note.frontmatter.model.as_deref().filter(|model| {
+            metadata_matches(model, &spec.text)
+        }) {
+            let key = format!("{}:note", meta.id);
+            if seen.contains(&key) {
+                if let Some(existing) = hits
+                    .iter_mut()
+                    .find(|hit| hit.id == meta.id && hit.bubble.is_none())
+                {
+                    existing.model = Some(model.to_string());
+                    existing.snippet = format!("{} · Model: {model}", existing.snippet);
+                }
+            } else {
+                add_search_hit(
+                    &mut hits,
+                    &mut seen,
+                    SearchHit {
+                        id: meta.id.clone(),
+                        title: note.frontmatter.title.clone(),
+                        note_type: meta.note_type,
+                        snippet: format!("Model: {model}"),
+                        bubble: None,
+                        model: Some(model.to_string()),
+                        tags: Vec::new(),
+                    },
+                );
+            }
+        }
+
+        if meta.note_type != NoteType::Idea {
+            continue;
+        }
+        for (label, start) in bubble_entries(&note.body) {
+            let model = note.frontmatter.models.get(&label);
+            let matching_model = model.filter(|value| metadata_matches(value, &spec.text));
+            let matching_tags: Vec<String> = note
+                .frontmatter
+                .bubble_tags
+                .get(&label)
+                .into_iter()
+                .flat_map(|tags| tags.iter())
+                .filter(|tag| metadata_matches(tag, &spec.text))
+                .cloned()
+                .collect();
+            if matching_model.is_none() && matching_tags.is_empty() {
+                continue;
+            }
+
+            let mut details = Vec::new();
+            if let Some(model) = matching_model {
+                details.push(format!("Model: {model}"));
+            }
+            if !matching_tags.is_empty() {
+                details.push(format!("Tags: {}", matching_tags.join(", ")));
+            }
+            add_search_hit(
+                &mut hits,
+                &mut seen,
+                SearchHit {
+                    id: meta.id.clone(),
+                    title: note.frontmatter.title.clone(),
+                    note_type: meta.note_type,
+                    snippet: format!("Bubble · {}", details.join(" · ")),
+                    bubble: Some(SearchBubble { label, start }),
+                    model: matching_model.cloned(),
+                    tags: matching_tags,
+                },
+            );
+        }
+    }
+
+    hits.truncate(limit);
+    Ok(hits)
 }
 
 #[tauri::command]
@@ -1519,7 +1891,95 @@ fn resolve_link(title: String, state: State<AppState>) -> Result<Option<String>>
 
 #[cfg(test)]
 mod tests {
-    use super::strip_paste;
+    use super::{
+        bubble_entries, metadata_matches, parse_search_spec, search_vault, strip_paste, Index,
+        Note, OpenVault, Vault,
+    };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn parses_tag_only_queries_without_losing_spaces() {
+        let spec = parse_search_spec(r#"tag:"Opus 5""#);
+        assert_eq!(spec.text, "");
+        assert_eq!(spec.tag.as_deref(), Some("Opus 5"));
+
+        let spec = parse_search_spec("tag:design");
+        assert_eq!(spec.tag.as_deref(), Some("design"));
+        assert!(parse_search_spec("tag:").tag.is_none());
+    }
+
+    #[test]
+    fn model_matching_ignores_provider_separators() {
+        assert!(metadata_matches("anthropic/claude-opus-5", "Opus 5"));
+        assert!(metadata_matches("openai/gpt-5.3", "gpt53"));
+        assert!(!metadata_matches("openai/gpt-5.3", "sonnet"));
+    }
+
+    #[test]
+    fn finds_regular_and_marked_bubbles_with_utf16_offsets() {
+        let body = "\nFirst\n\n<!-- bubble -->\nSecond 😀\n\nThird\n<!-- /bubble -->\n";
+        let entries = bubble_entries(body);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, "First");
+        assert_eq!(entries[1].0, "Second 😀");
+        assert_eq!(
+            entries[1].1,
+            body[..body.find("Second").unwrap()].encode_utf16().count()
+        );
+    }
+
+    #[test]
+    fn searches_note_and_bubble_models_and_tag_only_queries() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::open(dir.path().to_path_buf()).unwrap();
+
+        let mut idea = Note::new(
+            "Roadmap",
+            "\nFirst bubble\n\nSecond bubble\n\nThird bubble\n".to_string(),
+        );
+        idea.frontmatter.models = BTreeMap::from([(
+            "Second bubble".to_string(),
+            "anthropic/claude-opus-5".to_string(),
+        )]);
+        idea.frontmatter.bubble_tags = BTreeMap::from([(
+            "First bubble".to_string(),
+            vec!["design".to_string()],
+        )]);
+        std::fs::write(
+            vault.root.join("ideas/roadmap.md"),
+            idea.to_markdown(),
+        )
+        .unwrap();
+
+        let mut prompt = Note::new("Prompt", "\nWrite a launch plan.\n".to_string());
+        prompt.frontmatter.model = Some("anthropic/claude-opus-5".to_string());
+        std::fs::write(vault.root.join("prompts/prompt.md"), prompt.to_markdown()).unwrap();
+
+        let mut index = Index::open(&vault.index_path()).unwrap();
+        index.sync(&vault).unwrap();
+        let mut open = OpenVault {
+            vault,
+            index,
+            _watcher: None,
+        };
+
+        let model_hits = search_vault(&mut open, "Opus 5", 200).unwrap();
+        assert!(model_hits.iter().any(|hit| hit.title == "Prompt" && hit.bubble.is_none()));
+        assert!(model_hits.iter().any(|hit| {
+            hit.title == "Roadmap"
+                && hit.bubble.as_ref().is_some_and(|bubble| bubble.label == "Second bubble")
+        }));
+        assert!(!model_hits.iter().any(|hit| {
+            hit.bubble.as_ref().is_some_and(|bubble| bubble.label == "First bubble")
+        }));
+
+        let tag_hits = search_vault(&mut open, r#"tag:"design""#, 200).unwrap();
+        assert_eq!(tag_hits.len(), 1);
+        assert_eq!(
+            tag_hits[0].bubble.as_ref().map(|bubble| bubble.label.as_str()),
+            Some("First bubble")
+        );
+    }
 
     #[test]
     fn removes_only_the_pasted_block() {

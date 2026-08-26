@@ -428,9 +428,6 @@ export function PromptCards() {
   return (
     <section className="cards" data-type={type}>
       <header className="cards-head">
-        <span>
-          Prompts in this collection <span className="count">{children.length}</span>
-        </span>
         <div className="cards-actions">
           <button
             className="secondary"

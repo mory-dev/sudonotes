@@ -57,12 +57,31 @@ fn count_bubbles(body: &str) -> u32 {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SearchBubble {
+    /// The first line that identifies this bubble (the same key used by the
+    /// per-bubble model and tag maps).
+    pub label: String,
+    /// UTF-16 document offset, so the editor can jump to the matching bubble.
+    pub start: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
     pub id: String,
     pub title: String,
     #[serde(rename = "type")]
     pub note_type: NoteType,
     pub snippet: String,
+    /// Present when the hit came from an idea bubble rather than the note as a
+    /// whole.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bubble: Option<SearchBubble>,
+    /// The model assignment that matched the query, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Tags that matched a tag-only query (or a bubble's metadata search).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub tags: Vec<String>,
 }
 
 pub struct Index {
@@ -281,6 +300,9 @@ impl Index {
                 title: r.get(1)?,
                 note_type: parse_type(&r.get::<_, String>(2)?),
                 snippet: snippet.split_whitespace().collect::<Vec<_>>().join(" "),
+                bubble: None,
+                model: None,
+                tags: Vec::new(),
             })
         })?;
         rows.collect()

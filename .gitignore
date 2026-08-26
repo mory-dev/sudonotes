@@ -1,6 +1,9 @@
 node_modules/
 dist/
 target/
+# Isolated build targets used for local verification; Cargo's default target/
+# rule does not cover these alternate names.
+app/src-tauri/target-search-test*/
 .DS_Store
 *.log
 .env

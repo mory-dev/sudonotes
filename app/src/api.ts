@@ -126,11 +126,24 @@ export interface BackupSettings {
   last: BackupInfo | null;
 }
 
+export interface SearchBubble {
+  /** First line that identifies this idea bubble. */
+  label: string;
+  /** UTF-16 editor offset used to jump to the matching bubble. */
+  start: number;
+}
+
 export interface SearchHit {
   id: string;
   title: string;
   type: NoteType;
   snippet: string;
+  /** Set for a result produced by per-bubble model/tag metadata. */
+  bubble?: SearchBubble | null;
+  /** Model assignment that matched the query, when applicable. */
+  model?: string | null;
+  /** Tags that matched a tag-only query (or a metadata search). */
+  tags?: string[];
 }
 
 export interface PathInfo {

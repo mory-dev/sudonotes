@@ -6,6 +6,7 @@ import { TypeBadge } from "./NoteMarks";
 import { ProviderIcon, providerOf } from "./ProviderMarks";
 
 const DEBOUNCE_MS = 120;
+const SEARCH_LIMIT = 200;
 
 /** The initial letter of a project folder's name, for the placeholder. */
 function projectInitial(project: string): string {
@@ -45,7 +46,7 @@ export function SearchPalette() {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const results = await api.search(query, 50);
+        const results = await api.search(query, SEARCH_LIMIT);
         // Guard against a slower earlier request landing after a newer one.
         if (cancelled) return;
         setHits(results);
@@ -67,9 +68,16 @@ export function SearchPalette() {
 
   if (!open) return null;
 
-  const choose = (id: string) => {
+  const choose = (hit: SearchHit) => {
     setPalette(false);
-    void select(id);
+    void (async () => {
+      await select(hit.id);
+      // Metadata hits identify the exact idea bubble. Apply the jump only after
+      // the note has loaded, otherwise a slow read could scroll the old note.
+      if (hit.bubble && useStore.getState().active?.id === hit.id) {
+        useStore.getState().scrollToPos(hit.bubble.start);
+      }
+    })();
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -77,13 +85,13 @@ export function SearchPalette() {
       setPalette(false);
     } else if (event.key === "ArrowDown") {
       event.preventDefault();
-      setCursor((c) => Math.min(c + 1, hits.length - 1));
+      setCursor((c) => Math.min(c + 1, Math.max(0, hits.length - 1)));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setCursor((c) => Math.max(c - 1, 0));
     } else if (event.key === "Enter" && hits[cursor]) {
       event.preventDefault();
-      choose(hits[cursor].id);
+      choose(hits[cursor]);
     }
   };
 
@@ -93,7 +101,7 @@ export function SearchPalette() {
         <input
           autoFocus
           className="palette-input"
-          placeholder="Search prompts and ideas…"
+          placeholder='Search prompts, ideas, and models… (tag:"…" for tags)'
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
@@ -104,12 +112,13 @@ export function SearchPalette() {
           <ul className="palette-results" ref={listRef}>
             {hits.map((hit, i) => {
               const note = byId.get(hit.id);
+              const hitModel = hit.model ?? (hit.bubble ? null : note?.model);
               return (
-                <li key={hit.id}>
+                <li key={`${hit.id}:${hit.bubble?.start ?? "note"}`}>
                   <button
                     className={i === cursor ? "palette-item selected" : "palette-item"}
                     onMouseEnter={() => setCursor(i)}
-                    onClick={() => choose(hit.id)}
+                    onClick={() => choose(hit)}
                   >
                     <span className="palette-title">
                       <TypeBadge type={hit.type} />
@@ -122,10 +131,15 @@ export function SearchPalette() {
                           </span>
                         )
                       ) : null}
-                      {note?.model ? (
-                        <ProviderIcon provider={providerOf(note.model)} size={13} />
+                      {hitModel ? (
+                        <ProviderIcon provider={providerOf(hitModel)} size={13} />
                       ) : null}
-                      {hit.title}
+                      <span>{hit.title}</span>
+                      {hit.bubble ? (
+                        <span className="palette-bubble-label" title={hit.bubble.label}>
+                          {hit.bubble.label}
+                        </span>
+                      ) : null}
                     </span>
                     <span className="palette-snippet">{hit.snippet}</span>
                   </button>
