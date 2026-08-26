@@ -82,7 +82,7 @@ const hasInstaller = !!(release && (release.windows || release.linux));
     {hasInstaller ? (
       <>
         <p class="lead">
-          <Wordmark /> <strong>v{release!.version}</strong> is ready for Windows and Linux. Every
+          <Wordmark /> <strong data-release-version>v{release!.version}</strong> is ready for Windows and Linux. Every
           release is built from the public source on GitHub.
         </p>
 
@@ -264,10 +264,15 @@ const hasInstaller = !!(release && (release.windows || release.linux));
     try {
       const response = await fetch(RELEASE_API, {
         headers: { Accept: "application/vnd.github+json" },
+        cache: "no-store",
       });
       if (!response.ok) return null;
 
       const release = await response.json();
+      const releaseTag = String(release.tag_name ?? "");
+      const releaseVersion = releaseTag.replace(/^v/, "");
+      const versionLabel = document.querySelector<HTMLElement>("[data-release-version]");
+      if (versionLabel && releaseVersion) versionLabel.textContent = `v${releaseVersion}`;
       const assets: ReleaseAsset[] = Array.isArray(release.assets)
         ? release.assets.map((asset: { name?: unknown; browser_download_url?: unknown; size?: unknown }) => ({
             name: String(asset.name ?? ""),

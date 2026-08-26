@@ -3,8 +3,12 @@ import { useEffect, useState } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
+import { api } from "../api";
+
 /** Don't hit the releases endpoint more than once a day after a successful check. */
 const CHECK_KEY = "sudonotes.lastSuccessfulUpdateCheck";
+/** A new installation must check immediately, even if the previous version checked recently. */
+const CHECK_VERSION_KEY = "sudonotes.lastUpdateCheckAppVersion";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CHECK_RETRY_MS = 15 * 60 * 1000;
 
@@ -38,9 +42,22 @@ export function UpdateBanner() {
     };
 
     async function run() {
+      // The timestamp is intentionally shared between versions to avoid noisy
+      // polling, but a version upgrade always gets one fresh check. This is
+      // what makes an update banner appear on first launch after a release,
+      // even when the old version checked within the last 24 hours.
+      let currentVersion: string | null = null;
+      try {
+        currentVersion = await api.appVersion();
+      } catch {
+        // Browser/dev builds do not expose the Tauri command; use the normal
+        // time-based check in that environment.
+      }
+      const versionChanged =
+        currentVersion !== null && localStorage.getItem(CHECK_VERSION_KEY) !== currentVersion;
       const last = Number(localStorage.getItem(CHECK_KEY)) || 0;
       const untilNextCheck = CHECK_INTERVAL_MS - (Date.now() - last);
-      if (untilNextCheck > 0) {
+      if (!versionChanged && untilNextCheck > 0) {
         schedule(untilNextCheck);
         return;
       }
@@ -51,6 +68,9 @@ export function UpdateBanner() {
 
         // A failed request must not suppress retries for the next 24 hours.
         localStorage.setItem(CHECK_KEY, String(Date.now()));
+        if (currentVersion !== null) {
+          localStorage.setItem(CHECK_VERSION_KEY, currentVersion);
+        }
         setUpdate(found);
         schedule(CHECK_INTERVAL_MS);
       } catch (error) {

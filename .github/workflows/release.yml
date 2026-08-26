@@ -94,7 +94,9 @@ jobs:
             Installers below are **unsigned** unless the release notes say
             otherwise — Windows SmartScreen and macOS Gatekeeper will warn.
             Verify against `checksums.txt` before installing.
-          releaseDraft: true
+          # Publish immediately so GitHub's `releases/latest` endpoint and the
+          # Tauri updater can see the release without a manual dashboard step.
+          releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
@@ -106,7 +108,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Publish SHA-256 sums for the draft's assets
+      - name: Publish SHA-256 sums for the release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
@@ -115,3 +117,25 @@ jobs:
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*' || exit 0
           sha256sum * > checksums.txt
           gh release upload "$TAG" checksums.txt --repo "$GITHUB_REPOSITORY" --clobber
+
+  # The downloads page is a static Cloudflare Worker. Rebuild it only after
+  # the release assets exist, otherwise its build-time GitHub API lookup can
+  # bake in the previous version (especially for Linux packages).
+  deploy-site:
+    name: publish downloads page
+    needs: checksums
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: "94659721edab2c56629832072970499f"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      - run: npm run deploy
+        working-directory: site
