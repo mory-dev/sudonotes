@@ -699,6 +699,45 @@ function bubbleMarkerPairsInDoc(doc: Text): { from: number; to: number }[] {
   return pairs;
 }
 
+/** The bubble a Ctrl+A press in an idea note should select: the caret's own
+ *  bubble on the first press. Once that bubble is already fully selected, a
+ *  second press returns null so the key falls through to select-all. Exported
+ *  for tests. */
+export function bubbleForModA(
+  head: number,
+  from: number,
+  to: number,
+  bubbles: { from: number; to: number }[],
+): { from: number; to: number } | null {
+  const bubble = bubbles.find((b) => head >= b.from && head <= b.to && b.from !== b.to);
+  if (!bubble) return null;
+  if (from <= bubble.from && to >= bubble.to) return null;
+  return bubble;
+}
+
+/** The idea-note Ctrl+A binding: first press selects the caret's bubble, a
+ *  second press (the bubble already selected) falls through to select-all.
+ *  Module-level and exported so the behavior can be tested directly. */
+export const modABinding = {
+  key: "Mod-a",
+  run: (view: EditorView): boolean => {
+    if (useStore.getState().active?.type !== "idea") return false;
+    const selection = view.state.selection.main;
+    const bubble = bubbleForModA(
+      selection.head,
+      selection.from,
+      selection.to,
+      computeBubbles(view.state),
+    );
+    if (!bubble) return false;
+    view.dispatch({
+      selection: { anchor: bubble.from, head: bubble.to },
+      scrollIntoView: true,
+    });
+    return true;
+  },
+};
+
 /** The first content line of a bubble, skipping `<!-- bubble -->` marker
  *  lines, or "" when the bubble has no content of its own. This is what a
  *  bubble is named by — model keys, page anchors, and the hover menu all use
@@ -2182,20 +2221,7 @@ export function Editor() {
               {
                 // In an idea, select just the bubble the cursor is in; outside
                 // a bubble (e.g. a blank line) fall through to select-all.
-                key: "Mod-a",
-                run: (view) => {
-                  if (useStore.getState().active?.type !== "idea") return false;
-                  const head = view.state.selection.main.head;
-                  const bubble = computeBubbles(view.state).find(
-                    (b) => head >= b.from && head <= b.to && b.from !== b.to,
-                  );
-                  if (!bubble) return false;
-                  view.dispatch({
-                    selection: { anchor: bubble.from, head: bubble.to },
-                    scrollIntoView: true,
-                  });
-                  return true;
-                },
+                ...modABinding,
               },
             ]),
           ),
