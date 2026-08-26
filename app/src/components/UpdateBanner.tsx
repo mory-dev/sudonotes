@@ -5,11 +5,11 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 
 import { api } from "../api";
 
-/** Don't hit the releases endpoint more than once a day after a successful check. */
+/** Don't poll the releases endpoint too frequently while the app stays open. */
 const CHECK_KEY = "sudonotes.lastSuccessfulUpdateCheck";
 /** A new installation must check immediately, even if the previous version checked recently. */
 const CHECK_VERSION_KEY = "sudonotes.lastUpdateCheckAppVersion";
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const CHECK_RETRY_MS = 15 * 60 * 1000;
 
 // React Strict Mode mounts effects twice in development. Share an in-flight
@@ -41,7 +41,7 @@ export function UpdateBanner() {
       }
     };
 
-    async function run() {
+    async function run(force = false) {
       // The timestamp is intentionally shared between versions to avoid noisy
       // polling, but a version upgrade always gets one fresh check. This is
       // what makes an update banner appear on first launch after a release,
@@ -57,7 +57,7 @@ export function UpdateBanner() {
         currentVersion !== null && localStorage.getItem(CHECK_VERSION_KEY) !== currentVersion;
       const last = Number(localStorage.getItem(CHECK_KEY)) || 0;
       const untilNextCheck = CHECK_INTERVAL_MS - (Date.now() - last);
-      if (!versionChanged && untilNextCheck > 0) {
+      if (!force && !versionChanged && untilNextCheck > 0) {
         schedule(untilNextCheck);
         return;
       }
@@ -79,7 +79,10 @@ export function UpdateBanner() {
       }
     }
 
-    void run();
+    // Always check once when the app starts. A previous check may have happened
+    // before a new release was published, so the normal interval must not hide
+    // an available update on launch.
+    void run(true);
     return () => {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
