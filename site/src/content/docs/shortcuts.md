@@ -5,7 +5,7 @@ section: find
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-16"
+lastReviewed: "2026-08-26"
 sources:
   - app/src/App.tsx
   - app/src/components/Editor.tsx
@@ -60,6 +60,7 @@ browser find-next. They are not sudonotes shortcuts.
 | <kbd>Backspace</kbd> on a recognized wrapper | Peel one bracket level |
 | <kbd>Mod</kbd> + <kbd>click</kbd> a wiki link | Open the target note |
 | Click an in-page `((reference))` | Jump to that section of the open note |
+| <kbd>Mod</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd> | Paste as one block: the clipboard is wrapped in `<!-- bubble -->` markers, so it becomes a single bubble with its original formatting kept (in a collection, one prompt instead of a split) |
 
 Standard cursor movement, selection, clipboard, deletion, and Markdown typing follow the native
 CodeMirror/browser conventions for the platform.

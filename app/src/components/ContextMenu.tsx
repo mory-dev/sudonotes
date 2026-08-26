@@ -51,6 +51,15 @@ function TrashIcon() {
   );
 }
 
+function BubbleIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M5.3 5.7a1.6 1.6 0 0 1 1.7-1.1" />
+    </svg>
+  );
+}
+
 function Item({
   icon,
   label,
@@ -280,6 +289,15 @@ export function ContextMenu() {
             icon={<NewIcon />}
             label="New note from selection"
             onClick={newNoteFromSelection}
+            disabled={!menuAt.hasSelection}
+          />
+          <Item
+            icon={<BubbleIcon />}
+            label="Merge selection into one bubble"
+            onClick={() => {
+              closeMenu();
+              useStore.getState().requestMergeSelection();
+            }}
             disabled={!menuAt.hasSelection}
           />
 

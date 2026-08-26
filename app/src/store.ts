@@ -69,16 +69,25 @@ function nextDefaultTitle(noteType: NoteType, notes: NoteMeta[]): string {
 
 /** First non-blank line of a body, markdown heading markers stripped, which
  *  becomes the title of a freshly created note. */
-/** The blank-line separated blocks of an idea body, as ranges. The same
- *  grouping the editor draws bubbles around and the sidebar outlines, so a
- *  move made from either place lands on the same block. */
+/** The blank-line separated blocks of an idea body, as ranges, plus one range
+ *  per explicit `<!-- bubble -->` pair. The same grouping the editor draws
+ *  bubbles around and the sidebar outlines, so a move made from either place
+ *  lands on the same block. */
 function bubbleRanges(body: string): { from: number; to: number }[] {
+  const pairs = bubbleMarkerPairs(body);
   const out: { from: number; to: number }[] = [];
   let from = -1;
   let offset = 0;
 
   for (const line of body.split("\n")) {
-    if (line.trim() === "") {
+    // Marker pairs own everything between their lines: never start or extend a
+    // blank-line bubble across them.
+    if (pairs.some((p) => offset >= p.from && offset <= p.to)) {
+      if (from >= 0) {
+        out.push({ from, to: offset - 1 });
+        from = -1;
+      }
+    } else if (line.trim() === "") {
       if (from >= 0) {
         // Ends at the previous line's last character, not at this blank one.
         out.push({ from, to: offset - 1 });
@@ -91,7 +100,36 @@ function bubbleRanges(body: string): { from: number; to: number }[] {
   }
   if (from >= 0) out.push({ from, to: body.length });
 
+  out.push(...pairs);
+  out.sort((a, b) => a.from - b.from);
   return out;
+}
+
+/** A bubble can be delimited explicitly by these marker lines, so a block of
+ *  text keeps every blank line and still reads as one bubble. The markers are
+ *  ordinary HTML comments: invisible in any rendered markdown, meaningful only
+ *  to sudonotes. Blank-line rules apply outside marker pairs. */
+export const BUBBLE_START = "<!-- bubble -->";
+export const BUBBLE_END = "<!-- /bubble -->";
+
+/** The `<!-- bubble -->` … `<!-- /bubble -->` pairs in a body, as {from, to}
+ *  doc offsets that include both marker lines. Unmatched markers are plain
+ *  comments. */
+export function bubbleMarkerPairs(body: string): { from: number; to: number }[] {
+  const pairs: { from: number; to: number }[] = [];
+  let start = -1;
+  let offset = 0;
+  for (const line of body.split("\n")) {
+    const t = line.trim();
+    if (t === BUBBLE_START && start < 0) {
+      start = offset;
+    } else if (t === BUBBLE_END && start >= 0) {
+      pairs.push({ from: start, to: offset + line.length });
+      start = -1;
+    }
+    offset += line.length + 1;
+  }
+  return pairs;
 }
 
 function titleFromFirstLine(body: string): string {
@@ -147,6 +185,9 @@ interface AppState {
   linkPickerOpen: boolean;
   /** A note title the editor should insert as a [[link]], then clear. */
   insertLink: string | null;
+  /** Bumped when the context menu asks the editor to merge the selection
+   *  into one bubble; the editor consumes the bump. */
+  mergeSelection: number;
   /** Scroll the editor to a position in the open note, then clear. */
   scrollTo: { id: string; pos: number } | null;
   /** In-editor find state (Ctrl+Shift+F), or null when closed. */
@@ -167,6 +208,10 @@ interface AppState {
   drafts: DraftPrompt[] | null;
   /** The raw pasted text, so the split can consume exactly it and no more. */
   pastedText: string;
+  /** Armed by the global keydown handler on Mod+Shift+V so the paste that
+   *  follows can be pasted as one block — ClipboardEvent carries no modifiers.
+   *  Disarmed by any other key and consumed by the paste handlers. */
+  oneBlockPaste: boolean;
   aiSettings: AiSettings;
   /** Whether the AI proxy actually answered. null until a call has been tried —
    *  the settings only say AI is *configured*, never that it is reachable. */
@@ -200,7 +245,7 @@ interface AppState {
   moveBubble: (fromIndex: number, toIndex: number) => void;
   /** A paste landing in the collection view: split it into several prompts, or
    *  add it as a single prompt when it has no structure to split. */
-  pasteIntoCollection: (text: string) => Promise<void>;
+  pasteIntoCollection: (text: string, forceOne?: boolean) => Promise<void>;
   queueSave: (id: string, body: string) => void;
   updateModel: (model: string | null) => Promise<void>;
   /** Assign a model to the bubble whose first line is `key`. */
@@ -231,6 +276,8 @@ interface AppState {
   closeMenu: () => void;
   setLinkPicker: (open: boolean) => void;
   requestLink: (title: string | null) => void;
+  /** Ask the editor to wrap the current selection in one bubble. */
+  requestMergeSelection: () => void;
   scrollToPos: (pos: number) => void;
   clearScroll: () => void;
   openFind: () => void;
@@ -264,6 +311,7 @@ export const useStore = create<AppState>((set, get) => ({
   menuAt: null,
   linkPickerOpen: false,
   insertLink: null,
+  mergeSelection: 0,
   scrollTo: null,
   find: null,
   findCount: 0,
@@ -275,6 +323,7 @@ export const useStore = create<AppState>((set, get) => ({
   notice: null,
   drafts: null,
   pastedText: "",
+  oneBlockPaste: false,
   aiSettings: { enabled: true, configured: true },
   aiReachable: null,
   aiHealth: null,
@@ -342,6 +391,7 @@ export const useStore = create<AppState>((set, get) => ({
   closeMenu: () => set({ menuAt: null }),
   setLinkPicker: (linkPickerOpen) => set({ linkPickerOpen, menuAt: null }),
   requestLink: (insertLink) => set({ insertLink, linkPickerOpen: false }),
+  requestMergeSelection: () => set({ mergeSelection: get().mergeSelection + 1 }),
   scrollToPos: (pos) => {
     const active = get().active;
     if (active) set({ scrollTo: { id: active.id, pos } });
@@ -578,15 +628,19 @@ export const useStore = create<AppState>((set, get) => ({
     get().queueSave(active.id, next);
   },
 
-  pasteIntoCollection: async (text) => {
+  pasteIntoCollection: async (text, forceOne = false) => {
     const active = get().active;
     if (!active || active.collection) return;
     if (!text.trim()) return;
     try {
-      const drafts = await api.splitPreview(text);
-      if (drafts.length > 1) {
-        set({ drafts, pastedText: text });
-        return;
+      // Ctrl+Shift+V asks for one block: never offer a split, and keep the
+      // text exactly as pasted — a single prompt, formatting untouched.
+      if (!forceOne) {
+        const drafts = await api.splitPreview(text);
+        if (drafts.length > 1) {
+          set({ drafts, pastedText: text });
+          return;
+        }
       }
       // Prefer a short LLM-generated title over the (possibly long) first line.
       let title = titleFromFirstLine(text) || nextDefaultTitle(active.type, get().notes);

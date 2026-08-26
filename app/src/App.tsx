@@ -107,6 +107,13 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey;
+      // Mod+Shift+V arms a one-block paste for whichever surface receives the
+      // paste that follows; every other key disarms it, so a stale flag can
+      // never hijack a later paste.
+      const oneBlock = mod && event.shiftKey && event.key.toLowerCase() === "v";
+      if (useStore.getState().oneBlockPaste !== oneBlock) {
+        useStore.setState({ oneBlockPaste: oneBlock });
+      }
       if (!mod) return;
       const { setPalette, openFind, create, flushSave, active: current } = useStore.getState();
       const key = event.key.toLowerCase();

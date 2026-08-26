@@ -35,18 +35,38 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
-import { useStore } from "../store";
+import { BUBBLE_END, BUBBLE_START, useStore } from "../store";
 import { getUiZoom, viewportToLayout } from "../uiScale";
 import { tagHoverColor } from "../tagColors";
 import { ModelPicker } from "./ModelPicker";
 import { providerMarkHtml, providerOf, shortModelName } from "./ProviderMarks";
 
 /** Split pasted text into clean paragraphs (separated by a single blank line)
- *  so an imported notepad-style file becomes distinct idea bubbles. */
+ *  so an imported notepad-style file becomes distinct idea bubbles. Blank
+ *  lines inside a `<!-- bubble -->` pair are content, not separators. */
 function normalizePastedText(text: string): string {
-  const groups = text.split(/\n\s*\n/).map((g) => g.trim()).filter(Boolean);
-  if (groups.length <= 1) return text;
-  return `${groups.join("\n\n")}\n`;
+  const groups: string[] = [];
+  let current: string[] = [];
+  let inPair = false;
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (t === BUBBLE_START && !inPair) inPair = true;
+    else if (t === BUBBLE_END && inPair) inPair = false;
+    if (inPair) {
+      current.push(line);
+    } else if (t === "") {
+      if (current.length > 0) {
+        groups.push(current.join("\n").trim());
+        current = [];
+      }
+    } else {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) groups.push(current.join("\n").trim());
+  const clean = groups.filter(Boolean);
+  if (clean.length <= 1) return text;
+  return `${clean.join("\n\n")}\n`;
 }
 
 function projectInitial(project: string | null | undefined): string {
@@ -152,7 +172,7 @@ function pageAnchors(state: EditorState): { label: string; from: number; to: num
   const doc = state.doc;
   const out: { label: string; from: number; to: number }[] = [];
   for (const block of computeBubbles(state)) {
-    const label = anchorText(doc.lineAt(block.from).text);
+    const label = anchorText(bubbleFirstText(doc, block.from));
     if (label) out.push({ label, from: block.from, to: block.to });
   }
   return out;
@@ -455,6 +475,11 @@ const pageLinks = ViewPlugin.fromClass(
  *  null clears it. */
 const jumpHighlightEffect = StateEffect.define<{ from: number; to: number } | null>();
 
+/** Marks transactions that move or restructure whole bubbles — reorder,
+ *  delete, unwrap, merge — so they bypass the read-only guard on marker
+ *  bubbles. Only the bubble's own actions carry it. */
+const bubbleOpEffect = StateEffect.define<null>();
+
 /** Full-width line highlights over a bubble, so the flash covers the whole
  *  referenced section rather than just its text runs. */
 function buildJumpHighlight(view: EditorView, range: { from: number; to: number }): DecorationSet {
@@ -593,6 +618,7 @@ const headings = ViewPlugin.fromClass(
  *  Ctrl+A, and the hover menu's copy button. */
 function computeBubbles(state: EditorState): { from: number; to: number; heading: boolean }[] {
   const doc = state.doc;
+  const pairs = bubbleMarkerPairsInDoc(doc);
   const runs: { from: number; to: number; heading: boolean; seeded: boolean }[] = [];
   let run: { from: number; to: number; heading: boolean; seeded: boolean } | null = null;
   const closeRun = () => {
@@ -603,6 +629,12 @@ function computeBubbles(state: EditorState): { from: number; to: number; heading
   };
   const top = syntaxTree(state).topNode;
   for (let node = top.firstChild; node; node = node.nextSibling) {
+    // A marker pair owns everything between its lines; the bubble for it is
+    // built from the pair itself, so no node inside one extends a run.
+    if (pairs.some((p) => node.from >= p.from && node.from <= p.to)) {
+      closeRun();
+      continue;
+    }
     const name = node.name;
     const isHeading = name.startsWith("ATXHeading") || name.startsWith("SetextHeading");
     const boxable =
@@ -628,8 +660,92 @@ function computeBubbles(state: EditorState): { from: number; to: number; heading
     }
   }
   closeRun();
+
+  // One bubble per marker pair: the whole pair, from the start marker's line
+  // to the end marker's line, headed when it opens with a heading.
+  for (const pair of pairs) {
+    let heading = false;
+    for (let node = top.firstChild; node; node = node.nextSibling) {
+      if (node.from < pair.from) continue;
+      if (node.from > pair.to) break;
+      if (node.name.startsWith("ATXHeading") || node.name.startsWith("SetextHeading")) {
+        heading = true;
+        break;
+      }
+    }
+    runs.push({ from: pair.from, to: pair.to, heading, seeded: true });
+  }
+
+  runs.sort((a, b) => a.from - b.from);
   return runs;
 }
+
+/** The `<!-- bubble -->` … `<!-- /bubble -->` pairs in a document, as
+ *  {from, to} doc offsets that include both marker lines. Unmatched markers
+ *  are ordinary comment lines. */
+function bubbleMarkerPairsInDoc(doc: Text): { from: number; to: number }[] {
+  const pairs: { from: number; to: number }[] = [];
+  let start = -1;
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const t = line.text.trim();
+    if (t === BUBBLE_START && start < 0) {
+      start = line.from;
+    } else if (t === BUBBLE_END && start >= 0) {
+      pairs.push({ from: start, to: line.to });
+      start = -1;
+    }
+  }
+  return pairs;
+}
+
+/** The first content line of a bubble, skipping `<!-- bubble -->` marker
+ *  lines, or "" when the bubble has no content of its own. This is what a
+ *  bubble is named by — model keys, page anchors, and the hover menu all use
+ *  it, so a marker never leaks into them. */
+function bubbleFirstText(doc: Text, from: number): string {
+  const start = doc.lineAt(from).number;
+  for (let n = start; n <= doc.lines; n++) {
+    const text = doc.line(n).text.trim();
+    if (text === BUBBLE_START || text === BUBBLE_END) continue;
+    return text;
+  }
+  return "";
+}
+
+/** Blank out `<!-- bubble -->` marker lines so the markers never show in the
+ *  editor: the line itself stays as spacing inside the bubble box, keeping the
+ *  box's borders and the grip and heat widgets anchored. */
+function buildBubbleMarkerDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const t = line.text.trim();
+    if (t === BUBBLE_START || t === BUBBLE_END) {
+      // Blank the marker text and collapse the line to zero height, so the
+      // bubble looks exactly like its content and the markers take no space.
+      builder.add(line.from, line.from, Decoration.line({ class: "cm-bubble-marker" }));
+      builder.add(line.from, line.to, hidden);
+    }
+  }
+  return builder.finish();
+}
+
+const bubbleMarkers = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildBubbleMarkerDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = buildBubbleMarkerDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 /** The heading text identifying the bubble that contains `pos`, or null when
  *  the position is between bubbles. This is the same key `setBubbleModel`
@@ -639,7 +755,7 @@ function bubbleLabelAt(state: EditorState, pos: number): string | null {
     (b) => pos >= b.from && pos <= b.to && b.from !== b.to,
   );
   if (!bubble) return null;
-  return state.doc.lineAt(bubble.from).text.trim() || null;
+  return bubbleFirstText(state.doc, bubble.from) || null;
 }
 
 /** Rebuild the note with the bubble at `fromIndex` moved to `toIndex`, keeping
@@ -774,7 +890,6 @@ class BubbleGripWidget extends WidgetType {
 const gripDragStart: { onDown: ((from: number, x: number, y: number) => void) | null } = {
   onDown: null,
 };
-
 /** A little pill at a bubble's bottom-right corner naming the model assigned
  *  to that bubble — the idea's model lives on its bubbles, not the note row. */
 class BubbleModelBadgeWidget extends WidgetType {
@@ -819,13 +934,35 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
   for (const block of runs) {
     const firstLine = doc.lineAt(block.from);
     const lastLine = doc.lineAt(block.to);
+    // A marker bubble's box hugs its content: the first/last classes land on
+    // the first/last content lines, never the collapsed marker lines.
+    let boxFirst = firstLine;
+    let boxLast = lastLine;
+    if (firstLine.text.trim() === BUBBLE_START || firstLine.text.trim() === BUBBLE_END) {
+      for (let n = firstLine.number + 1; n <= lastLine.number; n++) {
+        const t = doc.line(n).text.trim();
+        if (t !== BUBBLE_START && t !== BUBBLE_END) {
+          boxFirst = doc.line(n);
+          break;
+        }
+      }
+    }
+    if (lastLine.text.trim() === BUBBLE_START || lastLine.text.trim() === BUBBLE_END) {
+      for (let n = lastLine.number - 1; n >= firstLine.number; n--) {
+        const t = doc.line(n).text.trim();
+        if (t !== BUBBLE_START && t !== BUBBLE_END) {
+          boxLast = doc.line(n);
+          break;
+        }
+      }
+    }
     for (let n = firstLine.number; n <= lastLine.number; n++) {
       const line = doc.line(n);
       const classes = [
         "cm-para",
-        n === firstLine.number ? "first" : "",
-        n === lastLine.number ? "last" : "",
-        n === firstLine.number && block.heading ? "cm-bubble-header" : "",
+        n === boxFirst.number ? "first" : "",
+        n === boxLast.number ? "last" : "",
+        n === boxFirst.number && block.heading ? "cm-bubble-header" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -866,7 +1003,7 @@ function buildHeatDecorations(view: EditorView): DecorationSet {
     );
     // The model assigned to this bubble, named by its first line, shows as a
     // badge directly below the heat bar.
-    const label = doc.lineAt(block.from).text.trim();
+    const label = bubbleFirstText(doc, block.from);
     const model = models[label];
     if (model) {
       builder.add(
@@ -1281,6 +1418,12 @@ const theme = EditorView.theme(
     },
     ".cm-para-hover.first": { borderTopColor: "rgba(255,255,255,0.18)" },
     ".cm-para-hover.last": { borderBottomColor: "rgba(255,255,255,0.18)" },
+    // Marker lines are structural: hidden and collapsed to zero height so they
+    // never take space inside the bubble.
+    ".cm-line.cm-bubble-marker": {
+      height: "0px",
+      overflow: "hidden",
+    },
     // Horizontal priority "volume" bar in the right gutter, anchored to the
     // scroller (not the line) so it sits outside the bubble, clear of the
     // scrollbar at the very edge.
@@ -1431,6 +1574,7 @@ export function Editor() {
   const active = useStore((s) => s.active);
   const docVersion = useStore((s) => s.docVersion);
   const insertLink = useStore((s) => s.insertLink);
+  const mergeSelection = useStore((s) => s.mergeSelection);
   const scrollTo = useStore((s) => s.scrollTo);
   const find = useStore((s) => s.find);
   const findCount = useStore((s) => s.findCount);
@@ -1459,8 +1603,21 @@ export function Editor() {
     text: string;
     from: number;
     to: number;
+    /** True when the bubble is delimited by `<!-- bubble -->` markers and is
+     *  therefore read-only in the editor. */
+    marked: boolean;
   } | null>(null);
   const [copiedBubble, setCopiedBubble] = useState(false);
+  // Whether the current selection spans several bubbles, so the bubble button
+  // can merge them into one. The button itself is always present.
+  const currentView = view.current;
+  const selection = currentView?.state.selection.main ?? null;
+  const selectionSpansBubbles =
+    !!selection &&
+    !selection.empty &&
+    computeBubbles(currentView!.state).filter(
+      (b) => b.from < selection.to && b.to > selection.from,
+    ).length >= 2;
   // The editor's scroll offset to return to after an in-page ((link)) jump, or
   // null when there is nowhere to go back to. The back pill shows while set.
   const [pageBack, setPageBack] = useState<number | null>(null);
@@ -1520,6 +1677,93 @@ export function Editor() {
     setTimeout(() => setCopiedBubble(false), 1200);
   };
 
+  /** Remove the `<!-- bubble -->` markers around the hovered bubble, turning
+   *  its content back into an ordinary editable bubble. */
+  const unwrapBubble = () => {
+    const editor = view.current;
+    if (!editor || !bubbleMenu || !bubbleMenu.marked) return;
+    const doc = editor.state.doc;
+    const startLine = doc.lineAt(bubbleMenu.from);
+    const endLine = doc.lineAt(bubbleMenu.to);
+    editor.dispatch({
+      changes: [
+        { from: startLine.from, to: startLine.to + (startLine.to < doc.length ? 1 : 0) },
+        { from: endLine.from, to: endLine.to + (endLine.to < doc.length ? 1 : 0) },
+      ],
+      effects: bubbleOpEffect.of(null),
+    });
+    setBubbleMenu(null);
+    useStore.getState().setHoverBubble(null);
+    editor.focus();
+  };
+
+  /** The hover menu's bubble button: merge the current selection into one
+   *  bubble when it spans several, otherwise unwrap the hovered bubble. */
+  /** Wrap the current selection in one bubble, if it spans at least two.
+   *  Shared by the hover-menu button and the context menu's merge action.
+   *  Returns true when a merge happened. */
+  const mergeSelectionIntoBubble = () => {
+    const editor = view.current;
+    if (!editor) return false;
+    const sel = editor.state.selection.main;
+    if (sel.empty || sel.from >= sel.to) return false;
+    const covered = computeBubbles(editor.state).filter(
+      (b) => b.from < sel.to && b.to > sel.from,
+    );
+    if (covered.length < 2) return false;
+    const fromLine = editor.state.doc.lineAt(sel.from);
+    const toLine = editor.state.doc.lineAt(sel.to > sel.from ? sel.to - 1 : sel.to);
+    // The markers must sit on their own lines, so the wrap covers the whole
+    // first and last line of the selection, not a partial word.
+    const text = editor.state.doc
+      .sliceString(fromLine.from, toLine.to)
+      .split("\n")
+      .filter((line) => {
+        const t = line.trim();
+        return t !== BUBBLE_START && t !== BUBBLE_END;
+      })
+      .join("\n")
+      .trim();
+    if (!text) return false;
+    editor.dispatch({
+      changes: {
+        from: fromLine.from,
+        to: toLine.to,
+        insert: `${BUBBLE_START}\n${text}\n${BUBBLE_END}\n`,
+      },
+      selection: { anchor: fromLine.from },
+      effects: bubbleOpEffect.of(null),
+    });
+    editor.focus();
+    return true;
+  };
+
+  const toggleBubbleWrap = () => {
+    const editor = view.current;
+    if (!editor || !bubbleMenu) return;
+    if (mergeSelectionIntoBubble()) {
+      setBubbleMenu(null);
+      useStore.getState().setHoverBubble(null);
+      return;
+    }
+    if (bubbleMenu.marked) {
+      unwrapBubble();
+      return;
+    }
+    // Otherwise bubble the hovered bubble: wrap it in markers so it can keep
+    // blank lines inside without splitting into separate bubbles.
+    editor.dispatch({
+      changes: [
+        { from: bubbleMenu.from, insert: `${BUBBLE_START}\n` },
+        { from: bubbleMenu.to, insert: `\n${BUBBLE_END}` },
+      ],
+      effects: bubbleOpEffect.of(null),
+    });
+    setBubbleMenu(null);
+    useStore.getState().setHoverBubble(null);
+    editor.focus();
+  };
+
   // --- pointer-based bubble reorder drag ---
   // Native HTML5 DnD from the grip fights CodeMirror's own drag handling (its
   // dragstart preventDefault leaves a "no-drop" cursor), so the reorder is done
@@ -1545,6 +1789,7 @@ export function Editor() {
         changes: { from: 0, to: editor.state.doc.length, insert: next.body },
         selection: { anchor: next.at },
         scrollIntoView: true,
+        effects: bubbleOpEffect.of(null),
       });
       editor.focus();
     }
@@ -1674,14 +1919,29 @@ export function Editor() {
     if (!editor) return;
     const first = bubbleFirstLine(line);
     const pos = editor.posAtDOM(first, 0);
-    const label = editor.state.doc.lineAt(pos).text.trim();
+    const bubble = computeBubbles(editor.state).find((b) => pos >= b.from && pos < b.to);
+    // A marker bubble is named by its first content line, never the hidden
+    // `<!-- bubble -->` line it starts with.
+    const label = bubble
+      ? bubbleFirstText(editor.state.doc, bubble.from)
+      : editor.state.doc.lineAt(pos).text.trim();
     if (!label) {
       scheduleHide();
       return;
     }
-    const bubble = computeBubbles(editor.state).find((b) => pos >= b.from && pos < b.to);
     const docLine = editor.state.doc.lineAt(pos);
-    const text = bubble ? editor.state.doc.sliceString(bubble.from, bubble.to) : docLine.text;
+    // The bubble's own copy button gets the content without the hidden
+    // marker lines, so a copy never carries them along.
+    const text = bubble
+      ? editor.state.doc
+          .sliceString(bubble.from, bubble.to)
+          .split("\n")
+          .filter((line) => {
+            const t = line.trim();
+            return t !== BUBBLE_START && t !== BUBBLE_END;
+          })
+          .join("\n")
+      : docLine.text;
     const from = bubble ? bubble.from : docLine.from;
     const to = bubble ? bubble.to : docLine.to;
     cancelHide();
@@ -1709,7 +1969,10 @@ export function Editor() {
       ) {
         return current;
       }
-      return { top, left, label, below, text, from, to };
+      const marked = bubble
+        ? editor.state.doc.lineAt(bubble.from).text.trim() === BUBBLE_START
+        : false;
+      return { top, left, label, below, text, from, to, marked };
     });
   };
 
@@ -1735,6 +1998,7 @@ export function Editor() {
       changes: { from, to, insert: "" },
       selection: { anchor: Math.min(from, editor.state.doc.length - (to - from)) },
       scrollIntoView: true,
+      effects: bubbleOpEffect.of(null),
     });
     setBubbleMenu(null);
     useStore.getState().setHoverBubble(null);
@@ -1816,6 +2080,35 @@ export function Editor() {
 
     const extensions: Extension[] = [
       history(),
+      // The bubble's content stays editable — typing, paste, and delete
+      // inside the pair are fine — but the marker lines themselves (and the
+      // newline before and after each one) are protected, so the bubble can
+      // never be broken apart or merged with the text around it. Bubble
+      // operations (reorder, delete, unwrap, merge) carry bubbleOpEffect and
+      // are exempt.
+      EditorState.transactionFilter.of((tr) => {
+        if (tr.effects.some((e) => e.is(bubbleOpEffect))) return tr;
+        if (!tr.docChanged) return tr;
+        const doc = tr.startState.doc;
+        const pairs = bubbleMarkerPairsInDoc(doc);
+        if (pairs.length === 0) return tr;
+        let touches = false;
+        tr.changes.iterChanges((fromA, toA) => {
+          if (touches) return;
+          for (const p of pairs) {
+            const startLine = doc.lineAt(p.from);
+            const endLine = doc.lineAt(p.to);
+            if (
+              (fromA < startLine.to + 1 && toA > startLine.from - 1) ||
+              (fromA < endLine.to + 1 && toA > endLine.from - 1)
+            ) {
+              touches = true;
+              return;
+            }
+          }
+        });
+        return touches ? [] : tr;
+      }),
       drawSelection(),
           // Typing a bracket over a selection wraps it instead of replacing it,
           // so `[` twice on a word gives [[word]].
@@ -1830,6 +2123,7 @@ export function Editor() {
           syntaxHighlighting(markdownHighlightStyle, { fallback: true }),
           wikiLinks,
           pageLinks,
+          bubbleMarkers,
           jumpHighlight,
           headings,
           paragraphBoxes,
@@ -1913,6 +2207,19 @@ export function Editor() {
             paste: (event, view) => {
               const text = event.clipboardData?.getData("text/plain") ?? "";
               const active = useStore.getState().active;
+              // Mod+Shift+V pastes as one block: the clipboard is wrapped in
+              // `<!-- bubble -->` markers, so it lands as a single bubble with
+              // every line and blank line exactly as pasted. The global keydown
+              // handler arms `oneBlockPaste` in the store, since ClipboardEvent
+              // carries no modifier state of its own.
+              if (useStore.getState().oneBlockPaste && text.trim()) {
+                useStore.setState({ oneBlockPaste: false });
+                event.preventDefault();
+                const { from, to } = view.state.selection.main;
+                const insert = `${BUBBLE_START}\n${text.trim()}\n${BUBBLE_END}\n`;
+                view.dispatch({ changes: { from, to, insert } });
+                return true;
+              }
               // Importing a text file into an idea: normalize it into separate
               // paragraphs so the note's bubbles form cleanly.
               if (active?.type === "idea" && text.trim()) {
@@ -2057,6 +2364,18 @@ export function Editor() {
     useStore.getState().requestLink(null);
   }, [insertLink]);
 
+  // The context menu's "Merge selection into one bubble" reaches the editor
+  // through the store (it has no handle on the view); apply it to the current
+  // selection.
+  useEffect(() => {
+    if (!mergeSelection) return;
+    useStore.setState({ mergeSelection: 0 });
+    if (mergeSelectionIntoBubble()) {
+      setBubbleMenu(null);
+      useStore.getState().setHoverBubble(null);
+    }
+  }, [mergeSelection]);
+
   // An idea's paragraph was picked from the sidebar outline: jump to it.
   useEffect(() => {
     const editor = view.current;
@@ -2114,6 +2433,23 @@ export function Editor() {
                 void useStore.getState().setBubbleModel(bubbleMenu.label, value || null)
               }
             />
+            <button
+              className="bubble-model-copy"
+              data-tooltip={
+                bubbleMenu.marked
+                  ? "Unwrap bubble"
+                  : selectionSpansBubbles
+                    ? "Merge selected bubbles into one"
+                    : "Wrap in bubble"
+              }
+              onClick={toggleBubbleWrap}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="5.6" />
+                <path d="M5.3 5.7a1.6 1.6 0 0 1 1.7-1.1" />
+              </svg>
+            </button>
             <button
               className="bubble-model-copy"
               data-tooltip="Copy bubble"

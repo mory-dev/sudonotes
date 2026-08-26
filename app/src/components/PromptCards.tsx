@@ -407,9 +407,12 @@ export function PromptCards() {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea")) return;
       const text = event.clipboardData?.getData("text/plain") ?? "";
-      if (text.trim()) {
-        setTimeout(() => void useStore.getState().pasteIntoCollection(text), 0);
-      }
+      if (!text.trim()) return;
+      // Ctrl+Shift+V asks for one block: skip the split offer and land a
+      // single prompt instead. The flag is armed by the global keydown handler.
+      const oneBlock = useStore.getState().oneBlockPaste;
+      useStore.setState({ oneBlockPaste: false });
+      setTimeout(() => void useStore.getState().pasteIntoCollection(text, oneBlock), 0);
     };
     window.addEventListener("paste", onPaste);
     return () => {
