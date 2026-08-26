@@ -56,6 +56,9 @@ pub struct Frontmatter {
     /// Per-bubble model assignment for idea notes: the first line of a bubble
     /// maps to the model that bubble's prompt targets.
     pub models: BTreeMap<String, String>,
+    /// Per-bubble tags for idea notes: the first line of a bubble maps to the
+    /// small set of tags attached to that bubble.
+    pub bubble_tags: BTreeMap<String, Vec<String>>,
     pub created: String,
     pub updated: String,
 }
@@ -91,6 +94,7 @@ impl Note {
                 position: None,
                 project: None,
                 models: BTreeMap::new(),
+                bubble_tags: BTreeMap::new(),
                 created: now.clone(),
                 updated: now,
             },
@@ -151,6 +155,12 @@ impl Note {
             .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, String>>(v).ok())
             .unwrap_or_default();
 
+        let bubble_tags = fields
+            .iter()
+            .find(|(k, _)| k == "bubbleTags")
+            .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, Vec<String>>>(v).ok())
+            .unwrap_or_default();
+
         Note {
             frontmatter: Frontmatter {
                 id,
@@ -162,6 +172,7 @@ impl Note {
                 position: optional("position").and_then(|v| v.parse().ok()),
                 project: optional("project"),
                 models,
+                bubble_tags,
                 created,
                 updated,
             },
@@ -198,6 +209,11 @@ impl Note {
         if !fm.models.is_empty() {
             if let Ok(json) = serde_json::to_string(&fm.models) {
                 extras.push_str(&format!("models: {json}\n"));
+            }
+        }
+        if !fm.bubble_tags.is_empty() {
+            if let Ok(json) = serde_json::to_string(&fm.bubble_tags) {
+                extras.push_str(&format!("bubbleTags: {json}\n"));
             }
         }
 
@@ -580,6 +596,25 @@ mod tests {
         // Notes without bubble models never emit the key.
         let plain = Note::new("x", "y".into());
         assert!(!plain.to_markdown().contains("models:"));
+    }
+
+    #[test]
+    fn round_trips_bubble_tags() {
+        let mut note = Note::new("Brainstorm", "First bubble.\n\nSecond bubble.\n".into());
+        note.frontmatter.bubble_tags.insert(
+            "First bubble.".into(),
+            vec!["design".into(), "workflow".into()],
+        );
+        let markdown = note.to_markdown();
+        let reparsed = Note::parse(&markdown, "fallback");
+        assert_eq!(
+            reparsed.frontmatter.bubble_tags.get("First bubble."),
+            Some(&vec!["design".into(), "workflow".into()])
+        );
+        assert!(markdown.contains("bubbleTags:"));
+
+        let plain = Note::new("x", "y".into());
+        assert!(!plain.to_markdown().contains("bubbleTags:"));
     }
 
     #[test]

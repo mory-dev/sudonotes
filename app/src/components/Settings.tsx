@@ -330,6 +330,7 @@ export function Settings() {
   const setSettings = useStore((s) => s.setSettings);
   const settings = useStore((s) => s.aiSettings);
   const save = useStore((s) => s.saveAiSettings);
+  const saveBubbleMetadataVisible = useStore((s) => s.saveBubbleMetadataVisible);
 
   const [version, setVersion] = useState("");
 
@@ -386,6 +387,22 @@ export function Settings() {
             While this is on, the text of a note is sent to the sudonotes service to be tagged
             and reviewed. It is not stored or logged there. The setting belongs to this vault, and
             with it off, tagging falls back to a local keyword pass.
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h3>Editor</h3>
+          <label className="ai-toggle">
+            <input
+              type="checkbox"
+              checked={settings.showBubbleMetadata}
+              onChange={(event) => void saveBubbleMetadataVisible(event.target.checked)}
+            />
+            <span>Show metadata below idea bubbles</span>
+          </label>
+          <p className="ai-tip">
+            Displays each bubble&apos;s tags and assigned model in a quiet footer. This is on by
+            default and can be hidden without removing the metadata.
           </p>
         </section>
 

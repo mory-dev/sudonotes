@@ -7,6 +7,7 @@ import { ModelPicker } from "./ModelPicker";
 import { IdeaMark, PromptMark, TypeBadge } from "./NoteMarks";
 import { ProjectLink } from "./ProjectLink";
 import { TagChip } from "./TagChip";
+import { TagInput } from "./TagInput";
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -149,9 +150,17 @@ function Metadata() {
   const openLink = useStore((s) => s.openLink);
   const updateModel = useStore((s) => s.updateModel);
   const setBubbleModel = useStore((s) => s.setBubbleModel);
+  const setBubbleTags = useStore((s) => s.setBubbleTags);
   const refresh = useStore((s) => s.refresh);
   // Hover wins; the caret is what it falls back to when the mouse is elsewhere.
   const bubble = useStore((s) => s.hoverBubble ?? s.cursorBubble);
+  const tagSuggestions = useMemo(() => {
+    const tags = new Set(notes.flatMap((candidate) => candidate.tags));
+    for (const values of Object.values(note?.bubbleTags ?? {})) {
+      for (const tag of values) tags.add(tag);
+    }
+    return [...tags].sort((left, right) => left.localeCompare(right));
+  }, [note?.bubbleTags, notes]);
 
   if (!note) return null;
 
@@ -255,6 +264,17 @@ function Metadata() {
             <span className="meta-bubble" data-tooltip={bubble!}>
               {bubble}
             </span>
+          </Row>
+        )}
+
+        {onBubble && (
+          <Row label="Bubble tags">
+            <TagInput
+              key={bubble!}
+              value={note.bubbleTags?.[bubble!] ?? []}
+              suggestions={tagSuggestions}
+              onChange={(tags) => void setBubbleTags(bubble!, tags)}
+            />
           </Row>
         )}
 

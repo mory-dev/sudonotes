@@ -43,8 +43,14 @@ const TAG_VOCABULARY: &[&str] = &[
 #[serde(rename_all = "camelCase")]
 pub struct AiSettings {
     pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub show_bubble_metadata: bool,
     /// The proxy is available by default; the provider key lives on the server.
     pub configured: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,25 +85,40 @@ fn api_base() -> String {
         .unwrap_or_else(|| API_BASE.to_string())
 }
 
-/// A vault's AI preference. A missing or unreadable file means defaults, never
-/// an error — the settings file is optional and the vault must still open.
+/// A vault's preferences. A missing or unreadable file means defaults, never an
+/// error — the settings file is optional and the vault must still open.
 pub fn settings(root: &Path) -> AiSettings {
-    let enabled = fs::read_to_string(settings_path(root))
+    let saved = fs::read_to_string(settings_path(root))
         .ok()
         .and_then(|raw| serde_json::from_str::<AiSettings>(&raw).ok())
-        .map(|value| value.enabled)
-        .unwrap_or(true);
+        .unwrap_or(AiSettings {
+            enabled: true,
+            show_bubble_metadata: true,
+            configured: true,
+        });
     AiSettings {
-        enabled,
+        enabled: saved.enabled,
+        show_bubble_metadata: saved.show_bubble_metadata,
         configured: true,
     }
 }
 
 pub fn save_settings(root: &Path, enabled: bool) -> Result<AiSettings, String> {
-    let next = AiSettings {
-        enabled,
-        configured: true,
-    };
+    let mut next = settings(root);
+    next.enabled = enabled;
+    write_settings(root, next)
+}
+
+pub fn save_bubble_metadata_visibility(
+    root: &Path,
+    visible: bool,
+) -> Result<AiSettings, String> {
+    let mut next = settings(root);
+    next.show_bubble_metadata = visible;
+    write_settings(root, next)
+}
+
+fn write_settings(root: &Path, next: AiSettings) -> Result<AiSettings, String> {
     let path = settings_path(root);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("could not create {}: {e}", parent.display()))?;
@@ -331,6 +352,25 @@ pub fn local_tags(note: &NoteInput) -> Vec<String> {    let haystack = format!("
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_settings_default_to_showing_bubble_metadata() {
+        let parsed: AiSettings =
+            serde_json::from_str(r#"{"enabled":false,"configured":true}"#).unwrap();
+        assert!(!parsed.enabled);
+        assert!(parsed.show_bubble_metadata);
+    }
+
+    #[test]
+    fn saving_one_preference_preserves_the_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let hidden = save_bubble_metadata_visibility(dir.path(), false).unwrap();
+        assert!(!hidden.show_bubble_metadata);
+
+        let disabled = save_settings(dir.path(), false).unwrap();
+        assert!(!disabled.enabled);
+        assert!(!disabled.show_bubble_metadata);
+    }
 
     #[test]
     fn local_tags_classify_known_terms() {

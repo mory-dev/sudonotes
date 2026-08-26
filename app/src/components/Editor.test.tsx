@@ -6,7 +6,13 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
 import { useStore } from "../store";
-import { bubbleForModA, modABinding } from "./Editor";
+import {
+  bubbleForModA,
+  bubbleTagsForLabel,
+  computeBubbles,
+  inferBubbleTags,
+  modABinding,
+} from "./Editor";
 
 /** A minimal idea-note editor with the real Ctrl+A binding and CodeMirror's
  *  default keymap (which supplies select-all for the fall-through). */
@@ -57,6 +63,28 @@ describe("bubbleForModA", () => {
 
   it("skips empty bubbles", () => {
     expect(bubbleForModA(30, 30, 30, [...bubbles, { from: 30, to: 30 }])).toBeNull();
+  });
+});
+
+describe("idea bubble metadata", () => {
+  it("discovers bubbles across the full document, not just the initial viewport", () => {
+    const doc = Array.from({ length: 40 }, (_, index) => `Bubble ${index + 1}`).join("\n\n");
+    const state = EditorState.create({ doc, extensions: [markdown()] });
+    expect(computeBubbles(state)).toHaveLength(40);
+  });
+
+  it("does not copy note-level tags into an untagged bubble", () => {
+    const tags = { "Tagged bubble": ["design"] };
+    expect(bubbleTagsForLabel(tags, "Tagged bubble")).toEqual(["design"]);
+    expect(bubbleTagsForLabel(tags, "Other bubble")).toEqual([]);
+  });
+
+  it("derives only relevant note tags for legacy bubbles without explicit tags", () => {
+    expect(inferBubbleTags(["bug", "design", "workflow"], "Fix the broken UI issue")).toEqual([
+      "bug",
+      "design",
+    ]);
+    expect(inferBubbleTags(["bug", "design"], "A grocery list")).toEqual([]);
   });
 });
 

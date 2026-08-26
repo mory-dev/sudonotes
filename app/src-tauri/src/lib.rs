@@ -50,6 +50,8 @@ struct NoteDetail {
     project: Option<String>,
     /// Per-bubble model assignment for idea notes: bubble first line -> model.
     models: BTreeMap<String, String>,
+    /// Per-bubble tags for idea notes: bubble first line -> tags.
+    bubble_tags: BTreeMap<String, Vec<String>>,
     created: String,
     updated: String,
     body: String,
@@ -173,6 +175,7 @@ fn get_ai_settings(state: State<AppState>) -> Result<ai::AiSettings> {
         Ok(root) => ai::settings(&root),
         Err(_) => ai::AiSettings {
             enabled: true,
+            show_bubble_metadata: true,
             configured: true,
         },
     })
@@ -181,6 +184,14 @@ fn get_ai_settings(state: State<AppState>) -> Result<ai::AiSettings> {
 #[tauri::command]
 fn set_ai_settings(state: State<AppState>, enabled: bool) -> Result<ai::AiSettings> {
     ai::save_settings(&vault_root(&state)?, enabled)
+}
+
+#[tauri::command]
+fn set_bubble_metadata_visible(
+    state: State<AppState>,
+    visible: bool,
+) -> Result<ai::AiSettings> {
+    ai::save_bubble_metadata_visibility(&vault_root(&state)?, visible)
 }
 
 /// Whether the AI proxy answers its health endpoint, for the status-bar dot.
@@ -770,6 +781,7 @@ fn read_note(id: String, state: State<AppState>) -> Result<NoteDetail> {
                 position: fm.position,
                 project: fm.project,
                 models: fm.models,
+                bubble_tags: fm.bubble_tags,
                 created: fm.created,
             updated: fm.updated,
             body: note.body,
@@ -1104,11 +1116,57 @@ fn set_bubble_model(
         note.frontmatter.updated = note::now_rfc3339();
         note.write_to(&path)
             .map_err(|e| err("could not write note", e))?;
+        sync_mirror(&note);
         open.index
             .upsert(note_type, &path, &note, file_mtime(&path))
             .map_err(|e| err("could not index note", e))?;
-
         Ok(note.frontmatter.models)
+    })
+}
+
+/// Replace the tags attached to one idea bubble. Empty tag lists clear the
+/// entry. Returns the updated map so the editor can update without reloading.
+#[tauri::command]
+fn set_bubble_tags(
+    id: String,
+    key: String,
+    tags: Vec<String>,
+    state: State<AppState>,
+) -> Result<BTreeMap<String, Vec<String>>> {
+    with_vault(&state, |open| {
+        let path = open
+            .index
+            .path_of(&id)
+            .map_err(|e| err("lookup failed", e))?
+            .ok_or("note not found")?;
+        let note_type = open
+            .vault
+            .type_of(&path)
+            .ok_or("note is outside the vault")?;
+        let content = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
+        let mut note = Note::parse(&content, &title_from_path(&path));
+
+        let key = key.trim().to_string();
+        let mut tags: Vec<String> = tags
+            .into_iter()
+            .map(|tag| tag.trim().to_string())
+            .filter(|tag| !tag.is_empty())
+            .collect();
+        tags.sort_by_key(|tag| tag.to_lowercase());
+        tags.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+        if tags.is_empty() {
+            note.frontmatter.bubble_tags.remove(&key);
+        } else {
+            note.frontmatter.bubble_tags.insert(key, tags);
+        }
+        note.frontmatter.updated = note::now_rfc3339();
+        note.write_to(&path)
+            .map_err(|e| err("could not write note", e))?;
+        sync_mirror(&note);
+        open.index
+            .upsert(note_type, &path, &note, file_mtime(&path))
+            .map_err(|e| err("could not index note", e))?;
+        Ok(note.frontmatter.bubble_tags)
     })
 }
 
@@ -1649,6 +1707,7 @@ pub fn run() {
             last_vault,
             get_ai_settings,
             set_ai_settings,
+            set_bubble_metadata_visible,
             ai_health,
             app_version,
             model_catalog,
@@ -1671,6 +1730,7 @@ pub fn run() {
             write_note,
             update_model,
             set_bubble_model,
+            set_bubble_tags,
             rename_note,
             update_note,
             delete_note,

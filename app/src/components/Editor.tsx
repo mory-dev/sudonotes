@@ -11,6 +11,7 @@ import { defaultKeymap, history, historyKeymap, redo } from "@codemirror/command
 import { markdown } from "@codemirror/lang-markdown";
 import {
   defaultHighlightStyle,
+  ensureSyntaxTree,
   HighlightStyle,
   syntaxHighlighting,
   syntaxTree,
@@ -19,6 +20,7 @@ import {
   EditorState,
   Prec,
   RangeSetBuilder,
+  StateField,
   StateEffect,
   type Extension,
   type Text,
@@ -37,7 +39,7 @@ import { tags } from "@lezer/highlight";
 
 import { BUBBLE_END, BUBBLE_START, useStore } from "../store";
 import { getUiZoom, viewportToLayout } from "../uiScale";
-import { tagHoverColor } from "../tagColors";
+import { tagHoverColor, tagPalette } from "../tagColors";
 import { ModelPicker } from "./ModelPicker";
 import { providerMarkHtml, providerOf, shortModelName } from "./ProviderMarks";
 
@@ -616,7 +618,9 @@ const headings = ViewPlugin.fromClass(
 /** The top-level bubbles of an idea note: each block group and whether it
  *  starts with a heading. Shared by the bubble decorations, the heat bars,
  *  Ctrl+A, and the hover menu's copy button. */
-function computeBubbles(state: EditorState): { from: number; to: number; heading: boolean }[] {
+export function computeBubbles(
+  state: EditorState,
+): { from: number; to: number; heading: boolean }[] {
   const doc = state.doc;
   const pairs = bubbleMarkerPairsInDoc(doc);
   const runs: { from: number; to: number; heading: boolean; seeded: boolean }[] = [];
@@ -627,7 +631,11 @@ function computeBubbles(state: EditorState): { from: number; to: number; heading
       run = null;
     }
   };
-  const top = syntaxTree(state).topNode;
+  // Markdown parsing is incremental and may initially stop near the viewport.
+  // Bubble metadata must cover the whole note, so finish parsing before
+  // walking the top-level blocks. The cached tree makes this cheap after the
+  // first pass; the viewport bridge below retries if parsing was interrupted.
+  const top = (ensureSyntaxTree(state, doc.length, 1000) ?? syntaxTree(state)).topNode;
   for (let node = top.firstChild; node; node = node.nextSibling) {
     // A marker pair owns everything between its lines; the bubble for it is
     // built from the pair itself, so no node inside one extends a run.
@@ -678,6 +686,48 @@ function computeBubbles(state: EditorState): { from: number; to: number; heading
 
   runs.sort((a, b) => a.from - b.from);
   return runs;
+}
+
+/** Read only the tags explicitly assigned to this bubble. Note-level tags are
+ * deliberately not a fallback, because they describe the whole idea. */
+export function bubbleTagsForLabel(
+  bubbleTags: Record<string, string[]>,
+  label: string,
+): string[] {
+  return Object.prototype.hasOwnProperty.call(bubbleTags, label) ? bubbleTags[label] : [];
+}
+
+/** Small, deterministic aliases for deriving a display-only tag from an
+ * existing note vocabulary. This keeps legacy notes useful without persisting
+ * guessed metadata or assigning every note tag to every bubble. */
+const bubbleTagAliases: Record<string, string[]> = {
+  bug: ["error", "issue", "broken", "fix"],
+  data: ["database", "analytics", "dataset"],
+  design: ["ui", "ux", "visual", "style"],
+  feature: ["support", "capability"],
+  feedback: ["review", "critique"],
+  onboarding: ["setup", "signup", "getting started"],
+  product: ["customer", "market"],
+  question: ["question", "why", "how"],
+  research: ["investigate", "analysis", "explore"],
+  workflow: ["process", "automation", "pipeline"],
+  docs: ["documentation", "readme"],
+  performance: ["speed", "latency", "slow", "optimization"],
+  seo: ["keyword", "ranking", "search engine"],
+  testing: ["test", "tests", "testing", "spec", "vitest"],
+  security: ["auth", "permission", "permissions"],
+  marketing: ["campaign", "growth", "brand"],
+};
+
+export function inferBubbleTags(noteTags: string[], body: string): string[] {
+  const lower = body.toLowerCase();
+  const words = new Set(lower.split(/[^\p{L}\p{N}_]+/u).filter(Boolean));
+  return noteTags.filter((tag) => {
+    const candidates = [tag.toLowerCase(), ...(bubbleTagAliases[tag.toLowerCase()] ?? [])];
+    return candidates.some((term) =>
+      term.includes(" ") ? lower.includes(term) : words.has(term),
+    );
+  });
 }
 
 /** The `<!-- bubble -->` … `<!-- /bubble -->` pairs in a document, as
@@ -929,32 +979,68 @@ class BubbleGripWidget extends WidgetType {
 const gripDragStart: { onDown: ((from: number, x: number, y: number) => void) | null } = {
   onDown: null,
 };
-/** A little pill at a bubble's bottom-right corner naming the model assigned
- *  to that bubble — the idea's model lives on its bubbles, not the note row. */
-class BubbleModelBadgeWidget extends WidgetType {
-  constructor(readonly model: string) {
+/** A quiet footer below a bubble showing its own tags and model assignment. */
+class BubbleMetadataWidget extends WidgetType {
+  constructor(
+    readonly bubbleTags: string[],
+    readonly model: string | null,
+  ) {
     super();
   }
   toDOM() {
-    const el = document.createElement("span");
-    el.className = "cm-bubble-model";
-    el.setAttribute("data-tooltip", this.model);
-    const provider = providerOf(this.model);
-    const mark = document.createElement("span");
-    mark.innerHTML = providerMarkHtml(provider, 12);
-    const tile = mark.firstElementChild as HTMLElement | null;
-    if (tile) el.appendChild(tile);
-    const name = document.createElement("span");
-    name.className = "cm-bubble-model-name";
-    // The id's last segment, hyphenated as in "claude-opus-5", reads better as
-    // "opus 5" once the brand prefix is dropped.
-    const segment = this.model.slice(this.model.lastIndexOf("/") + 1).replace(/-/g, " ");
-    name.textContent = shortModelName(segment, provider);
-    el.appendChild(name);
+    const el = document.createElement("div");
+    el.className = "cm-bubble-metadata";
+
+    if (this.bubbleTags.length > 0) {
+      const tags = document.createElement("span");
+      tags.className = "cm-bubble-metadata-tags";
+      for (const tag of this.bubbleTags) {
+        const palette = tagPalette(tag);
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "cm-bubble-metadata-tag";
+        chip.textContent = tag;
+        chip.style.setProperty("--bubble-tag-bg", palette.bg);
+        chip.style.setProperty("--bubble-tag-fg", palette.fg);
+        chip.style.setProperty("--bubble-tag-border", palette.border);
+        chip.setAttribute("data-tooltip", `Search \"${tag}\"`);
+        chip.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        chip.addEventListener("click", () => useStore.getState().openPalette(tag));
+        tags.appendChild(chip);
+      }
+      el.appendChild(tags);
+    }
+
+    if (this.model) {
+      const model = document.createElement("span");
+      model.className = "cm-bubble-metadata-model";
+      model.setAttribute("data-tooltip", this.model);
+      const provider = providerOf(this.model);
+      const mark = document.createElement("span");
+      mark.innerHTML = providerMarkHtml(provider, 11);
+      const tile = mark.firstElementChild as HTMLElement | null;
+      if (tile) model.appendChild(tile);
+      const name = document.createElement("span");
+      name.className = "cm-bubble-metadata-model-name";
+      // The id's last segment, hyphenated as in "claude-opus-5", reads better
+      // as "opus 5" once the brand prefix is dropped.
+      const segment = this.model.slice(this.model.lastIndexOf("/") + 1).replace(/-/g, " ");
+      name.textContent = shortModelName(segment, provider);
+      model.appendChild(name);
+      el.appendChild(model);
+    }
+
     return el;
   }
-  eq(other: BubbleModelBadgeWidget) {
-    return other.model === this.model;
+  eq(other: BubbleMetadataWidget) {
+    return (
+      other.model === this.model &&
+      other.bubbleTags.length === this.bubbleTags.length &&
+      other.bubbleTags.every((tag, index) => tag === this.bubbleTags[index])
+    );
   }
 }
 
@@ -1016,15 +1102,18 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
 /** The priority heat bars, in their own plugin: a widget sharing its position
  *  with a line decoration is not rendered, so the bars live apart from the
  *  bubble boxes. */
-function buildHeatDecorations(view: EditorView): DecorationSet {
+function buildHeatDecorations(state: EditorState): DecorationSet {
   if (useStore.getState().active?.type !== "idea") {
     return Decoration.none;
   }
   const builder = new RangeSetBuilder<Decoration>();
-  const doc = view.state.doc;
-  const runs = computeBubbles(view.state);
+  const doc = state.doc;
+  const runs = computeBubbles(state);
   const total = runs.length;
-  const models = useStore.getState().active?.models ?? {};
+  const storeState = useStore.getState();
+  const models = storeState.active?.models ?? {};
+  const bubbleTags = storeState.active?.bubbleTags ?? {};
+  const showMetadata = storeState.aiSettings.showBubbleMetadata;
   for (const [index, block] of runs.entries()) {
     const firstLine = doc.lineAt(block.from);
     const heat = total <= 1 ? 1 : 1 - index / (total - 1);
@@ -1040,55 +1129,98 @@ function buildHeatDecorations(view: EditorView): DecorationSet {
       firstLine.from,
       Decoration.widget({ widget: new BubbleHeatWidget(heat), side: 1 }),
     );
-    // The model assigned to this bubble, named by its first line, shows as a
-    // badge directly below the heat bar.
+    // Metadata is keyed by the bubble's first line and lives in a block widget
+    // after its last visible line, visually outside the bubble border.
     const label = bubbleFirstText(doc, block.from);
     const model = models[label];
-    if (model) {
+    // Tags are intentionally per-bubble. Note-level tags are not copied here:
+    // doing so makes unrelated bubbles look identically classified.
+    const explicitTags = bubbleTagsForLabel(bubbleTags, label);
+    const tags =
+      explicitTags.length > 0
+        ? explicitTags
+        : inferBubbleTags(storeState.active?.tags ?? [], doc.sliceString(block.from, block.to));
+    if (showMetadata && (tags.length > 0 || model)) {
+      let metadataLine = doc.lineAt(block.to);
+      if (metadataLine.text.trim() === BUBBLE_END) {
+        for (let n = metadataLine.number - 1; n >= firstLine.number; n--) {
+          const candidate = doc.line(n);
+          if (candidate.text.trim() !== BUBBLE_START) {
+            metadataLine = candidate;
+            break;
+          }
+        }
+      }
       builder.add(
-        firstLine.from,
-        firstLine.from,
-        Decoration.widget({ widget: new BubbleModelBadgeWidget(model), side: 1 }),
+        metadataLine.to,
+        metadataLine.to,
+        Decoration.widget({
+          widget: new BubbleMetadataWidget(tags, model ?? null),
+          side: 1,
+          block: true,
+        }),
       );
     }
   }
   return builder.finish();
 }
 
-/** Signals the heat/badge plugin that a bubble's model assignment changed, so
- *  the badge appears as soon as a model is picked without an edit. */
-const bubbleModelsEffect = StateEffect.define<null>();
+/** Signals the heat/metadata plugin that a preference or assignment changed,
+ *  so the footer updates immediately without requiring a document edit. */
+const bubbleMetadataEffect = StateEffect.define<null>();
+
+/** Block widgets must be provided through a state field, not indirectly from a
+ *  ViewPlugin. Keeping the decoration set here prevents CodeMirror's layout
+ *  engine from throwing when an idea note is opened. */
+const bubbleMetadataDecorations = StateField.define<DecorationSet>({
+  create: buildHeatDecorations,
+  update(decorations, transaction) {
+    if (
+      transaction.docChanged ||
+      transaction.effects.some((effect) => effect.is(bubbleMetadataEffect))
+    ) {
+      return buildHeatDecorations(transaction.state);
+    }
+    return decorations.map(transaction.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 const heatBars = ViewPlugin.fromClass(
   class {
-    decorations: DecorationSet;
     alive = true;
     unsubscribe: () => void;
+    refreshTimer: number | null = null;
     constructor(view: EditorView) {
-      this.decorations = buildHeatDecorations(view);
-      // Rebuild when the open note's per-bubble models change (e.g. a model is
-      // assigned from the hover menu) without any document edit.
+      // Rebuild when per-bubble metadata or its visibility preference changes.
       this.unsubscribe = useStore.subscribe((state, previous) => {
-        if (this.alive && state.active?.models !== previous.active?.models) {
-          view.dispatch({ effects: bubbleModelsEffect.of(null) });
+        if (
+          this.alive &&
+          (state.active?.models !== previous.active?.models ||
+            state.active?.bubbleTags !== previous.active?.bubbleTags ||
+            state.active?.tags !== previous.active?.tags ||
+            state.aiSettings.showBubbleMetadata !== previous.aiSettings.showBubbleMetadata)
+        ) {
+          view.dispatch({ effects: bubbleMetadataEffect.of(null) });
         }
       });
     }
     update(update: ViewUpdate) {
-      if (
-        update.docChanged ||
-        update.viewportChanged ||
-        update.transactions.some((tr) => tr.effects.some((effect) => effect.is(bubbleModelsEffect)))
-      ) {
-        this.decorations = buildHeatDecorations(update.view);
-      }
+      if (!update.viewportChanged || this.refreshTimer !== null) return;
+      // Scrolling can advance CodeMirror's incremental Markdown parser. Give
+      // it a turn, then rebuild the state-field decorations from the expanded
+      // syntax tree so later bubbles receive their metadata too.
+      this.refreshTimer = window.setTimeout(() => {
+        this.refreshTimer = null;
+        if (this.alive) update.view.dispatch({ effects: bubbleMetadataEffect.of(null) });
+      }, 0);
     }
     destroy() {
       this.alive = false;
+      if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
       this.unsubscribe();
     }
   },
-  { decorations: (plugin) => plugin.decorations },
 );
 
 const paragraphBoxes = ViewPlugin.fromClass(
@@ -1507,27 +1639,44 @@ const theme = EditorView.theme(
       strokeLinecap: "round",
       pointerEvents: "none",
     },
-    // Model badge at a bubble's bottom-right corner, naming the model assigned
-    // to that bubble. Floats in the right gutter, just below the heat bar.
-    ".cm-bubble-model": {
-      position: "absolute",
-      right: "12px",
-      top: "auto",
+    // A low-contrast footer immediately below the bubble border. It is a block
+    // widget so long tag sets wrap without overlapping editable content.
+    ".cm-bubble-metadata": {
+      display: "flex",
+      flexWrap: "wrap",
+      alignItems: "center",
+      gap: "4px 8px",
+      boxSizing: "border-box",
+      width: "100%",
+      minHeight: "19px",
+      padding: "2px 13px 5px",
+      fontSize: "9.5px",
+      lineHeight: "1.35",
+      color: "var(--muted)",
+      opacity: "0.64",
+      transition: "opacity 140ms ease",
+    },
+    ".cm-bubble-metadata:hover": { opacity: "0.86" },
+    ".cm-bubble-metadata-tags, .cm-bubble-metadata-model": {
       display: "inline-flex",
       alignItems: "center",
       gap: "4px",
-      maxWidth: "140px",
-      padding: "1px 6px 1px 2px",
-      fontSize: "10px",
-      fontWeight: 600,
-      lineHeight: "1.3",
-      color: "var(--muted)",
-      background: "var(--panel)",
-      border: "1px solid var(--border)",
-      borderRadius: "999px",
-      transform: "translateY(5px)",
+      minWidth: 0,
     },
-    ".cm-bubble-model-name": {
+    ".cm-bubble-metadata-tag": {
+      padding: "1px 5px",
+      font: "inherit",
+      fontWeight: 500,
+      lineHeight: "1.35",
+      color: "var(--bubble-tag-fg)",
+      background: "var(--bubble-tag-bg)",
+      border: "1px solid var(--bubble-tag-border)",
+      borderRadius: "999px",
+      cursor: "pointer",
+    },
+    ".cm-bubble-metadata-tag:hover": { filter: "brightness(1.14)" },
+    ".cm-bubble-metadata-model": { fontWeight: 600, maxWidth: "170px" },
+    ".cm-bubble-metadata-model-name": {
       overflow: "hidden",
       textOverflow: "ellipsis",
       whiteSpace: "nowrap",
@@ -2166,6 +2315,7 @@ export function Editor() {
           jumpHighlight,
           headings,
           paragraphBoxes,
+          bubbleMetadataDecorations,
           heatBars,
           placeholders,
           bubbleHover,

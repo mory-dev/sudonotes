@@ -250,6 +250,8 @@ interface AppState {
   updateModel: (model: string | null) => Promise<void>;
   /** Assign a model to the bubble whose first line is `key`. */
   setBubbleModel: (key: string, model: string | null) => Promise<void>;
+  /** Replace the tags attached to the bubble whose first line is `key`. */
+  setBubbleTags: (key: string, tags: string[]) => Promise<void>;
   flushSave: () => Promise<void>;
   rename: (title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -295,6 +297,7 @@ interface AppState {
   setNotice: (notice: string | null) => void;
   loadAiSettings: () => Promise<void>;
   saveAiSettings: (enabled: boolean) => Promise<void>;
+  saveBubbleMetadataVisible: (visible: boolean) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -324,7 +327,7 @@ export const useStore = create<AppState>((set, get) => ({
   drafts: null,
   pastedText: "",
   oneBlockPaste: false,
-  aiSettings: { enabled: true, configured: true },
+  aiSettings: { enabled: true, showBubbleMetadata: true, configured: true },
   aiReachable: null,
   aiHealth: null,
   analysis: null,
@@ -484,6 +487,14 @@ export const useStore = create<AppState>((set, get) => ({
   saveAiSettings: async (enabled) => {
     try {
       set({ aiSettings: await api.setAiSettings(enabled) });
+    } catch (e) {
+      set({ error: message(e) });
+    }
+  },
+
+  saveBubbleMetadataVisible: async (visible) => {
+    try {
+      set({ aiSettings: await api.setBubbleMetadataVisible(visible) });
     } catch (e) {
       set({ error: message(e) });
     }
@@ -690,6 +701,18 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const models = await api.setBubbleModel(active.id, key, model ?? "");
       set({ active: { ...active, models } });
+      await get().refresh();
+    } catch (e) {
+      set({ error: message(e) });
+    }
+  },
+
+  setBubbleTags: async (key, tags) => {
+    const active = get().active;
+    if (!active) return;
+    try {
+      const bubbleTags = await api.setBubbleTags(active.id, key, tags);
+      set({ active: { ...active, bubbleTags } });
       await get().refresh();
     } catch (e) {
       set({ error: message(e) });

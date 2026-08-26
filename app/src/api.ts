@@ -47,6 +47,8 @@ export interface NoteDetail extends NoteMeta {
   project: string | null;
   /** Per-bubble model assignment for idea notes: bubble first line -> model. */
   models: Record<string, string>;
+  /** Per-bubble tags for idea notes: bubble first line -> tags. */
+  bubbleTags: Record<string, string[]>;
   created: string;
   body: string;
   path: string;
@@ -86,6 +88,8 @@ export interface ModelCatalog {
 
 export interface AiSettings {
   enabled: boolean;
+  /** Whether tags and model assignments appear below idea bubbles. */
+  showBubbleMetadata: boolean;
   /** The proxy is available by default; the provider key lives on the server. */
   configured: boolean;
 }
@@ -140,6 +144,8 @@ export const api = {
   lastVault: () => invoke<string | null>("last_vault"),
   getAiSettings: () => invoke<AiSettings>("get_ai_settings"),
   setAiSettings: (enabled: boolean) => invoke<AiSettings>("set_ai_settings", { enabled }),
+  setBubbleMetadataVisible: (visible: boolean) =>
+    invoke<AiSettings>("set_bubble_metadata_visible", { visible }),
   /** Whether the AI proxy answers its health endpoint. */
   aiHealth: () => invoke<boolean>("ai_health"),
   appVersion: () => invoke<string>("app_version"),
@@ -183,6 +189,9 @@ export const api = {
   /** Assign the model a bubble's prompt targets, keyed by its first line. */
   setBubbleModel: (id: string, key: string, model: string) =>
     invoke<Record<string, string>>("set_bubble_model", { id, key, model }),
+  /** Replace the tags attached to an idea bubble, keyed by its first line. */
+  setBubbleTags: (id: string, key: string, tags: string[]) =>
+    invoke<Record<string, string[]>>("set_bubble_tags", { id, key, tags }),
   renameNote: (id: string, title: string) => invoke<void>("rename_note", { id, title }),
   updateNote: (
     id: string,
