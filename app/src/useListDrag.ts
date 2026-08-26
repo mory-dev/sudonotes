@@ -23,74 +23,78 @@ export function useListDrag(listId: string, onCommit: (fromKey: string, toKey: s
     moved: boolean;
     over: string | null;
   } | null>(null);
+  const listenerCleanup = useRef<(() => void) | null>(null);
 
   const commitRef = useRef(onCommit);
   commitRef.current = onCommit;
 
-  useEffect(() => {
-    const finish = (commit: boolean) => {
-      const current = drag.current;
-      drag.current = null;
-      document.body.classList.remove("row-dragging");
-      setDragKey(null);
-      setOverKey(null);
-      if (!current?.moved) return;
+  const finish = (commit: boolean) => {
+    const current = drag.current;
+    drag.current = null;
+    listenerCleanup.current?.();
+    listenerCleanup.current = null;
+    document.body.classList.remove("row-dragging");
+    setDragKey(null);
+    setOverKey(null);
+    if (!current?.moved) return;
 
-      // A drag ends with a click on whatever the pointer went down on, which
-      // would select the note the user was only moving. Swallow that one.
-      const swallow = (event: MouseEvent) => {
-        event.stopPropagation();
-        window.removeEventListener("click", swallow, true);
-      };
-      window.addEventListener("click", swallow, true);
-      setTimeout(() => window.removeEventListener("click", swallow, true), 250);
-      if (commit && current.over && current.over !== current.key) {
-        commitRef.current(current.key, current.over);
-      }
+    // A drag ends with a click on whatever the pointer went down on, which
+    // would select the note the user was only moving. Swallow that one.
+    const swallow = (event: MouseEvent) => {
+      event.stopPropagation();
+      window.removeEventListener("click", swallow, true);
     };
+    window.addEventListener("click", swallow, true);
+    setTimeout(() => window.removeEventListener("click", swallow, true), 250);
+    if (commit && current.over && current.over !== current.key) {
+      commitRef.current(current.key, current.over);
+    }
+  };
 
-    const onMove = (event: PointerEvent) => {
-      const current = drag.current;
-      if (!current) return;
+  const onMove = (event: PointerEvent) => {
+    const current = drag.current;
+    if (!current) return;
 
-      // A small threshold, so a plain click on a row never starts a drag.
-      if (
-        !current.moved &&
-        Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 4
-      ) {
-        return;
-      }
-      if (!current.moved) {
-        current.moved = true;
-        document.body.classList.add("row-dragging");
-        setDragKey(current.key);
-      }
-      event.preventDefault();
+    // A small threshold, so a plain click on a row never starts a drag.
+    if (
+      !current.moved &&
+      Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 4
+    ) {
+      return;
+    }
+    if (!current.moved) {
+      current.moved = true;
+      document.body.classList.add("row-dragging");
+      setDragKey(current.key);
+    }
+    event.preventDefault();
 
-      const under = document.elementFromPoint(event.clientX, event.clientY);
-      const row = under?.closest<HTMLElement>("[data-drag-key]");
-      const key =
-        row && row.dataset.dragList === listId && row.dataset.dragKey !== current.key
-          ? (row.dataset.dragKey ?? null)
-          : null;
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    const row = under?.closest<HTMLElement>("[data-drag-key]");
+    const key =
+      row && row.dataset.dragList === listId && row.dataset.dragKey !== current.key
+        ? (row.dataset.dragKey ?? null)
+        : null;
+    // Pointermove can fire hundreds of times while the pointer stays over
+    // one row. Avoid scheduling a React update when the target did not
+    // actually change; this keeps large sidebars responsive during drag.
+    if (current.over !== key) {
       current.over = key;
       setOverKey(key);
-    };
+    }
+  };
 
-    const onUp = () => finish(true);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") finish(false);
-    };
+  const onUp = () => finish(true);
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") finish(false);
+  };
 
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    window.addEventListener("keydown", onKey);
+  useEffect(() => {
     return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      window.removeEventListener("keydown", onKey);
+      listenerCleanup.current?.();
+      listenerCleanup.current = null;
+      drag.current = null;
+      document.body.classList.remove("row-dragging");
     };
   }, [listId]);
 
@@ -105,6 +109,19 @@ export function useListDrag(listId: string, onCommit: (fromKey: string, toKey: s
         startY: event.clientY,
         moved: false,
         over: null,
+      };
+      // Global listeners are needed only while this list is actively held.
+      // Keeping them lazy is important when a vault contains many buckets.
+      listenerCleanup.current?.();
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+      window.addEventListener("keydown", onKey);
+      listenerCleanup.current = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("keydown", onKey);
       };
     },
   });

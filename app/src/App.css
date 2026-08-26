@@ -1047,6 +1047,12 @@ kbd {
   color: var(--muted);
 }
 
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .count {
   opacity: 0.6;
   margin-left: 2px;
@@ -1074,6 +1080,17 @@ kbd {
 .icon-button:hover {
   background: var(--panel-2);
   color: var(--text);
+}
+
+.sort-toggle.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sort-toggle svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .note-list {

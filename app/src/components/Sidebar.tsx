@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import type { NoteMeta, NoteType } from "../api";
 import { useStore } from "../store";
 import { useListDrag, reordered, type NoteDragHandlers } from "../useListDrag";
 import { ModelStack } from "./ModelStack";
-import { IdeaMark, PromptMark } from "./NoteMarks";
+import { IdeaMark, PromptMark, VolumePyramidMark } from "./NoteMarks";
 import { ProviderIcon, providerOf } from "./ProviderMarks";
 
 function byTitle(a: NoteMeta, b: NoteMeta) {
@@ -113,6 +113,7 @@ function NoteRow({
   ]
     .filter(Boolean)
     .join(" ");
+  const dragHint = drag ? "Drag to reorder" : "Dragging disabled while auto-sorted";
 
   return (
     <li data-type={note.type}>
@@ -123,7 +124,7 @@ function NoteRow({
         data-note-id={note.id}
         data-note-title={note.title}
         data-note-type={note.type}
-        data-tooltip={`${note.summary ?? note.title}\nDrag to reorder · Right-click for actions · Middle-click to delete`}
+        data-tooltip={`${note.summary ?? note.title}\n${dragHint} · Right-click for actions · Middle-click to delete`}
         onClick={() => void select(note.id)}
         onAuxClick={onAuxClick}
         onMouseDown={onMouseDown}
@@ -165,6 +166,23 @@ function NoteRow({
   );
 }
 
+function sameDragState(a?: NoteDragHandlers, b?: NoteDragHandlers): boolean {
+  return (
+    a?.["data-drag-key"] === b?.["data-drag-key"] &&
+    a?.["data-drag-list"] === b?.["data-drag-list"] &&
+    a?.isDragging === b?.isDragging &&
+    a?.isOver === b?.isOver
+  );
+}
+
+// Dragging one row updates only the affected drag flags. Keep the rest of a
+// large sidebar from rendering on every pointer-move while the list is held.
+const MemoNoteRow = memo(NoteRow, (previous, next) =>
+  previous.note === next.note &&
+  previous.maxBubbles === next.maxBubbles &&
+  sameDragState(previous.drag, next.drag),
+);
+
 /** A subfolder of prompts/ or ideas/, holding prompts split out of one paste.
  *  The header is the collection's own note, so it is not listed twice. */
 function Collection({
@@ -173,6 +191,7 @@ function Collection({
   parent,
   drag,
   maxBubbles,
+  dragEnabled,
 }: {
   name: string;
   notes: NoteMeta[];
@@ -180,6 +199,7 @@ function Collection({
   /** Reorders the bucket among its siblings; the children have their own. */
   drag?: NoteDragHandlers;
   maxBubbles?: number;
+  dragEnabled: boolean;
 }) {
   const activeId = useStore((s) => s.active?.id ?? null);
   const select = useStore((s) => s.select);
@@ -189,7 +209,7 @@ function Collection({
   const [open, setOpen] = useState(() => notes.some((n) => n.id === activeId));
 
   const childDrag = useListDrag(`bucket:${name}`, (fromId, toId) => {
-    if (!parent) return;
+    if (!dragEnabled || !parent) return;
     const next = reordered(
       notes.map((n) => n.id),
       fromId,
@@ -234,6 +254,7 @@ function Collection({
   ]
     .filter(Boolean)
     .join(" ");
+  const dragHint = drag ? "Drag to reorder" : "Dragging disabled while auto-sorted";
 
   return (
     <li className="collection" data-type={parent?.type ?? notes[0]?.type ?? "prompt"}>
@@ -253,7 +274,7 @@ function Collection({
           onMouseDown={onMouseDown}
           onPointerDown={drag?.onPointerDown}
           aria-expanded={open}
-          data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"} · Drag to reorder · Middle-click to delete`}
+          data-tooltip={`${name}\nDouble-click to ${open ? "collapse" : "expand"} · ${dragHint} · Middle-click to delete`}
         >
           <span className="collection-name">{name}</span>
         </button>
@@ -263,15 +284,19 @@ function Collection({
       {open && (
         <ul className="note-list nested">
           {notes.map((note) => (
-            <NoteRow
+            <MemoNoteRow
               key={note.id}
               note={note}
               maxBubbles={maxBubbles}
-              drag={{
-                ...childDrag.rowProps(note.id),
-                isDragging: childDrag.dragKey === note.id,
-                isOver: childDrag.overKey === note.id && childDrag.dragKey !== note.id,
-              }}
+              drag={
+                dragEnabled
+                  ? {
+                      ...childDrag.rowProps(note.id),
+                      isDragging: childDrag.dragKey === note.id,
+                      isOver: childDrag.overKey === note.id && childDrag.dragKey !== note.id,
+                    }
+                  : undefined
+              }
             />
           ))}
         </ul>
@@ -280,17 +305,29 @@ function Collection({
   );
 }
 
+const MemoCollection = memo(Collection, (previous, next) =>
+  previous.name === next.name &&
+  previous.notes === next.notes &&
+  previous.parent === next.parent &&
+  previous.maxBubbles === next.maxBubbles &&
+  previous.dragEnabled === next.dragEnabled &&
+  sameDragState(previous.drag, next.drag),
+);
 
 function Section({
   label,
   noteType,
   notes,
   maxBubbles,
+  autoSortBubbles = false,
+  onToggleAutoSort,
 }: {
   label: string;
   noteType: NoteType;
   notes: NoteMeta[];
   maxBubbles?: number;
+  autoSortBubbles?: boolean;
+  onToggleAutoSort?: () => void;
 }) {
   const create = useStore((s) => s.create);
 
@@ -347,18 +384,37 @@ function Section({
 
     // Anything never dragged has no position yet, and sorts by name after the
     // rows that do — so an explicit order is stable and the rest stay alphabetical.
-    list.sort((a, b) => {
+    const manualComparator = (a: (typeof list)[number], b: (typeof list)[number]) => {
       const pa = a.position ?? Number.MAX_SAFE_INTEGER;
       const pb = b.position ?? Number.MAX_SAFE_INTEGER;
       return pa - pb || a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
-    });
+    };
+    list.sort(manualComparator);
+
+    if (autoSortBubbles) {
+      // Auto-sort is display-only: positions are never rewritten. That keeps
+      // this manual ordering available as the exact restore state on toggle-off.
+      const manualIndex = new Map(list.map((item, index) => [item.entry.key, index]));
+      const bubbleCountFor = (entry: (typeof list)[number]["entry"]) =>
+        entry.kind === "note"
+          ? entry.note.bubbles ?? 0
+          : entry.parent?.bubbles ??
+            entry.items.reduce((total, note) => total + (note.bubbles ?? 0), 0);
+      list.sort(
+        (a, b) =>
+          bubbleCountFor(b.entry) - bubbleCountFor(a.entry) ||
+          (manualIndex.get(a.entry.key) ?? 0) - (manualIndex.get(b.entry.key) ?? 0),
+      );
+    }
 
     return list.map((item) => item.entry);
-  }, [notes]);
+  }, [autoSortBubbles, notes]);
 
   const reorderNotes = useStore((s) => s.reorderNotes);
+  const dragEnabled = noteType !== "idea" || !autoSortBubbles;
 
   const drag = useListDrag(`section:${noteType}`, (fromKey, toKey) => {
+    if (!dragEnabled) return;
     const keys = entries.map((e) => e.key);
     const next = reordered(keys, fromKey, toKey);
     // A bucket with no note of its own has no frontmatter to write a position
@@ -377,13 +433,34 @@ function Section({
           </span>
           {label} <span className="count">{notes.length}</span>
         </span>
-        <button
-          className="icon-button"
-          data-tooltip={`New ${noteType}`}
-          onClick={() => void create(noteType, "")}
-        >
-          +
-        </button>
+        <div className="section-actions">
+          {onToggleAutoSort && (
+            <button
+              className={autoSortBubbles ? "icon-button sort-toggle on" : "icon-button sort-toggle"}
+              aria-pressed={autoSortBubbles}
+              aria-label={
+                autoSortBubbles
+                  ? "Disable automatic idea sorting"
+                  : "Enable automatic idea sorting"
+              }
+              data-tooltip={
+                autoSortBubbles
+                  ? "Ideas sorted by bubble count · Click to enable dragging"
+                  : "Ideas in manual order · Click to sort by bubble count"
+              }
+              onClick={onToggleAutoSort}
+            >
+              <VolumePyramidMark />
+            </button>
+          )}
+          <button
+            className="icon-button"
+            data-tooltip={`New ${noteType}`}
+            onClick={() => void create(noteType, "")}
+          >
+            +
+          </button>
+        </div>
       </header>
 
       {notes.length === 0 ? (
@@ -404,28 +481,37 @@ function Section({
         <ul className="note-list">
           {entries.map((entry) =>
             entry.kind === "collection" ? (
-              <Collection
+              <MemoCollection
                 key={entry.key}
                 name={entry.name}
                 notes={entry.items}
                 parent={entry.parent}
                 maxBubbles={maxBubbles}
-                drag={{
-                  ...drag.rowProps(entry.key),
-                  isDragging: drag.dragKey === entry.key,
-                  isOver: drag.overKey === entry.key && drag.dragKey !== entry.key,
-                }}
+                dragEnabled={dragEnabled}
+                drag={
+                  dragEnabled
+                    ? {
+                        ...drag.rowProps(entry.key),
+                        isDragging: drag.dragKey === entry.key,
+                        isOver: drag.overKey === entry.key && drag.dragKey !== entry.key,
+                      }
+                    : undefined
+                }
               />
             ) : (
-              <NoteRow
+              <MemoNoteRow
                 key={entry.key}
                 note={entry.note}
                 maxBubbles={maxBubbles}
-                drag={{
-                  ...drag.rowProps(entry.key),
-                  isDragging: drag.dragKey === entry.key,
-                  isOver: drag.overKey === entry.key && drag.dragKey !== entry.key,
-                }}
+                drag={
+                  dragEnabled
+                    ? {
+                        ...drag.rowProps(entry.key),
+                        isDragging: drag.dragKey === entry.key,
+                        isOver: drag.overKey === entry.key && drag.dragKey !== entry.key,
+                      }
+                    : undefined
+                }
               />
             ),
           )}
@@ -441,6 +527,7 @@ export function Sidebar() {
   const vaultPath = useStore((s) => s.vaultPath);
   const setPalette = useStore((s) => s.setPalette);
   const scrollToPos = useStore((s) => s.scrollToPos);
+  const [ideasAutoSort, setIdeasAutoSort] = useState(true);
 
   const { prompts, ideas } = useMemo(
     () => ({
@@ -478,7 +565,14 @@ export function Sidebar() {
 
       <div className="sections">
         <Section label="Prompts" noteType="prompt" notes={prompts} />
-        <Section label="Ideas" noteType="idea" notes={ideas} maxBubbles={maxIdeaBubbles} />
+        <Section
+          label="Ideas"
+          noteType="idea"
+          notes={ideas}
+          maxBubbles={maxIdeaBubbles}
+          autoSortBubbles={ideasAutoSort}
+          onToggleAutoSort={() => setIdeasAutoSort((enabled) => !enabled)}
+        />
 
         {active?.type === "idea" && ideaOutline.length > 1 && (
           <div className="idea-outline">

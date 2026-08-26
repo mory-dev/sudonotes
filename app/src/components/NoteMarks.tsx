@@ -20,6 +20,22 @@ export function IdeaMark() {
   );
 }
 
+/** A small volume pyramid: wider levels represent more bubbles. */
+export function VolumePyramidMark() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+    >
+      <path d="M6.4 3h3.2M4.8 6h6.4M3.2 9h9.6M1.8 12h12.4" />
+    </svg>
+  );
+}
+
 /** The colored chip with a mark, used to label a note's type. */
 export function TypeBadge({ type }: { type: NoteType }) {
   return (
