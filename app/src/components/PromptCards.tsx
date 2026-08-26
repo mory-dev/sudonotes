@@ -343,7 +343,7 @@ function Card({
 }
 
 /** The prompts belonging to a collection — the whole page for a collection note.
- *  Shows the parent's index links, and accepts pasted batches to split. */
+ *  Accepts pasted batches to split into linked child prompts. */
 export function PromptCards() {
   const active = useStore((s) => s.active);
   const children = useStore((s) => s.children);
@@ -351,10 +351,12 @@ export function PromptCards() {
   const addPrompt = useStore((s) => s.addPrompt);
   const reorderChildren = useStore((s) => s.reorderChildren);
   const find = useStore((s) => s.find);
+  const findFocus = useStore((s) => s.findFocus);
   const findCount = useStore((s) => s.findCount);
   const closeFind = useStore((s) => s.closeFind);
   const setFindQuery = useStore((s) => s.setFindQuery);
   const findMove = useStore((s) => s.findMove);
+  const findInput = useRef<HTMLInputElement>(null);
 
   const cardDrag = useListDrag(
     `collection-cards:${active?.id ?? "active"}`,
@@ -389,6 +391,14 @@ export function PromptCards() {
       useStore.setState({ findCount: 0 });
     }
   }, [find?.query, matchingPromptIds.length]);
+
+  // Ctrl+Shift+F should focus and select the existing query as well as opening
+  // the bar, so the next keystroke replaces it instead of landing elsewhere.
+  useEffect(() => {
+    if (!find) return;
+    findInput.current?.focus();
+    findInput.current?.select();
+  }, [findFocus]);
 
   useEffect(() => {
     if (!find || matchingPromptIds.length === 0) return;
@@ -442,6 +452,7 @@ export function PromptCards() {
       {find && (
         <div className="find-bar" role="search">
           <input
+            ref={findInput}
             autoFocus
             value={find.query}
             placeholder="Find in this collection…"

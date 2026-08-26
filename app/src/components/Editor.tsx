@@ -1765,12 +1765,14 @@ export function Editor() {
   const mergeSelection = useStore((s) => s.mergeSelection);
   const scrollTo = useStore((s) => s.scrollTo);
   const find = useStore((s) => s.find);
+  const findFocus = useStore((s) => s.findFocus);
   const findCount = useStore((s) => s.findCount);
   const closeFind = useStore((s) => s.closeFind);
   const setFindQuery = useStore((s) => s.setFindQuery);
   const findMove = useStore((s) => s.findMove);
 
   const host = useRef<HTMLDivElement>(null);
+  const findInput = useRef<HTMLInputElement>(null);
   const view = useRef<EditorView | null>(null);
   const activeId = useRef<string | null>(null);
   // The editor's configuration, built once at mount and reused whenever a note
@@ -2562,6 +2564,15 @@ export function Editor() {
     useStore.getState().clearScroll();
   }, [scrollTo]);
 
+  // Ctrl+Shift+F is also a focus command when the find bar is already open.
+  // Selecting the current query makes the next keystroke replace it, matching
+  // the behavior users get when the bar first appears.
+  useEffect(() => {
+    if (!find) return;
+    findInput.current?.focus();
+    findInput.current?.select();
+  }, [findFocus]);
+
   // Any find change reaches the editor's match-highlighting plugin.
   useEffect(() => {
     view.current?.dispatch({ effects: findEffect.of(useStore.getState().find) });
@@ -2683,6 +2694,7 @@ export function Editor() {
       {find && (
         <div className="find-bar" role="search">
           <input
+            ref={findInput}
             autoFocus
             value={find.query}
             placeholder="Find in this note…"

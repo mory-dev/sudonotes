@@ -192,6 +192,8 @@ interface AppState {
   scrollTo: { id: string; pos: number } | null;
   /** In-editor find state (Ctrl+Shift+F), or null when closed. */
   find: { query: string; index: number; move: boolean } | null;
+  /** Incremented whenever Ctrl+Shift+F requests focus, including when find is already open. */
+  findFocus: number;
   /** Number of matches, updated by the editor's find plugin. */
   findCount: number;
   /** The idea bubble under the mouse, and the one holding the cursor, by their
@@ -317,6 +319,7 @@ export const useStore = create<AppState>((set, get) => ({
   mergeSelection: 0,
   scrollTo: null,
   find: null,
+  findFocus: 0,
   findCount: 0,
   hoverBubble: null,
   cursorBubble: null,
@@ -400,7 +403,13 @@ export const useStore = create<AppState>((set, get) => ({
     if (active) set({ scrollTo: { id: active.id, pos } });
   },
   clearScroll: () => set({ scrollTo: null }),
-  openFind: () => set({ find: { query: "", index: 0, move: false } }),
+  openFind: () =>
+    set((state) => ({
+      // Reopening find keeps the current query so the shortcut can focus and
+      // select it instead of unexpectedly clearing what the user typed.
+      find: state.find ?? { query: "", index: 0, move: false },
+      findFocus: state.findFocus + 1,
+    })),
   closeFind: () => set({ find: null }),
   // `move: true` so typing scrolls to the first match as you go, the way an
   // incremental find is expected to behave. Enter then advances from there.
