@@ -421,7 +421,6 @@ export function PromptCards() {
     };
   }, []);
 
-  const body = active?.body ?? "";
   const all = children.map((c) => `## ${c.title}\n\n${c.body}`).join("\n\n");
   const currentMatchId = matchingPromptIds[find?.index ?? 0];
 
@@ -473,12 +472,6 @@ export function PromptCards() {
           <button className="find-close" data-tooltip="Close (Esc)" onClick={closeFind}>
             ×
           </button>
-        </div>
-      )}
-
-      {body.trim() && (
-        <div className="collection-index" data-tooltip="[[links]] between these prompts">
-          <Wikilinks text={body.trim()} query={find?.query} />
         </div>
       )}
 

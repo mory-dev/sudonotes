@@ -2075,20 +2075,6 @@ mark.cm-find-match {
   word-break: break-word;
 }
 
-/* The parent note's [[link]] index, shown above the collection's cards. */
-.collection-index {
-  margin: 0 0 14px;
-  padding: 10px 13px;
-  font-size: 12px;
-  line-height: 1.75;
-  color: var(--muted);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  white-space: pre-wrap;
-  max-width: 90ch;
-}
-
 .add-prompt-bottom {
   margin-top: 12px;
   padding: 7px 14px;
