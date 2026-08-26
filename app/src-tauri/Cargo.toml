@@ -17,6 +17,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 [dependencies]
 sudonotes-core = { path = "../../core" }
 tauri = { version = "2", features = [] }
@@ -31,6 +38,7 @@ ulid = "3.0.0"
 chrono = "0.4.45"
 walkdir = "2.5.0"
 tauri-plugin-dialog = "2.7.2"
+tauri-plugin-global-shortcut = "2"
 base64 = "0.23.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 zip = { version = "^7", default-features = false, features = ["deflate"] }

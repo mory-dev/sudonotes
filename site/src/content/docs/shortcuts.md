@@ -38,6 +38,7 @@ appropriate key for the platform.
 | <kbd>Mod</kbd> + <kbd>+</kbd> | Increase interface scale, up to 160% |
 | <kbd>Mod</kbd> + <kbd>-</kbd> | Decrease interface scale, down to 70% |
 | <kbd>Mod</kbd> + <kbd>0</kbd> | Reset interface scale to 100% |
+| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>N</kbd> | Bring the sudonotes window to the front from any other app (system-wide, while sudonotes is running) |
 
 The desktop app suppresses webview-only commands such as reload, print, open-file, view-source, and
 browser find-next. They are not sudonotes shortcuts.

@@ -1,4 +1,4 @@
-﻿mod index;
+mod index;
 mod ai;
 mod backup;
 mod models;
@@ -14,6 +14,8 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{Manager, State};
+#[cfg(not(target_os = "windows"))]
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use index::{file_mtime, Index, NoteMeta, SearchHit};
 use note::{filename_for, Note, NoteType, WriteNote};
@@ -1510,13 +1512,137 @@ mod updater_configuration_tests {
     }
 }
 
+/// Bring the main window into view: show, unminimize, and focus it. Windows
+/// restricts SetForegroundWindow for background processes, so the always-on-top
+/// flag is flipped briefly to actually raise the window above the current one.
+fn raise_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_always_on_top(true);
+        if let Err(e) = window.set_focus() {
+            eprintln!("warning: could not focus the window: {e}");
+        }
+        let _ = window.set_always_on_top(false);
+    } else {
+        eprintln!("warning: Ctrl+Alt+N pressed but no \"main\" window exists");
+    }
+}
+
+/// A low-level keyboard hook that owns Ctrl+Alt+N outright on Windows.
+///
+/// RegisterHotKey only ever allows one owner for a combination — whichever
+/// process registered first (often AutoHotkey) wins, and a later registration
+/// fails. A WH_KEYBOARD_LL hook sees every key press before it is dispatched
+/// to any window or hotkey, so sudonotes takes the combination for itself and
+/// swallows it before anything else (including AutoHotkey) reacts.
+#[cfg(target_os = "windows")]
+mod hotkey {
+    use std::sync::OnceLock;
+
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, DispatchMessageW, GetMessageW, KBDLLHOOKSTRUCT, SetWindowsHookExW,
+        TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL, MSG,
+    };
+
+    /// VK_N, the N key.
+    const VK_N: u32 = 0x4E;
+    /// WM_KEYDOWN and WM_SYSKEYDOWN (the latter while Alt is held).
+    const WM_KEYDOWN: usize = 0x0100;
+    const WM_SYSKEYDOWN: usize = 0x0104;
+
+    static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+    unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code >= 0 && (wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN) {
+            let kb = &*(lparam as *const KBDLLHOOKSTRUCT);
+            if kb.vkCode == VK_N {
+                let ctrl = (GetAsyncKeyState(VK_CONTROL as i32) as i32 & 0x8000) != 0;
+                let alt = (GetAsyncKeyState(VK_MENU as i32) as i32 & 0x8000) != 0;
+                let shift = (GetAsyncKeyState(VK_SHIFT as i32) as i32 & 0x8000) != 0;
+                if ctrl && alt && !shift {
+                    eprintln!("info: Ctrl+Alt+N pressed; raising the window");
+                    if let Some(app) = APP.get() {
+                        let _ = app.clone().run_on_main_thread(move || super::raise_main_window(app));
+                    }
+                    // Swallow the key so no other process ever sees Ctrl+Alt+N.
+                    return 1;
+                }
+            }
+        }
+        CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+    }
+
+    /// Install the hook and pump its message queue on a background thread. The
+    /// hook lives as long as the thread (and therefore the app) does; Windows
+    /// removes it automatically when the thread exits.
+    pub fn install(app: tauri::AppHandle) {
+        let _ = APP.set(app);
+        std::thread::spawn(|| unsafe {
+            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), std::ptr::null_mut(), 0);
+            if hook.is_null() {
+                eprintln!("warning: could not install the Ctrl+Alt+N keyboard hook");
+                return;
+            }
+            eprintln!("info: Ctrl+Alt+N owned via a low-level keyboard hook");
+            let mut msg = std::mem::zeroed::<MSG>();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            UnhookWindowsHookEx(hook);
+        });
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+
+    // On Windows the combination is taken via the low-level keyboard hook, which
+    // wins over any other process's registration. The global-shortcut plugin is
+    // the equivalent mechanism on the other platforms.
+    #[cfg(not(target_os = "windows"))]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    builder
+        .setup(|app| {
+            // Ctrl+Alt+N is a system-wide shortcut: it brings the window back
+            // into view no matter what the user is doing. Wired up in Rust,
+            // because the webview never sees keys while the app is in the
+            // background.
+            #[cfg(target_os = "windows")]
+            hotkey::install(app.handle().clone());
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                let shortcut = "ctrl+alt+n"
+                    .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                    .expect("valid accelerator");
+                if let Err(error) = app
+                    .global_shortcut()
+                    .on_shortcut(shortcut, |app, _shortcut, event| {
+                        if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            eprintln!("info: Ctrl+Alt+N pressed; raising the window");
+                            raise_main_window(app);
+                        }
+                    })
+                {
+                    // A hotkey conflict must never stop the app from starting;
+                    // the shortcut just does not work until it goes away.
+                    eprintln!("warning: could not register the Ctrl+Alt+N global shortcut: {error}");
+                } else {
+                    eprintln!("info: registered the Ctrl+Alt+N global shortcut");
+                }
+            }
+            Ok(())
+        })
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             open_vault,
