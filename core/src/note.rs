@@ -1,6 +1,6 @@
 //! Markdown note representation: frontmatter parsing and serialization.
 //!
-//! The frontmatter schema is fixed and tiny (five keys), so it is parsed by hand
+//! The frontmatter schema is fixed and small, so it is parsed by hand
 //! rather than pulling in a full YAML crate. Anything we did not write ourselves
 //! is tolerated: missing keys are filled with defaults so that a plain `.md` file
 //! dropped into the vault by another editor still opens cleanly.
@@ -53,6 +53,8 @@ pub struct Frontmatter {
     /// Absolute path of a software project this idea is linked to. The note is
     /// mirrored into that project's root so it can be worked on in place.
     pub project: Option<String>,
+    /// Whether this idea is currently paused/on hold in the sidebar.
+    pub on_hold: bool,
     /// Per-bubble model assignment for idea notes: the first line of a bubble
     /// maps to the model that bubble's prompt targets.
     pub models: BTreeMap<String, String>,
@@ -93,6 +95,7 @@ impl Note {
                 source: None,
                 position: None,
                 project: None,
+                on_hold: false,
                 models: BTreeMap::new(),
                 bubble_tags: BTreeMap::new(),
                 created: now.clone(),
@@ -161,6 +164,16 @@ impl Note {
             .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, Vec<String>>>(v).ok())
             .unwrap_or_default();
 
+        let on_hold = optional("onHold")
+            .or_else(|| optional("on_hold"))
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "true" | "yes" | "1"
+                )
+            })
+            .unwrap_or(false);
+
         Note {
             frontmatter: Frontmatter {
                 id,
@@ -171,6 +184,7 @@ impl Note {
                 source: optional("source"),
                 position: optional("position").and_then(|v| v.parse().ok()),
                 project: optional("project"),
+                on_hold,
                 models,
                 bubble_tags,
                 created,
@@ -205,6 +219,9 @@ impl Note {
         }
         if let Some(project) = &fm.project {
             extras.push_str(&format!("project: {}\n", quote(project)));
+        }
+        if fm.on_hold {
+            extras.push_str("onHold: true\n");
         }
         if !fm.models.is_empty() {
             if let Ok(json) = serde_json::to_string(&fm.models) {
@@ -615,6 +632,18 @@ mod tests {
 
         let plain = Note::new("x", "y".into());
         assert!(!plain.to_markdown().contains("bubbleTags:"));
+    }
+
+    #[test]
+    fn round_trips_on_hold_status() {
+        let mut note = Note::new("Paused idea", "A project to revisit later.".into());
+        note.frontmatter.on_hold = true;
+        let markdown = note.to_markdown();
+        assert!(markdown.contains("onHold: true"));
+        assert!(Note::parse(&markdown, "fallback").frontmatter.on_hold);
+
+        let plain = Note::new("Active idea", "Keep moving.".into());
+        assert!(!plain.to_markdown().contains("onHold:"));
     }
 
     #[test]

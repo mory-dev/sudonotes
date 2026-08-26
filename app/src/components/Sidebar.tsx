@@ -75,6 +75,33 @@ function paragraphOutline(body: string): { start: number; label: string }[] {
   return out;
 }
 
+/** The small hover target used to mark an idea as paused/on hold. */
+function IdeaHoldToggle({ note }: { note: NoteMeta }) {
+  const setNoteOnHold = useStore((s) => s.setNoteOnHold);
+
+  const toggleOnHold = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void setNoteOnHold(note.id, !note.onHold);
+  };
+
+  return (
+    <button
+      type="button"
+      className={note.onHold ? "idea-hold-toggle on" : "idea-hold-toggle"}
+      aria-pressed={note.onHold}
+      aria-label={note.onHold ? `Resume ${note.title}` : `Put ${note.title} on hold`}
+      data-tooltip={
+        note.onHold ? "On hold · Click to resume" : "Active · Click to put on hold"
+      }
+      onClick={toggleOnHold}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <span className="idea-hold-orb" aria-hidden="true" />
+    </button>
+  );
+}
+
 function NoteRow({
   note,
   drag,
@@ -116,7 +143,7 @@ function NoteRow({
   const dragHint = drag ? "Drag to reorder" : "Dragging disabled while auto-sorted";
 
   return (
-    <li data-type={note.type}>
+    <li className={note.type === "idea" ? "idea-note-row" : undefined} data-type={note.type}>
       <button
         className={classes}
         data-drag-key={drag?.["data-drag-key"]}
@@ -162,6 +189,7 @@ function NoteRow({
           </span>
         )}
       </button>
+      {note.type === "idea" && <IdeaHoldToggle note={note} />}
     </li>
   );
 }
@@ -255,11 +283,15 @@ function Collection({
     .filter(Boolean)
     .join(" ");
   const dragHint = drag ? "Drag to reorder" : "Dragging disabled while auto-sorted";
+  const isIdeaCollection = parent?.type === "idea";
 
   return (
-    <li className="collection" data-type={parent?.type ?? notes[0]?.type ?? "prompt"}>
+    <li
+      className={isIdeaCollection ? "collection idea-collection" : "collection"}
+      data-type={parent?.type ?? notes[0]?.type ?? "prompt"}
+    >
       <div
-        className={headClasses}
+        className={isIdeaCollection ? `${headClasses} idea-collection-head` : headClasses}
         data-note-id={parent?.id}
         data-note-title={parent?.title ?? name}
         data-note-type={parent?.type ?? notes[0]?.type ?? "prompt"}
@@ -280,6 +312,7 @@ function Collection({
         </button>
         <ModelStack notes={notes} />
         <span className="count">{notes.length}</span>
+        {isIdeaCollection && parent ? <IdeaHoldToggle note={parent} /> : null}
       </div>
       {open && (
         <ul className="note-list nested">

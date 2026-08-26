@@ -1116,6 +1116,69 @@ kbd {
   background: var(--panel-2);
 }
 
+/* Idea status orb: it stays quiet until the row is hovered, then offers a
+   small muted target. An on-hold idea keeps its amber orb visible at rest. */
+.idea-note-row {
+  position: relative;
+}
+
+.idea-note-row .note-item {
+  padding-right: 30px;
+}
+
+.idea-collection-head {
+  position: relative;
+  padding-right: 30px;
+}
+
+.idea-hold-toggle {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.idea-note-row:hover .idea-hold-toggle,
+.idea-collection-head:hover .idea-hold-toggle,
+.idea-hold-toggle:focus-visible,
+.idea-hold-toggle.on {
+  opacity: 1;
+}
+
+.idea-hold-orb {
+  width: 8px;
+  height: 8px;
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.idea-hold-toggle:hover {
+  background: var(--panel-2);
+}
+
+.idea-hold-toggle.on {
+  color: var(--warning);
+}
+
+.idea-hold-toggle.on .idea-hold-orb {
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.16);
+}
+
 /* The reorder drag runs on pointer events, so the cursor and text selection are
    ours to set — the browser is not running a drag of its own here. */
 body.row-dragging {

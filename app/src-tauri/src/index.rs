@@ -13,7 +13,7 @@ use serde::Serialize;
 use crate::note::{extract_links, Note, NoteType};
 use crate::vault::{title_from_path, Vault};
 
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteMeta {
@@ -32,6 +32,9 @@ pub struct NoteMeta {
     pub position: Option<u32>,
     /// Project folder a linked idea mirrors into, if any.
     pub project: Option<String>,
+    /// Whether this idea is paused/on hold in the sidebar.
+    #[serde(rename = "onHold")]
+    pub on_hold: bool,
     /// Favicon of the linked project, populated by the list command.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
@@ -124,6 +127,7 @@ impl Index {
                  collection TEXT NOT NULL DEFAULT '',
                  summary    TEXT NOT NULL DEFAULT '',
                  project    TEXT NOT NULL DEFAULT '',
+                 on_hold    INTEGER NOT NULL DEFAULT 0,
                  model      TEXT NOT NULL DEFAULT '',
                  position   INTEGER,
                  created TEXT NOT NULL,
@@ -207,7 +211,7 @@ impl Index {
 
     pub fn list(&self, note_type: Option<NoteType>) -> rusqlite::Result<Vec<NoteMeta>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, type, tags, collection, summary, updated, project, model, position, bubbles FROM notes
+            "SELECT id, title, type, tags, collection, summary, updated, project, on_hold, model, position, bubbles FROM notes
              WHERE (?1 IS NULL OR type = ?1)
              ORDER BY updated DESC",
         )?;
@@ -222,10 +226,11 @@ impl Index {
                 summary: non_empty(r.get::<_, String>(5)?),
                 updated: r.get(6)?,
                 project: non_empty(r.get::<_, String>(7)?),
-                model: non_empty(r.get::<_, String>(8)?),
-                position: r.get(9)?,
+                on_hold: r.get::<_, i64>(8)? != 0,
+                model: non_empty(r.get::<_, String>(9)?),
+                position: r.get(10)?,
                 icon: None,
-                bubbles: r.get(10)?,
+                bubbles: r.get(11)?,
             })
         })?;
         rows.collect()
@@ -311,7 +316,7 @@ impl Index {
     /// Notes whose body contains a `[[link]]` pointing at `title`.
     pub fn backlinks(&self, title: &str) -> rusqlite::Result<Vec<NoteMeta>> {
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT n.id, n.title, n.type, n.tags, n.collection, n.summary, n.updated, n.project, n.model, n.position, n.bubbles
+            "SELECT DISTINCT n.id, n.title, n.type, n.tags, n.collection, n.summary, n.updated, n.project, n.on_hold, n.model, n.position, n.bubbles
              FROM links l
              JOIN notes n ON n.id = l.src_id
              WHERE lower(l.target_title) = lower(?1)
@@ -327,10 +332,11 @@ impl Index {
                 summary: non_empty(r.get::<_, String>(5)?),
                 updated: r.get(6)?,
                 project: non_empty(r.get::<_, String>(7)?),
-                model: non_empty(r.get::<_, String>(8)?),
-                position: r.get(9)?,
+                on_hold: r.get::<_, i64>(8)? != 0,
+                model: non_empty(r.get::<_, String>(9)?),
+                position: r.get(10)?,
                 icon: None,
-                bubbles: r.get(10)?,
+                bubbles: r.get(11)?,
             })
         })?;
         rows.collect()
@@ -353,8 +359,8 @@ fn upsert_in(
     conn.execute("DELETE FROM links WHERE src_id = ?1", params![fm.id])?;
 
     conn.execute(
-        "INSERT INTO notes (id, path, type, title, tags, collection, summary, project, model, position, created, updated, mtime, bubbles)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        "INSERT INTO notes (id, path, type, title, tags, collection, summary, project, on_hold, model, position, created, updated, mtime, bubbles)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             fm.id,
             key,
@@ -364,6 +370,7 @@ fn upsert_in(
             collection_of(path, note).unwrap_or_default(),
             fm.summary.clone().unwrap_or_default(),
             fm.project.clone().unwrap_or_default(),
+            if fm.on_hold { 1 } else { 0 },
             fm.model.clone().unwrap_or_default(),
             fm.position,
             fm.created,

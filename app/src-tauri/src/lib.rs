@@ -48,6 +48,8 @@ struct NoteDetail {
     position: Option<u32>,
     /// Project folder this idea is linked to, if any.
     project: Option<String>,
+    /// Whether this idea is currently paused/on hold in the sidebar.
+    on_hold: bool,
     /// Per-bubble model assignment for idea notes: bubble first line -> model.
     models: BTreeMap<String, String>,
     /// Per-bubble tags for idea notes: bubble first line -> tags.
@@ -777,12 +779,13 @@ fn read_note(id: String, state: State<AppState>) -> Result<NoteDetail> {
             tags: fm.tags,
             summary: fm.summary,
             model: fm.model,
-                collection: fm.source,
-                position: fm.position,
-                project: fm.project,
-                models: fm.models,
-                bubble_tags: fm.bubble_tags,
-                created: fm.created,
+            collection: fm.source,
+            position: fm.position,
+            project: fm.project,
+            on_hold: fm.on_hold,
+            models: fm.models,
+            bubble_tags: fm.bubble_tags,
+            created: fm.created,
             updated: fm.updated,
             body: note.body,
             path: path.to_string_lossy().to_string(),
@@ -1122,6 +1125,12 @@ fn set_bubble_model(
             .map_err(|e| err("could not index note", e))?;
         Ok(note.frontmatter.models)
     })
+}
+
+/// Toggle the paused/on-hold marker shown beside an idea in the sidebar.
+#[tauri::command]
+fn set_note_on_hold(id: String, on_hold: bool, state: State<AppState>) -> Result<()> {
+    save(&state, &id, |note| note.frontmatter.on_hold = on_hold)
 }
 
 /// Replace the tags attached to one idea bubble. Empty tag lists clear the
@@ -2189,6 +2198,7 @@ pub fn run() {
             restore_backup,
             write_note,
             update_model,
+            set_note_on_hold,
             set_bubble_model,
             set_bubble_tags,
             rename_note,

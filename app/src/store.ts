@@ -250,6 +250,8 @@ interface AppState {
   pasteIntoCollection: (text: string, forceOne?: boolean) => Promise<void>;
   queueSave: (id: string, body: string) => void;
   updateModel: (model: string | null) => Promise<void>;
+  /** Toggle the paused/on-hold marker for an idea in the sidebar. */
+  setNoteOnHold: (id: string, onHold: boolean) => Promise<void>;
   /** Assign a model to the bubble whose first line is `key`. */
   setBubbleModel: (key: string, model: string | null) => Promise<void>;
   /** Replace the tags attached to the bubble whose first line is `key`. */
@@ -698,6 +700,17 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await api.updateModel(active.id, model);
       set({ active: { ...active, model } });
+      await get().refresh();
+    } catch (e) {
+      set({ error: message(e) });
+    }
+  },
+
+  setNoteOnHold: async (id, onHold) => {
+    try {
+      await api.setNoteOnHold(id, onHold);
+      const active = get().active;
+      if (active?.id === id) set({ active: { ...active, onHold } });
       await get().refresh();
     } catch (e) {
       set({ error: message(e) });

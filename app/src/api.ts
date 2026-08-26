@@ -17,6 +17,8 @@ export interface NoteMeta {
   position?: number | null;
   /** Project folder a linked idea mirrors into, if any. */
   project?: string | null;
+  /** Whether this idea is currently paused/on hold in the sidebar. */
+  onHold: boolean;
   /** Favicon of the linked project, when one was found. */
   icon?: string | null;
   /** Blank-line separated groups in the body. Shown beside an idea's title. */
@@ -199,6 +201,9 @@ export const api = {
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),
+  /** Toggle the paused/on-hold marker shown beside an idea. */
+  setNoteOnHold: (id: string, onHold: boolean) =>
+    invoke<void>("set_note_on_hold", { id, onHold }),
   /** Assign the model a bubble's prompt targets, keyed by its first line. */
   setBubbleModel: (id: string, key: string, model: string) =>
     invoke<Record<string, string>>("set_bubble_model", { id, key, model }),
