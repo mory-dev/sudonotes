@@ -18,6 +18,11 @@ description: |
   - IDEAS.md mirroring: links ideas directly into your software repository.
   - Fast SQLite FTS5 full-text search (Ctrl+K) and bi-directional [[wiki-links]].
   - Lightweight: built with Tauri (~20MB memory footprint).
+license: MIT
+website: https://sudonotes.com
+issues: https://github.com/mory-dev/sudonotes/issues
+source-code: https://github.com/mory-dev/sudonotes
+icon: app/src-tauri/icons/icon.png
 grade: stable
 confinement: strict
 layout:
