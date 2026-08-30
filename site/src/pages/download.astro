@@ -86,6 +86,13 @@ const hasInstaller = !!(release && (release.windows || release.linux));
           release is built from the public source on GitHub.
         </p>
 
+        <div class="auto-download" id="auto-download" hidden aria-live="polite">
+          <span id="auto-download-message"></span>{" "}
+          <a id="auto-download-link" href="">Download now</a>
+          <span id="cancel-auto-download-separator" aria-hidden="true"> · </span>
+          <button id="cancel-auto-download" type="button">Cancel</button>
+        </div>
+
         <div class="download-grid">
           <div class="download-card">
             <span class="download-platform">
@@ -106,6 +113,16 @@ const hasInstaller = !!(release && (release.windows || release.linux));
                 <span class="download-meta" data-download-meta="windows">
                   {release!.windows.name} · {formatSize(release!.windows.size)}
                 </span>
+                <div class="card-store-divider">
+                  <span>or get from store</span>
+                </div>
+                <div class="store-badge-wrap">
+                  <a href="https://apps.microsoft.com/detail/sudonotes" rel="noopener">
+                    <img src="/badges/microsoft-store-badge.png" alt="Download from the Microsoft Store" height="40" class="store-badge-img" />
+                  </a>
+                </div>
+                <span class="cli-label">Or with winget:</span>
+                <pre class="cli-box"><code>winget install sudonotes</code></pre>
               </>
             ) : (
               <span class="download-meta">Coming soon</span>
@@ -131,19 +148,21 @@ const hasInstaller = !!(release && (release.windows || release.linux));
                 <span class="download-meta" data-download-meta="linux">
                   {release!.linux.name} · {formatSize(release!.linux.size)}
                 </span>
+                <div class="card-store-divider">
+                  <span>or get from store</span>
+                </div>
+                <div class="store-badge-wrap">
+                  <a href="https://snapcraft.io/sudonotes" rel="noopener">
+                    <img src="/badges/snap-store-badge.png" alt="Get it from the Snap Store" height="40" class="store-badge-img" />
+                  </a>
+                </div>
+                <span class="cli-label">Or with snap:</span>
+                <pre class="cli-box"><code>sudo snap install sudonotes</code></pre>
               </>
             ) : (
               <span class="download-meta">Coming soon</span>
             )}
           </div>
-
-        </div>
-
-        <div class="auto-download" id="auto-download" hidden aria-live="polite">
-          <span id="auto-download-message"></span>{" "}
-          <a id="auto-download-link" href="">Download now</a>
-          <span id="cancel-auto-download-separator" aria-hidden="true"> · </span>
-          <button id="cancel-auto-download" type="button">Cancel</button>
         </div>
 
         <p class="coming-soon">
@@ -160,16 +179,7 @@ const hasInstaller = !!(release && (release.windows || release.linux));
           </a>
           .
         </div>
-
-        <h2>Install with a package manager</h2>
-        <p>
-          <a class="snap-store-link" href="https://snapcraft.io/sudonotes" rel="noopener">
-            <Icon path={SNAP} size={16} label="Snap Store" />
-            Get it from the Snap Store — <code>snap install sudonotes</code>
-          </a>
-        </p>
-        <div class="note">
-          <strong>Or with apt</strong> (Ubuntu 22.04+):
+          <strong>Or with apt</strong> (Ubuntu 22.04+ / Debian):
 <pre><code>sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://sudonotes.com/apt/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/sudonotes.gpg
 # The line below is one line:
@@ -459,15 +469,64 @@ sudo apt update && sudo apt install sudonotes</code></pre>
 
   .platform-line {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 9px;
   }
 
-+
-+  .snap-store-link {
-+    display: inline-flex;
-+    align-items: center;
-+    gap: 7px;
-+  }
-</style>
+  .platform-line .platforms {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .card-store-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 14px 0 6px;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    width: 100%;
+  }
+
+  .card-store-divider::before,
+  .card-store-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .card-store-divider span {
+    padding: 0 8px;
+  }
+
+  .store-badge-wrap {
+    display: flex;
+    align-items: center;
+    margin-top: 2px;
+  }
+
+  .store-badge-img {
+    display: block;
+    height: 40px;
+    width: auto;
+    border-radius: 6px;
+  }
+
+  .cli-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .cli-box {
+    margin: 2px 0 0 !important;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 12px !important;
+    padding: 8px 10px !important;
+  }
 </style>
