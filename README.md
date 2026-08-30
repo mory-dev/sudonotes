@@ -2,13 +2,43 @@
 
 # sudonotes
 
-A lightweight, local-first notebook for **prompts** and **ideas**.
+A lightweight, local-first Markdown notebook for **AI prompts** and **ideas**.
 
-[Website](https://sudonotes.com) · [Documentation](https://sudonotes.com/docs) · [Download](https://sudonotes.com/download)
+[![Snap Store](https://snapcraft.io/sudonotes/badge.svg)](https://snapcraft.io/sudonotes)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github/v/release/mory-dev/sudonotes)](https://github.com/mory-dev/sudonotes/releases/latest)
+
+[Website](https://sudonotes.com) · [Documentation](https://sudonotes.com/docs) · [Downloads](https://sudonotes.com/download)
+
+---
 
 ## Install
 
-Install from the Snap Store with `snap install sudonotes`, or add the signed apt repository (Ubuntu 22.04+):
+### Windows
+
+<a href="https://apps.microsoft.com/detail/sudonotes">
+  <img src=".github/assets/microsoft-store-badge.png" alt="Download from the Microsoft Store" height="48" />
+</a>
+
+Or install with the Windows Package Manager (`winget`):
+
+```powershell
+winget install sudonotes
+```
+
+Standalone installer: [sudonotes for Windows (x64)](https://sudonotes.com/downloads/sudonotes_0.3.5_x64-setup.exe).
+
+### Linux
+
+<a href="https://snapcraft.io/sudonotes">
+  <img src=".github/assets/snap-store-badge.png" alt="Get it from the Snap Store" height="48" />
+</a>
+
+```bash
+sudo snap install sudonotes
+```
+
+Or configure the signed **APT repository** (Ubuntu 22.04+ / Debian):
 
 ```bash
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -16,6 +46,8 @@ curl -fsSL https://sudonotes.com/apt/key.asc | sudo gpg --dearmor -o /etc/apt/ke
 echo "deb [signed-by=/etc/apt/keyrings/sudonotes.gpg] https://sudonotes.com/apt stable main" | sudo tee /etc/apt/sources.list.d/sudonotes.list
 sudo apt update && sudo apt install sudonotes
 ```
+
+---
 
 LLM prompts end up scattered across chat histories, scratch files, and half-abandoned Notion pages. They get rewritten from scratch instead of refined. sudonotes keeps them in one place, links them to the ideas that motivated them, and finds them again instantly.
 
