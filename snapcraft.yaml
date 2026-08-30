@@ -1,12 +1,23 @@
 name: sudonotes
 base: core22
 version: '0.3.5'
-summary: A lightweight, local-first notebook for prompts and ideas
+summary: Lightweight, local-first notebook for AI prompts, templates & linked ideas
 description: |
-  LLM prompts end up scattered across chat histories, scratch files, and half-abandoned
-  Notion pages. sudonotes keeps them in one place, links them to the ideas that motivated
-  them, and finds them again instantly. Local-first: plain Markdown files in a folder you
-  choose. No account, no sync, no lock-in.
+  sudonotes is a lightweight, local-first notebook designed specifically for organizing
+  AI prompts, reusable templates, and brainstormed ideas.
+
+  Prompts often end up scattered across chat histories, scratch files, and abandoned docs.
+  When you need them again, you rewrite them from scratch. sudonotes keeps your prompt
+  engineering refined, links prompts to the ideas that motivated them, and lets you find
+  them instantly.
+
+  Features:
+  - Local-first: plain Markdown files in a folder you choose. No account, no sync, no lock-in.
+  - Prompt templates with {{placeholders}} for quick fill-and-copy.
+  - Idea bubbles: split brainstorms into blocks and point each at its optimal AI model.
+  - IDEAS.md mirroring: links ideas directly into your software repository.
+  - Fast SQLite FTS5 full-text search (Ctrl+K) and bi-directional [[wiki-links]].
+  - Lightweight: built with Tauri (~20MB memory footprint).
 grade: stable
 confinement: strict
 layout:
