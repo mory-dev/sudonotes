@@ -170,6 +170,8 @@ jobs:
           mkdir -p /tmp/debs
           gh release download "${{ github.ref_name }}" --repo "$GITHUB_REPOSITORY" --pattern '*.deb' --dir /tmp/debs
           bash scripts/make-apt-repo.sh /tmp/debs site/public/apt
+          mkdir -p site/public/downloads
+          gh release download "${{ github.ref_name }}" --repo "$GITHUB_REPOSITORY" --pattern '*.exe' --dir site/public/downloads
       - run: npm ci
         working-directory: site
       - run: npm run deploy
