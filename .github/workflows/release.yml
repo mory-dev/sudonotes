@@ -166,7 +166,9 @@ jobs:
             echo "deb [signed-by=/etc/apt/keyrings/sudonotes.gpg] https://sudonotes.com/apt stable main" > /etc/apt/sources.list.d/sudonotes.list
             apt-get update -qq
             apt-get install -y -qq sudonotes
-            version=$(sudonotes --version 2>/dev/null || dpkg-query -W -f="${Version}" sudonotes)
+            # \${Version} escapes for the container's bash, which otherwise
+            # expands the variable to empty before dpkg-query sees the format.
+            version=$(sudonotes --version 2>/dev/null || dpkg-query -W -f="\${Version}" sudonotes)
             echo "installed $version"
             [ "$version" = "${TAG#v}" ]
           '
