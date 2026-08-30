@@ -143,7 +143,9 @@ jobs:
           sed -i "s/^version: .*/version: ${VERSION}/" snapcraft.yaml
       - name: Build remotely and publish
         run: |
-          snapcraft remote-build --build-for amd64 --launchpad-timeout 3600
+          # --launchpad-accept-public-upload: required in non-interactive runs;
+          # the source is already public (this repo is), so it is safe.
+          snapcraft remote-build --build-for amd64 --launchpad-timeout 3600 --launchpad-accept-public-upload
           snapcraft upload --release=stable sudonotes_*_amd64.snap
 
   # The downloads page is a static Cloudflare Worker. Rebuild it only after
