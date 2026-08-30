@@ -49,6 +49,7 @@ parts:
     source: .
     override-build: |
       set -eu
+      rustup default stable
       cd app
       npm ci
       npm run tauri build -- --bundles deb
