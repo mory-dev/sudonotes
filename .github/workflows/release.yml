@@ -166,11 +166,7 @@ jobs:
             echo "deb [signed-by=/etc/apt/keyrings/sudonotes.gpg] https://sudonotes.com/apt stable main" > /etc/apt/sources.list.d/sudonotes.list
             apt-get update -qq
             apt-get install -y -qq sudonotes
-            # \${Version} escapes for the container's bash, which otherwise
-            # expands the variable to empty before dpkg-query sees the format.
-            # The GUI binary is not run here: headless it has no --version
-            # handling, and launching it in a container is pointless.
-            version=$(dpkg-query -W -f="\${Version}" sudonotes)
+            version=$(dpkg-query -W sudonotes | cut -f2)
             echo "installed $version"
             [ "$version" = "${TAG#v}" ]
           '
