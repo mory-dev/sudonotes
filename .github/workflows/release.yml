@@ -118,6 +118,30 @@ jobs:
           sha256sum * > checksums.txt
           gh release upload "$TAG" checksums.txt --repo "$GITHUB_REPOSITORY" --clobber
 
+  snap:
+    name: publish snap
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set version in snapcraft.yaml
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version: .*/version: '${VERSION}'/" snapcraft.yaml
+
+      - name: Build Snap
+        uses: snapcore/action-build@v1
+        id: snapcraft
+
+      - name: Publish Snap to Store
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_LOGIN }}
+        with:
+          snap: ${{ steps.snapcraft.outputs.snap }}
+          release: stable
+
   # The downloads page is a static Cloudflare Worker. Rebuild it only after
   # the release assets exist, otherwise its build-time GitHub API lookup can
   # bake in the previous version (especially for Linux packages).
