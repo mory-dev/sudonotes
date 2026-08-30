@@ -118,36 +118,6 @@ jobs:
           sha256sum * > checksums.txt
           gh release upload "$TAG" checksums.txt --repo "$GITHUB_REPOSITORY" --clobber
 
-  # Snap Store publish. Tag pushes only — a workflow_dispatch rehearsal must
-  # not touch the store.
-  snap:
-    name: publish snap
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install snapcraft
-        run: |
-          sudo snap wait system seed.loaded
-          sudo snap install snapcraft --classic
-      # Modern snapcraft has no `login --with` and refuses `login` without a
-      # keyring: auth comes from the exported credentials in the env var.
-      - name: Login to the store
-        run: |
-          echo "${{ secrets.SNAPCRAFT_STORE_LOGIN }}" > store-login.json
-          export SNAPCRAFT_STORE_CREDENTIALS="$(cat store-login.json)"
-          snapcraft whoami
-      - name: Set version from the tag
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          sed -i "s/^version: .*/version: ${VERSION}/" snapcraft.yaml
-      - name: Build remotely and publish
-        run: |
-          # --launchpad-accept-public-upload: required in non-interactive runs;
-          # the source is already public (this repo is), so it is safe.
-          snapcraft remote-build --build-for amd64 --launchpad-timeout 3600 --launchpad-accept-public-upload
-          snapcraft upload --release=stable sudonotes_*_amd64.snap
-
   # The downloads page is a static Cloudflare Worker. Rebuild it only after
   # the release assets exist, otherwise its build-time GitHub API lookup can
   # bake in the previous version (especially for Linux packages).
