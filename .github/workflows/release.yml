@@ -168,7 +168,9 @@ jobs:
             apt-get install -y -qq sudonotes
             # \${Version} escapes for the container's bash, which otherwise
             # expands the variable to empty before dpkg-query sees the format.
-            version=$(sudonotes --version 2>/dev/null || dpkg-query -W -f="\${Version}" sudonotes)
+            # The GUI binary is not run here: headless it has no --version
+            # handling, and launching it in a container is pointless.
+            version=$(dpkg-query -W -f="\${Version}" sudonotes)
             echo "installed $version"
             [ "$version" = "${TAG#v}" ]
           '
