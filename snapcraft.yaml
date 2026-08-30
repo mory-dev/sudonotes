@@ -52,7 +52,7 @@ parts:
       rustup default stable
       cd app
       npm ci
-      npm run tauri build -- --bundles deb
+      npm run tauri build -- --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
       cd ..
       dpkg -x app/src-tauri/target/release/bundle/deb/*.deb $SNAPCRAFT_PART_INSTALL/
       sed -i -e "s|Icon=sudonotes|Icon=/usr/share/icons/hicolor/32x32/apps/sudonotes.png|g" \
