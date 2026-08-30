@@ -6,6 +6,17 @@ A lightweight, local-first notebook for **prompts** and **ideas**.
 
 [Website](https://sudonotes.com) · [Documentation](https://sudonotes.com/docs) · [Download](https://sudonotes.com/download)
 
+## Install
+
+Install from the Snap Store with `snap install sudonotes`, or add the signed apt repository (Ubuntu 22.04+):
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://sudonotes.com/apt/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/sudonotes.gpg
+echo "deb [signed-by=/etc/apt/keyrings/sudonotes.gpg] https://sudonotes.com/apt stable main" | sudo tee /etc/apt/sources.list.d/sudonotes.list
+sudo apt update && sudo apt install sudonotes
+```
+
 LLM prompts end up scattered across chat histories, scratch files, and half-abandoned Notion pages. They get rewritten from scratch instead of refined. sudonotes keeps them in one place, links them to the ideas that motivated them, and finds them again instantly.
 
 - **Local-first.** Your notes are plain Markdown files in a folder you choose. No account, no sync, no lock-in.

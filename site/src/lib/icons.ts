@@ -13,11 +13,12 @@
  * two flagged below are meant to be stroked.
  */
 
-import { siApple, siGithub, siLinux } from "simple-icons";
+import { siApple, siGithub, siLinux, siSnapcraft } from "simple-icons";
 
 export const APPLE = siApple.path;
 export const GITHUB = siGithub.path;
 export const LINUX = siLinux.path;
+export const SNAP = siSnapcraft.path;
 
 /** The four panes of the Windows 11 logo, sized to fill as much of the canvas
  *  as the brand marks beside it do — at a smaller bounding box it read as the

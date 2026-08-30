@@ -118,6 +118,34 @@ jobs:
           sha256sum * > checksums.txt
           gh release upload "$TAG" checksums.txt --repo "$GITHUB_REPOSITORY" --clobber
 
+  # Snap Store publish. Tag pushes only — a workflow_dispatch rehearsal must
+  # not touch the store.
+  snap:
+    name: publish snap
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install snapcraft
+        run: |
+          sudo snap wait system seed.loaded
+          sudo snap install snapcraft --classic
+      # Modern snapcraft has no `login --with` and refuses `login` without a
+      # keyring: auth comes from the exported credentials in the env var.
+      - name: Login to the store
+        run: |
+          echo "${{ secrets.SNAPCRAFT_STORE_LOGIN }}" > store-login.json
+          export SNAPCRAFT_STORE_CREDENTIALS="$(cat store-login.json)"
+          snapcraft whoami
+      - name: Set version from the tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version: .*/version: ${VERSION}/" snapcraft.yaml
+      - name: Build remotely and publish
+        run: |
+          snapcraft remote-build --build-for amd64 --launchpad-timeout 3600
+          snapcraft upload --release=stable sudonotes_*_amd64.snap
+
   # The downloads page is a static Cloudflare Worker. Rebuild it only after
   # the release assets exist, otherwise its build-time GitHub API lookup can
   # bake in the previous version (especially for Linux packages).
@@ -135,7 +163,38 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
+      # The apt repository must be generated before the astro build: npm run
+      # deploy copies site/public/** (including the apt tree) into dist/.
+      - name: Build the apt repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          mkdir -p /tmp/debs
+          gh release download "${{ github.ref_name }}" --repo "$GITHUB_REPOSITORY" --pattern '*.deb' --dir /tmp/debs
+          bash scripts/make-apt-repo.sh /tmp/debs site/public/apt
       - run: npm ci
         working-directory: site
       - run: npm run deploy
         working-directory: site
+
+  apt-smoke:
+    name: apt repo smoke test
+    needs: deploy-site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install from the published repo in a clean container
+        run: |
+          docker run --rm -e TAG="${{ github.ref_name }}" ubuntu:24.04 bash -c '
+            set -e
+            apt-get update -qq && apt-get install -y -qq curl ca-certificates gpg >/dev/null
+            install -d -m 0755 /etc/apt/keyrings
+            curl -fsSL https://sudonotes.com/apt/key.asc | gpg --dearmor -o /etc/apt/keyrings/sudonotes.gpg
+            echo "deb [signed-by=/etc/apt/keyrings/sudonotes.gpg] https://sudonotes.com/apt stable main" > /etc/apt/sources.list.d/sudonotes.list
+            apt-get update -qq
+            apt-get install -y -qq sudonotes
+            version=$(sudonotes --version 2>/dev/null || dpkg-query -W -f="${Version}" sudonotes)
+            echo "installed $version"
+            [ "$version" = "${TAG#v}" ]
+          '

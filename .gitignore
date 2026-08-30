@@ -11,3 +11,7 @@ IDEAS.md
 !site/src/content/docs/ideas.md
 core/Cargo.lock
 /.vscode
+# Apt repository metadata under site/public/apt is rebuilt in CI from the
+# release's .deb; pool/ accumulates and dists/ is regenerated each run.
+site/public/apt/pool/
+site/public/apt/dists/

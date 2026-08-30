@@ -2,7 +2,7 @@
 import Base from "../layouts/Base.astro";
 import Icon from "../components/Icon.astro";
 import Wordmark from "../components/Wordmark.astro";
-import { APPLE, DOWNLOAD, GITHUB, LINUX, WINDOWS } from "../lib/icons";
+import { APPLE, DOWNLOAD, GITHUB, LINUX, SNAP, WINDOWS } from "../lib/icons";
 
 const repo = "https://github.com/mory-dev/sudonotes";
 const releasesUrl = "https://github.com/mory-dev/sudonotes/releases";
@@ -159,6 +159,22 @@ const hasInstaller = !!(release && (release.windows || release.linux));
             release page <span aria-hidden="true">↗</span>
           </a>
           .
+        </div>
+
+        <h2>Install with a package manager</h2>
+        <p>
+          <a class="snap-store-link" href="https://snapcraft.io/sudonotes" rel="noopener">
+            <Icon path={SNAP} size={16} label="Snap Store" />
+            Get it from the Snap Store — <code>snap install sudonotes</code>
+          </a>
+        </p>
+        <div class="note">
+          <strong>Or with apt</strong> (Ubuntu 22.04+):
+<pre><code>sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://sudonotes.com/apt/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/sudonotes.gpg
+# The line below is one line:
+echo "deb [signed-by=/etc/apt/keyrings/sudonotes.gpg] https://sudonotes.com/apt stable main" | sudo tee /etc/apt/sources.list.d/sudonotes.list
+sudo apt update && sudo apt install sudonotes</code></pre>
         </div>
 
         <h2>What you get</h2>
@@ -447,11 +463,11 @@ const hasInstaller = !!(release && (release.windows || release.linux));
     gap: 9px;
   }
 
-  .platforms {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    transform: translateY(2px);
-  }
++
++  .snap-store-link {
++    display: inline-flex;
++    align-items: center;
++    gap: 7px;
++  }
+</style>
 </style>
