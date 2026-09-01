@@ -77,14 +77,14 @@ function paragraphOutline(body: string): { start: number; label: string }[] {
 
 /** The small hover target used to mark an idea as in-progress (orange), complete (green), or unmarked (off). */
 export function IdeaHoldToggle({ note }: { note: NoteMeta }) {
-  const setNoteOnHold = useStore((s) => s.setNoteOnHold);
-  const markState = normalizeIdeaMark(note.onHold);
+  const setNoteMark = useStore((s) => s.setNoteMark);
+  const markState = normalizeIdeaMark(note.mark);
 
   const toggleMark = (event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    const nextState = nextIdeaMark(note.onHold);
-    void setNoteOnHold(note.id, nextState);
+    const nextState = nextIdeaMark(note.mark);
+    void setNoteMark(note.id, nextState);
   };
 
   const isPressed = markState !== "off";

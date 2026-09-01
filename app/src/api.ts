@@ -46,7 +46,7 @@ export interface NoteMeta {
   /** Project folder a linked idea mirrors into, if any. */
   project?: string | null;
   /** Idea marking state in the sidebar ("orange", "green", "off", or boolean for compatibility). */
-  onHold?: boolean | IdeaMarkState | string | null;
+  mark?: boolean | IdeaMarkState | string | null;
   /** Favicon of the linked project, when one was found. */
   icon?: string | null;
   /** Blank-line separated groups in the body. Shown beside an idea's title. */
@@ -318,8 +318,8 @@ export const api = {
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),
   /** Set or cycle the marking state shown beside an idea. */
-  setNoteOnHold: (id: string, onHold: boolean | IdeaMarkState | string) =>
-    invoke<void>("set_note_on_hold", { id, onHold }),
+  setNoteMark: (id: string, mark: boolean | IdeaMarkState | string) =>
+    invoke<void>("set_note_mark", { id, mark }),
   /** Assign the model a bubble's prompt targets, keyed by its first line. */
   setBubbleModel: (id: string, key: string, model: string) =>
     invoke<Record<string, string>>("set_bubble_model", { id, key, model }),

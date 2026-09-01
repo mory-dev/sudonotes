@@ -69,12 +69,12 @@ describe("IdeaHoldToggle component", () => {
     collection: null,
     summary: "Refactor sidebar",
     updated: "2026-09-01T00:00:00Z",
-    onHold: "off",
+    mark: "off",
   };
 
   it("renders the unmarked (off) state with correct terminology and accessibility attributes", () => {
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: "off" }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: "off" }} />);
     });
 
     const button = container.querySelector("button")!;
@@ -92,7 +92,7 @@ describe("IdeaHoldToggle component", () => {
 
   it("renders the orange (in progress / marked) state", () => {
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: "orange" }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: "orange" }} />);
     });
 
     const button = container.querySelector("button")!;
@@ -109,7 +109,7 @@ describe("IdeaHoldToggle component", () => {
 
   it("renders the green (active / complete) state", () => {
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: "green" }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: "green" }} />);
     });
 
     const button = container.querySelector("button")!;
@@ -124,27 +124,27 @@ describe("IdeaHoldToggle component", () => {
     expect(orb.className).toContain("orb-green");
   });
 
-  it("supports legacy boolean onHold (true -> orange, false -> off)", () => {
+  it("supports legacy boolean mark (true -> orange, false -> off)", () => {
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: true }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: true }} />);
     });
     let button = container.querySelector("button")!;
     expect(button.getAttribute("data-state")).toBe("orange");
     expect(button.getAttribute("aria-label")).toBe("Cycle mark for Project Redesign");
 
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: false }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: false }} />);
     });
     button = container.querySelector("button")!;
     expect(button.getAttribute("data-state")).toBe("off");
     expect(button.getAttribute("aria-label")).toBe("Mark Project Redesign");
   });
 
-  it("calls setNoteOnHold with next state on click: off -> orange", () => {
-    const spy = vi.spyOn(api, "setNoteOnHold").mockResolvedValue();
+  it("calls setNoteMark with next state on click: off -> orange", () => {
+    const spy = vi.spyOn(api, "setNoteMark").mockResolvedValue();
 
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: "off" }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: "off" }} />);
     });
 
     const button = container.querySelector("button")!;
@@ -155,11 +155,11 @@ describe("IdeaHoldToggle component", () => {
     expect(spy).toHaveBeenCalledWith("01TESTNOTEID", "orange");
   });
 
-  it("calls setNoteOnHold with next state on click: orange -> green", () => {
-    const spy = vi.spyOn(api, "setNoteOnHold").mockResolvedValue();
+  it("calls setNoteMark with next state on click: orange -> green", () => {
+    const spy = vi.spyOn(api, "setNoteMark").mockResolvedValue();
 
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: "orange" }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: "orange" }} />);
     });
 
     const button = container.querySelector("button")!;
@@ -170,11 +170,11 @@ describe("IdeaHoldToggle component", () => {
     expect(spy).toHaveBeenCalledWith("01TESTNOTEID", "green");
   });
 
-  it("calls setNoteOnHold with next state on click: green -> off", () => {
-    const spy = vi.spyOn(api, "setNoteOnHold").mockResolvedValue();
+  it("calls setNoteMark with next state on click: green -> off", () => {
+    const spy = vi.spyOn(api, "setNoteMark").mockResolvedValue();
 
     act(() => {
-      root.render(<IdeaHoldToggle note={{ ...baseNote, onHold: "green" }} />);
+      root.render(<IdeaHoldToggle note={{ ...baseNote, mark: "green" }} />);
     });
 
     const button = container.querySelector("button")!;
@@ -188,7 +188,7 @@ describe("IdeaHoldToggle component", () => {
   it("stops click and pointerdown propagation so parent row is not activated", () => {
     const parentClickSpy = vi.fn();
     const parentPointerSpy = vi.fn();
-    vi.spyOn(api, "setNoteOnHold").mockResolvedValue();
+    vi.spyOn(api, "setNoteMark").mockResolvedValue();
 
     act(() => {
       root.render(
@@ -247,7 +247,7 @@ describe("Sidebar integration with 3-state idea marking", () => {
           collection: null,
           summary: null,
           updated: "2026-09-01T00:00:00Z",
-          onHold: "orange",
+          mark: "orange",
         },
         {
           id: "idea-2",
@@ -257,7 +257,7 @@ describe("Sidebar integration with 3-state idea marking", () => {
           collection: null,
           summary: null,
           updated: "2026-09-01T00:00:00Z",
-          onHold: "green",
+          mark: "green",
         },
       ],
       active: null,
@@ -282,9 +282,9 @@ describe("Sidebar integration with 3-state idea marking", () => {
   });
 });
 
-describe("Store setNoteOnHold integration", () => {
+describe("Store setNoteMark integration", () => {
   it("persists mark state changes through api and updates store state", async () => {
-    const mockSetNoteOnHold = vi.spyOn(api, "setNoteOnHold").mockResolvedValue();
+    const mockSetNoteOnHold = vi.spyOn(api, "setNoteMark").mockResolvedValue();
     const mockListNotes = vi.spyOn(api, "listNotes").mockResolvedValue([]);
 
     useStore.setState({
@@ -297,7 +297,7 @@ describe("Store setNoteOnHold integration", () => {
           collection: null,
           summary: null,
           updated: "2026-09-01T00:00:00Z",
-          onHold: "off",
+          mark: "off",
         },
       ],
       active: {
@@ -308,12 +308,15 @@ describe("Store setNoteOnHold integration", () => {
         collection: null,
         summary: null,
         updated: "2026-09-01T00:00:00Z",
-        onHold: "off",
+        mark: "off",
         model: null,
         position: null,
         project: null,
         models: {},
         bubbleTags: {},
+        bubbleIssues: {},
+        issueStates: {},
+        remote: null,
         created: "2026-09-01T00:00:00Z",
         body: "First bubble",
         path: "ideas/My Idea.md",
@@ -321,19 +324,19 @@ describe("Store setNoteOnHold integration", () => {
     });
 
     // 1. Cycle to orange
-    await useStore.getState().setNoteOnHold("note-1", "orange");
+    await useStore.getState().setNoteMark("note-1", "orange");
     expect(mockSetNoteOnHold).toHaveBeenCalledWith("note-1", "orange");
-    expect(useStore.getState().active?.onHold).toBe("orange");
+    expect(useStore.getState().active?.mark).toBe("orange");
 
     // 2. Cycle to green
-    await useStore.getState().setNoteOnHold("note-1", "green");
+    await useStore.getState().setNoteMark("note-1", "green");
     expect(mockSetNoteOnHold).toHaveBeenCalledWith("note-1", "green");
-    expect(useStore.getState().active?.onHold).toBe("green");
+    expect(useStore.getState().active?.mark).toBe("green");
 
     // 3. Cycle to off
-    await useStore.getState().setNoteOnHold("note-1", "off");
+    await useStore.getState().setNoteMark("note-1", "off");
     expect(mockSetNoteOnHold).toHaveBeenCalledWith("note-1", "off");
-    expect(useStore.getState().active?.onHold).toBe("off");
+    expect(useStore.getState().active?.mark).toBe("off");
 
     mockSetNoteOnHold.mockRestore();
     mockListNotes.mockRestore();

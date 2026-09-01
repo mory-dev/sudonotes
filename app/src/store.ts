@@ -266,7 +266,7 @@ interface AppState {
   discardPendingSave: () => void;
   updateModel: (model: string | null) => Promise<void>;
   /** Cycle or set the idea marker for an idea in the sidebar. */
-  setNoteOnHold: (id: string, onHold: boolean | IdeaMarkState | string) => Promise<void>;
+  setNoteMark: (id: string, mark: boolean | IdeaMarkState | string) => Promise<void>;
   /** Assign a model to the bubble whose first line is `key`. */
   setBubbleModel: (key: string, model: string | null) => Promise<void>;
   /** Replace the tags attached to the bubble whose first line is `key`. */
@@ -776,12 +776,12 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  setNoteOnHold: async (id, onHold) => {
+  setNoteMark: async (id, mark) => {
     try {
-      await api.setNoteOnHold(id, onHold);
+      await api.setNoteMark(id, mark);
       const active = get().active;
-      if (active?.id === id) set({ active: { ...active, onHold } });
-      const notes = get().notes.map((n) => (n.id === id ? { ...n, onHold } : n));
+      if (active?.id === id) set({ active: { ...active, mark } });
+      const notes = get().notes.map((n) => (n.id === id ? { ...n, mark } : n));
       set({ notes });
       await get().refresh();
     } catch (e) {
