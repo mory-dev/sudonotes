@@ -10,6 +10,15 @@ import {
   type NoteMeta,
   type NoteType,
 } from "./api";
+import { editorStateCache } from "./editorStateCache";
+import { deleteHistory } from "./historyStorage";
+
+export interface EditorBridge {
+  deleteBubbleAt?: (start: number) => boolean;
+  moveBubble?: (fromIndex: number, toIndex: number) => boolean;
+}
+
+export const editorBridge: EditorBridge = {};
 
 const SAVE_DEBOUNCE_MS = 500;
 
@@ -419,6 +428,9 @@ export const useStore = create<AppState>((set, get) => ({
   deleteBubbleAt: (start) => {
     const active = get().active;
     if (!active || active.type !== "idea") return;
+    if (editorBridge.deleteBubbleAt?.(start)) {
+      return;
+    }
     const body = active.body ?? "";
     if (start < 0 || start >= body.length) return;
 
@@ -517,6 +529,7 @@ export const useStore = create<AppState>((set, get) => ({
       // Tagging history is keyed by note id, which only means anything within
       // one vault, and AI settings are stored per vault.
       tagged.clear();
+      editorStateCache.clear();
       set({ vaultPath: resolved, active: null, backlinks: [], analysis: null, error: null });
       await get().refresh();
       await get().loadAiSettings();
@@ -628,6 +641,9 @@ export const useStore = create<AppState>((set, get) => ({
   moveBubble: (fromIndex, toIndex) => {
     const active = get().active;
     if (!active || active.type !== "idea") return;
+    if (editorBridge.moveBubble?.(fromIndex, toIndex)) {
+      return;
+    }
     const body = active.body ?? "";
     const blocks = bubbleRanges(body);
     const n = blocks.length;
@@ -806,6 +822,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   remove: async (id) => {
     try {
+      editorStateCache.delete(id);
+      void deleteHistory(get().vaultPath ?? "", id);
       await api.deleteNote(id);
       if (get().active?.id === id) set({ active: null, backlinks: [] });
       await get().refresh();

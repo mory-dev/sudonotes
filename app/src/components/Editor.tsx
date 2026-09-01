@@ -7,7 +7,21 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
-import { defaultKeymap, history, historyKeymap, redo } from "@codemirror/commands";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  redo,
+  redoSelection,
+  undo,
+  undoSelection,
+} from "@codemirror/commands";
+import { editorStateCache } from "../editorStateCache";
+import {
+  flushPendingHistory,
+  loadHistoryState,
+  saveHistoryDebounced,
+} from "../historyStorage";
 import { markdown } from "@codemirror/lang-markdown";
 import {
   defaultHighlightStyle,
@@ -37,7 +51,7 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
-import { BUBBLE_END, BUBBLE_START, useStore } from "../store";
+import { BUBBLE_END, BUBBLE_START, editorBridge, useStore } from "../store";
 import { getUiZoom, viewportToLayout } from "../uiScale";
 import { tagHoverColor, tagPalette } from "../tagColors";
 import { ModelPicker } from "./ModelPicker";
@@ -480,7 +494,7 @@ const jumpHighlightEffect = StateEffect.define<{ from: number; to: number } | nu
 /** Marks transactions that move or restructure whole bubbles — reorder,
  *  delete, unwrap, merge — so they bypass the read-only guard on marker
  *  bubbles. Only the bubble's own actions carry it. */
-const bubbleOpEffect = StateEffect.define<null>();
+export const bubbleOpEffect = StateEffect.define<null>();
 
 /** Full-width line highlights over a bubble, so the flash covers the whole
  *  referenced section rather than just its text runs. */
@@ -851,7 +865,7 @@ function bubbleLabelAt(state: EditorState, pos: number): string | null {
  *  the separators between bubbles in their original slots so nothing outside
  *  the moved bubble's own text changes. Returns null for a no-op, or the new
  *  body together with the moved bubble's new first-line offset. */
-function reorderBubbles(
+export function reorderBubbles(
   state: EditorState,
   fromIndex: number,
   toIndex: number,
@@ -2269,7 +2283,7 @@ export function Editor() {
     if (!host.current) return;
 
     const extensions: Extension[] = [
-      history(),
+      history({ minDepth: 150, newGroupDelay: 500 }),
       // The bubble's content stays editable — typing, paste, and delete
       // inside the pair are fine — but the marker lines themselves (and the
       // newline before and after each one) are protected, so the bubble can
@@ -2300,175 +2314,188 @@ export function Editor() {
         return touches ? [] : tr;
       }),
       drawSelection(),
-          // Typing a bracket over a selection wraps it instead of replacing it,
-          // so `[` twice on a word gives [[word]].
-          closeBrackets(),
-          autocompletion({
-            override: [wikiLinkCompletionSource, pageLinkCompletionSource],
-            defaultKeymap: true,
-            icons: false,
-          }),
-          EditorView.lineWrapping,
-          markdown(),
-          syntaxHighlighting(markdownHighlightStyle, { fallback: true }),
-          wikiLinks,
-          pageLinks,
-          bubbleMarkers,
-          jumpHighlight,
-          headings,
-          paragraphBoxes,
-          bubbleMetadataDecorations,
-          heatBars,
-          placeholders,
-          bubbleHover,
-          findPlugin,
-          theme,
-          // Take precedence over CodeMirror's own Mod-f search binding.
-          Prec.highest(
-            keymap.of([
-              {
-                // closeBrackets does the wrapping, one pair per press; this
-                // only stops it once the word is five deep.
-                key: "[",
-                run: limitBracketWrap,
-              },
-              {
-                // Ahead of the default binding, which would take the whole
-                // wrapped word rather than one level of it.
-                key: "Backspace",
-                run: peelBrackets,
-              },
-              {
-                key: "Mod-Enter",
-                run: () => {
-                  if (!useStore.getState().active?.collection) return false;
-                  void useStore.getState().returnToCollection();
-                  return true;
-                },
-              },
-              {
-                key: "Mod-f",
-                run: () => (useStore.getState().setPalette(true), true),
-              },
-              {
-                key: "Mod-Shift-f",
-                run: () => (useStore.getState().openFind(), true),
-              },
-              {
-                key: "Mod-k",
-                run: () => (useStore.getState().setPalette(true), true),
-              },
-              {
-                key: "Mod-s",
-                run: () => (void useStore.getState().flushSave(), true),
-              },
-              {
-                // historyKeymap only binds Mod-Shift-z on macOS; Windows and
-                // Linux are left with Mod-y alone. Bind both everywhere so
-                // either muscle memory redoes.
-                key: "Mod-Shift-z",
-                run: redo,
-                preventDefault: true,
-              },
-              {
-                // In an idea, select just the bubble the cursor is in; outside
-                // a bubble (e.g. a blank line) fall through to select-all.
-                ...modABinding,
-              },
-            ]),
-          ),
-          keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
-          EditorView.domEventHandlers({
-            // A long paste may be a batch of prompts. Let it land normally,
-            // then offer to split it — the offer is silent unless the text
-            // actually has two or more sections.
-            paste: (event, view) => {
-              const text = event.clipboardData?.getData("text/plain") ?? "";
-              const active = useStore.getState().active;
-              // Mod+Shift+V pastes as one block: the clipboard is wrapped in
-              // `<!-- bubble -->` markers, so it lands as a single bubble with
-              // every line and blank line exactly as pasted. The global keydown
-              // handler arms `oneBlockPaste` in the store, since ClipboardEvent
-              // carries no modifier state of its own.
-              if (useStore.getState().oneBlockPaste && text.trim()) {
-                useStore.setState({ oneBlockPaste: false });
-                event.preventDefault();
-                const { from, to } = view.state.selection.main;
-                const insert = `${BUBBLE_START}\n${text.trim()}\n${BUBBLE_END}\n`;
-                view.dispatch({ changes: { from, to, insert } });
-                return true;
-              }
-              // Importing a text file into an idea: normalize it into separate
-              // paragraphs so the note's bubbles form cleanly.
-              if (active?.type === "idea" && text.trim()) {
-                const normalized = normalizePastedText(text);
-                if (normalized !== text) {
-                  event.preventDefault();
-                  const { from, to } = view.state.selection.main;
-                  view.dispatch({ changes: { from, to, insert: normalized } });
-                  return true;
-                }
-              }
-              return false;
-            },
-            mousedown: (event) => {
-              // Note: a grip's mousedown is handled on the grip element itself
-              // (see BubbleGripWidget), so it never reaches here.
-              // In-page ((links)) jump on a plain click, no modifier needed.
-              const pageLink = (event.target as HTMLElement).closest(".cm-pagelink");
-              const pageTarget = pageLink?.getAttribute("data-target");
-              if (pageTarget) {
-                event.preventDefault();
-                jumpToPageReference(pageTarget);
-                return true;
-              }
-              if (!event.ctrlKey && !event.metaKey) return false;
-              const link = (event.target as HTMLElement).closest(".cm-wikilink");
-              const target = link?.getAttribute("data-target");
-              if (!target) return false;
-              event.preventDefault();
-              void useStore.getState().openLink(target);
+      closeBrackets(),
+      autocompletion({
+        override: [wikiLinkCompletionSource, pageLinkCompletionSource],
+        defaultKeymap: true,
+        icons: false,
+      }),
+      EditorView.lineWrapping,
+      markdown(),
+      syntaxHighlighting(markdownHighlightStyle, { fallback: true }),
+      wikiLinks,
+      pageLinks,
+      bubbleMarkers,
+      jumpHighlight,
+      headings,
+      paragraphBoxes,
+      bubbleMetadataDecorations,
+      heatBars,
+      placeholders,
+      bubbleHover,
+      findPlugin,
+      theme,
+      Prec.highest(
+        keymap.of([
+          {
+            key: "[",
+            run: limitBracketWrap,
+          },
+          {
+            key: "Backspace",
+            run: peelBrackets,
+          },
+          {
+            key: "Mod-Enter",
+            run: () => {
+              if (!useStore.getState().active?.collection) return false;
+              void useStore.getState().returnToCollection();
               return true;
             },
-            // Replace the webview's default menu with linking actions.
-            contextmenu: (event, view) => {
+          },
+          {
+            key: "Mod-f",
+            run: () => (useStore.getState().setPalette(true), true),
+          },
+          {
+            key: "Mod-Shift-f",
+            run: () => (useStore.getState().openFind(), true),
+          },
+          {
+            key: "Mod-k",
+            run: () => (useStore.getState().setPalette(true), true),
+          },
+          {
+            key: "Mod-s",
+            run: () => (void useStore.getState().flushSave(), true),
+          },
+          {
+            key: "Mod-z",
+            run: undo,
+            preventDefault: true,
+          },
+          {
+            key: "Mod-y",
+            run: redo,
+            preventDefault: true,
+          },
+          {
+            key: "Mod-Shift-z",
+            run: redo,
+            preventDefault: true,
+          },
+          {
+            key: "Mod-u",
+            run: undoSelection,
+            preventDefault: true,
+          },
+          {
+            key: "Alt-u",
+            run: redoSelection,
+            preventDefault: true,
+          },
+          {
+            key: "Mod-Shift-u",
+            run: redoSelection,
+            preventDefault: true,
+          },
+          {
+            ...modABinding,
+          },
+        ]),
+      ),
+      keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
+      EditorView.domEventHandlers({
+        paste: (event, view) => {
+          const text = event.clipboardData?.getData("text/plain") ?? "";
+          const active = useStore.getState().active;
+          if (useStore.getState().oneBlockPaste && text.trim()) {
+            useStore.setState({ oneBlockPaste: false });
+            event.preventDefault();
+            const { from, to } = view.state.selection.main;
+            const insert = `${BUBBLE_START}\n${text.trim()}\n${BUBBLE_END}\n`;
+            view.dispatch({ changes: { from, to, insert } });
+            return true;
+          }
+          if (active?.type === "idea" && text.trim()) {
+            const normalized = normalizePastedText(text);
+            if (normalized !== text) {
               event.preventDefault();
-              event.stopPropagation();
-              const link = (event.target as HTMLElement)
-                .closest(".cm-wikilink")
-                ?.getAttribute("data-target");
-              useStore.getState().openMenu({
-                x: event.clientX,
-                y: event.clientY,
-                hasSelection: !view.state.selection.main.empty,
-                link: link ?? null,
-                note: null,
-                bubble: null,
-              });
+              const { from, to } = view.state.selection.main;
+              view.dispatch({ changes: { from, to, insert: normalized } });
               return true;
-            },
-          }),
-          EditorView.updateListener.of((update) => {
-            // The bubble the caret sits in, so the right panel can follow it
-            // when the mouse is not hovering one.
-            if (update.docChanged || update.selectionSet) {
-              const store = useStore.getState();
-              store.setCursorBubble(
-                store.active?.type === "idea"
-                  ? bubbleLabelAt(update.state, update.state.selection.main.head)
-                  : null,
-              );
             }
-            // Typing dismisses the hover menu — the note is being worked in,
-            // not hovered. Skips programmatic replacements (loading a note).
-            if (update.docChanged && !applying.current) {
-              setBubbleMenu(null);
-              useStore.getState().setHoverBubble(null);
-            }
-            if (!update.docChanged || applying.current) return;
-            const id = activeId.current;
-            if (id) useStore.getState().queueSave(id, update.state.doc.toString());
-          }),
+          }
+          return false;
+        },
+        mousedown: (event) => {
+          const pageLink = (event.target as HTMLElement).closest(".cm-pagelink");
+          const pageTarget = pageLink?.getAttribute("data-target");
+          if (pageTarget) {
+            event.preventDefault();
+            jumpToPageReference(pageTarget);
+            return true;
+          }
+          if (!event.ctrlKey && !event.metaKey) return false;
+          const link = (event.target as HTMLElement).closest(".cm-wikilink");
+          const target = link?.getAttribute("data-target");
+          if (!target) return false;
+          event.preventDefault();
+          void useStore.getState().openLink(target);
+          return true;
+        },
+        contextmenu: (event, view) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const link = (event.target as HTMLElement)
+            .closest(".cm-wikilink")
+            ?.getAttribute("data-target");
+          useStore.getState().openMenu({
+            x: event.clientX,
+            y: event.clientY,
+            hasSelection: !view.state.selection.main.empty,
+            link: link ?? null,
+            note: null,
+            bubble: null,
+          });
+          return true;
+        },
+      }),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged || update.selectionSet) {
+          const store = useStore.getState();
+          store.setCursorBubble(
+            store.active?.type === "idea"
+              ? bubbleLabelAt(update.state, update.state.selection.main.head)
+              : null,
+          );
+        }
+        if (update.docChanged && !applying.current) {
+          setBubbleMenu(null);
+          useStore.getState().setHoverBubble(null);
+        }
+        if (!update.docChanged || applying.current) return;
+        const id = activeId.current;
+        if (id) {
+          const docStr = update.state.doc.toString();
+          const scrollTop = update.view.scrollDOM.scrollTop;
+          const vaultPath = useStore.getState().vaultPath ?? "";
+
+          editorStateCache.set(id, {
+            state: update.state,
+            scrollTop,
+            updatedAt: Date.now(),
+          });
+
+          saveHistoryDebounced(vaultPath, id, update.state, scrollTop);
+          useStore.getState().queueSave(id, docStr);
+
+          const active = useStore.getState().active;
+          if (active && active.id === id && active.body !== docStr) {
+            useStore.setState({ active: { ...active, body: docStr } });
+          }
+        }
+      }),
     ];
     extensionsRef.current = extensions;
 
@@ -2479,8 +2506,67 @@ export function Editor() {
 
     view.current = editor;
 
-    // Widgets are built outside React, so the grip's mousedown reaches this
-    // component through the module-level bridge.
+    editorBridge.deleteBubbleAt = (start: number) => {
+      const current = view.current;
+      const currentActive = useStore.getState().active;
+      if (
+        !current ||
+        !currentActive ||
+        currentActive.type !== "idea" ||
+        currentActive.id !== activeId.current
+      ) {
+        return false;
+      }
+      const body = current.state.doc.toString();
+      if (start < 0 || start >= body.length) return false;
+
+      const rest = body.slice(start);
+      const gap = /\n[ \t]*\n/.exec(rest);
+      let from = start;
+      const to = gap ? start + gap.index + gap[0].length : body.length;
+      if (!gap) {
+        const before = /\n[ \t]*\n$/.exec(body.slice(0, start));
+        if (before) from -= before[0].length;
+      }
+
+      current.dispatch({
+        changes: { from, to, insert: "" },
+        selection: { anchor: Math.min(from, current.state.doc.length - (to - from)) },
+        scrollIntoView: true,
+        effects: bubbleOpEffect.of(null),
+      });
+      setBubbleMenu(null);
+      useStore.getState().setHoverBubble(null);
+      current.focus();
+      return true;
+    };
+
+    editorBridge.moveBubble = (fromIndex: number, toIndex: number) => {
+      const current = view.current;
+      const currentActive = useStore.getState().active;
+      if (
+        !current ||
+        !currentActive ||
+        currentActive.type !== "idea" ||
+        currentActive.id !== activeId.current
+      ) {
+        return false;
+      }
+      const next = reorderBubbles(current.state, fromIndex, toIndex);
+      if (!next) return false;
+
+      current.dispatch({
+        changes: { from: 0, to: current.state.doc.length, insert: next.body },
+        selection: { anchor: next.at },
+        scrollIntoView: true,
+        effects: bubbleOpEffect.of(null),
+      });
+      setBubbleMenu(null);
+      useStore.getState().setHoverBubble(null);
+      current.focus();
+      return true;
+    };
+
     gripDragStart.onDown = (from, x, y) => {
       const current = view.current;
       if (!current) return;
@@ -2492,9 +2578,25 @@ export function Editor() {
     };
 
     return () => {
+      editorBridge.deleteBubbleAt = undefined;
+      editorBridge.moveBubble = undefined;
       gripDragStart.onDown = null;
       endBubbleDrag(false);
       if (jumpTimer.current) clearTimeout(jumpTimer.current);
+
+      const curId = activeId.current;
+      if (curId && editor) {
+        const curScrollTop = editor.scrollDOM.scrollTop;
+        editorStateCache.set(curId, {
+          state: editor.state,
+          scrollTop: curScrollTop,
+          updatedAt: Date.now(),
+        });
+        const vaultPath = useStore.getState().vaultPath ?? "";
+        saveHistoryDebounced(vaultPath, curId, editor.state, curScrollTop);
+        void flushPendingHistory();
+      }
+
       editor.destroy();
       view.current = null;
     };
@@ -2507,27 +2609,105 @@ export function Editor() {
     const editor = view.current;
     if (!editor) return;
 
-    activeId.current = active?.id ?? null;
+    const prevId = activeId.current;
+    const nextId = active?.id ?? null;
+    const vaultPath = useStore.getState().vaultPath ?? "";
+
+    if (prevId && prevId !== nextId) {
+      const prevScrollTop = editor.scrollDOM.scrollTop;
+      editorStateCache.set(prevId, {
+        state: editor.state,
+        scrollTop: prevScrollTop,
+        updatedAt: Date.now(),
+      });
+      saveHistoryDebounced(vaultPath, prevId, editor.state, prevScrollTop);
+    }
+
+    activeId.current = nextId;
     setBubbleMenu(null);
     setPageBack(null);
     if (jumpTimer.current) {
       clearTimeout(jumpTimer.current);
       jumpTimer.current = null;
     }
-    applying.current = true;
-    editor.setState(
-      EditorState.create({
-        doc: active?.body ?? "",
+
+    if (!nextId || !active) {
+      applying.current = true;
+      editor.setState(
+        EditorState.create({
+          doc: "",
+          selection: { anchor: 0 },
+          extensions: extensionsRef.current,
+        }),
+      );
+      applying.current = false;
+      return;
+    }
+
+    const activeBody = active.body ?? "";
+    const cached = editorStateCache.get(nextId);
+
+    if (cached) {
+      applying.current = true;
+      if (cached.state.doc.toString() === activeBody) {
+        editor.setState(cached.state);
+        editor.scrollDOM.scrollTop = cached.scrollTop;
+      } else {
+        const updatedState = cached.state.update({
+          changes: { from: 0, to: cached.state.doc.length, insert: activeBody },
+        }).state;
+        editor.setState(updatedState);
+        editor.scrollDOM.scrollTop = cached.scrollTop;
+        editorStateCache.set(nextId, {
+          state: updatedState,
+          scrollTop: cached.scrollTop,
+          updatedAt: Date.now(),
+        });
+      }
+      applying.current = false;
+      editor.focus();
+    } else {
+      const freshState = EditorState.create({
+        doc: activeBody,
         selection: { anchor: 0 },
         extensions: extensionsRef.current,
-      }),
-    );
-    applying.current = false;
-    if (active) editor.focus();
+      });
+      applying.current = true;
+      editor.setState(freshState);
+      applying.current = false;
+      editorStateCache.set(nextId, {
+        state: freshState,
+        scrollTop: 0,
+        updatedAt: Date.now(),
+      });
+      editor.focus();
+
+      void loadHistoryState(vaultPath, nextId, activeBody, extensionsRef.current).then(
+        (rehydrated) => {
+          if (!rehydrated) return;
+          const currentEditor = view.current;
+          if (
+            currentEditor &&
+            activeId.current === nextId &&
+            currentEditor.state.doc.toString() === activeBody
+          ) {
+            applying.current = true;
+            currentEditor.setState(rehydrated.state);
+            currentEditor.scrollDOM.scrollTop = rehydrated.scrollTop;
+            applying.current = false;
+            editorStateCache.set(nextId, {
+              state: rehydrated.state,
+              scrollTop: rehydrated.scrollTop,
+              updatedAt: Date.now(),
+            });
+          }
+        },
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id, docVersion]);
 
-  // A note was chosen from the link picker: drop [[Title]] over the selection.
+    // A note was chosen from the link picker: drop [[Title]] over the selection.
   useEffect(() => {
     const editor = view.current;
     if (!editor || !insertLink) return;
