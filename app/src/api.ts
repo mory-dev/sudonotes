@@ -2,6 +2,34 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type NoteType = "prompt" | "idea";
 
+export type IdeaMarkState = "orange" | "green" | "off";
+
+export function normalizeIdeaMark(
+  value: boolean | IdeaMarkState | string | null | undefined,
+): IdeaMarkState {
+  if (value === true || value === "orange" || value === "on") {
+    return "orange";
+  }
+  if (value === "green") {
+    return "green";
+  }
+  return "off";
+}
+
+export function nextIdeaMark(
+  current: boolean | IdeaMarkState | string | null | undefined,
+): IdeaMarkState {
+  const normalized = normalizeIdeaMark(current);
+  switch (normalized) {
+    case "off":
+      return "orange";
+    case "orange":
+      return "green";
+    case "green":
+      return "off";
+  }
+}
+
 export interface NoteMeta {
   id: string;
   title: string;
@@ -17,8 +45,8 @@ export interface NoteMeta {
   position?: number | null;
   /** Project folder a linked idea mirrors into, if any. */
   project?: string | null;
-  /** Whether this idea is currently paused/on hold in the sidebar. */
-  onHold: boolean;
+  /** Idea marking state in the sidebar ("orange", "green", "off", or boolean for compatibility). */
+  onHold?: boolean | IdeaMarkState | string | null;
   /** Favicon of the linked project, when one was found. */
   icon?: string | null;
   /** Blank-line separated groups in the body. Shown beside an idea's title. */
@@ -201,8 +229,8 @@ export const api = {
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),
-  /** Toggle the paused/on-hold marker shown beside an idea. */
-  setNoteOnHold: (id: string, onHold: boolean) =>
+  /** Set or cycle the marking state shown beside an idea. */
+  setNoteOnHold: (id: string, onHold: boolean | IdeaMarkState | string) =>
     invoke<void>("set_note_on_hold", { id, onHold }),
   /** Assign the model a bubble's prompt targets, keyed by its first line. */
   setBubbleModel: (id: string, key: string, model: string) =>

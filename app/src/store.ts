@@ -6,6 +6,7 @@ import {
   type AnalysisResult,
   type ChildPrompt,
   type DraftPrompt,
+  type IdeaMarkState,
   type NoteDetail,
   type NoteMeta,
   type NoteType,
@@ -250,8 +251,8 @@ interface AppState {
   pasteIntoCollection: (text: string, forceOne?: boolean) => Promise<void>;
   queueSave: (id: string, body: string) => void;
   updateModel: (model: string | null) => Promise<void>;
-  /** Toggle the paused/on-hold marker for an idea in the sidebar. */
-  setNoteOnHold: (id: string, onHold: boolean) => Promise<void>;
+  /** Cycle or set the idea marker for an idea in the sidebar. */
+  setNoteOnHold: (id: string, onHold: boolean | IdeaMarkState | string) => Promise<void>;
   /** Assign a model to the bubble whose first line is `key`. */
   setBubbleModel: (key: string, model: string | null) => Promise<void>;
   /** Replace the tags attached to the bubble whose first line is `key`. */
@@ -711,6 +712,8 @@ export const useStore = create<AppState>((set, get) => ({
       await api.setNoteOnHold(id, onHold);
       const active = get().active;
       if (active?.id === id) set({ active: { ...active, onHold } });
+      const notes = get().notes.map((n) => (n.id === id ? { ...n, onHold } : n));
+      set({ notes });
       await get().refresh();
     } catch (e) {
       set({ error: message(e) });

@@ -1117,7 +1117,7 @@ kbd {
 }
 
 /* Idea status orb: it stays quiet until the row is hovered, then offers a
-   small muted target. An on-hold idea keeps its amber orb visible at rest. */
+   small muted target. A marked idea keeps its colored orb visible at rest. */
 .idea-note-row {
   position: relative;
 }
@@ -1147,13 +1147,15 @@ kbd {
   background: transparent;
   opacity: 0;
   transform: translateY(-50%);
-  transition: opacity 120ms ease, background 120ms ease;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 .idea-note-row:hover .idea-hold-toggle,
 .idea-collection-head:hover .idea-hold-toggle,
 .idea-hold-toggle:focus-visible,
-.idea-hold-toggle.on {
+.idea-hold-toggle.on,
+.idea-hold-toggle.state-orange,
+.idea-hold-toggle.state-green {
   opacity: 1;
 }
 
@@ -1164,19 +1166,35 @@ kbd {
   border-radius: 50%;
   background: currentColor;
   opacity: 0.55;
+  transition: opacity 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 
 .idea-hold-toggle:hover {
   background: var(--panel-2);
 }
 
-.idea-hold-toggle.on {
+.idea-hold-toggle.on,
+.idea-hold-toggle.state-orange,
+.idea-hold-toggle.orange {
   color: var(--warning);
 }
 
-.idea-hold-toggle.on .idea-hold-orb {
+.idea-hold-toggle.on .idea-hold-orb,
+.idea-hold-toggle.state-orange .idea-hold-orb,
+.idea-hold-toggle.orange .idea-hold-orb {
   opacity: 1;
-  box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.16);
+  box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.22), 0 0 6px rgba(224, 175, 104, 0.35);
+}
+
+.idea-hold-toggle.state-green,
+.idea-hold-toggle.green {
+  color: var(--idea);
+}
+
+.idea-hold-toggle.state-green .idea-hold-orb,
+.idea-hold-toggle.green .idea-hold-orb {
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(158, 206, 106, 0.22), 0 0 6px rgba(158, 206, 106, 0.35);
 }
 
 /* The reorder drag runs on pointer events, so the cursor and text selection are
