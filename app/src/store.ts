@@ -757,6 +757,8 @@ export const useStore = create<AppState>((set, get) => ({
       saveTimer = null;
     }
     pending = null;
+    // Queued renames describe the text being discarded, so they go with it.
+    pendingMigrations = [];
     set({ dirty: false });
   },
 
@@ -809,31 +811,52 @@ export const useStore = create<AppState>((set, get) => ({
     if (!active || migrations.length === 0) return;
     let modelsChanged = false;
     let tagsChanged = false;
+    let issuesChanged = false;
     const nextModels = { ...(active.models ?? {}) };
     const nextTags = { ...(active.bubbleTags ?? {}) };
+    const nextIssues = { ...(active.bubbleIssues ?? {}) };
+    const nextIssueStates = { ...(active.issueStates ?? {}) };
 
     for (const { oldKey, newKey } of migrations) {
       if (!oldKey || !newKey || oldKey === newKey) continue;
+      let moved = false;
       if (Object.prototype.hasOwnProperty.call(nextModels, oldKey)) {
         nextModels[newKey] = nextModels[oldKey];
         delete nextModels[oldKey];
         modelsChanged = true;
-        pendingMigrations.push({ id: active.id, oldKey, newKey });
+        moved = true;
       }
       if (Object.prototype.hasOwnProperty.call(nextTags, oldKey)) {
         nextTags[newKey] = nextTags[oldKey];
         delete nextTags[oldKey];
         tagsChanged = true;
-        pendingMigrations.push({ id: active.id, oldKey, newKey });
+        moved = true;
       }
+      if (Object.prototype.hasOwnProperty.call(nextIssues, oldKey)) {
+        nextIssues[newKey] = nextIssues[oldKey];
+        delete nextIssues[oldKey];
+        // The cached open/closed state is keyed the same way, so it has to move
+        // with the link or the bubble stops muting until the next sync.
+        if (Object.prototype.hasOwnProperty.call(nextIssueStates, oldKey)) {
+          nextIssueStates[newKey] = nextIssueStates[oldKey];
+          delete nextIssueStates[oldKey];
+        }
+        issuesChanged = true;
+        moved = true;
+      }
+      // One entry per bubble, not per map: the rename is applied to every map
+      // in a single write, so queueing it three times would just repeat it.
+      if (moved) pendingMigrations.push({ id: active.id, oldKey, newKey });
     }
 
-    if (modelsChanged || tagsChanged) {
+    if (modelsChanged || tagsChanged || issuesChanged) {
       set({
         active: {
           ...active,
           models: modelsChanged ? nextModels : active.models,
           bubbleTags: tagsChanged ? nextTags : active.bubbleTags,
+          bubbleIssues: issuesChanged ? nextIssues : active.bubbleIssues,
+          issueStates: issuesChanged ? nextIssueStates : active.issueStates,
         },
       });
     }
@@ -856,6 +879,22 @@ export const useStore = create<AppState>((set, get) => ({
       clearTimeout(saveTimer);
       saveTimer = null;
     }
+
+    // Bubble renames ride the same debounce as the text that caused them:
+    // remapping on every keystroke of a first line would be one write per
+    // character. Done before the body write so the reindex sees final keys.
+    const renames = pendingMigrations;
+    pendingMigrations = [];
+    for (const { id, oldKey, newKey } of renames) {
+      try {
+        await api.renameBubbleKey(id, oldKey, newKey);
+      } catch (e) {
+        // A rename that fails leaves the metadata on the old key, which is the
+        // pre-existing behaviour rather than a loss. Not worth interrupting a save.
+        console.warn("could not move bubble metadata", oldKey, "->", newKey, e);
+      }
+    }
+
     const write = pending;
     pending = null;
     if (!write) return;

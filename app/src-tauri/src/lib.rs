@@ -1226,6 +1226,48 @@ fn set_note_mark(id: String, mark: String, state: State<AppState>) -> Result<()>
     save(&state, &id, |note| note.frontmatter.mark = mark)
 }
 
+/// Move one bubble's metadata from `old_key` to `new_key`.
+///
+/// Every per-bubble map is keyed by the bubble's first line, so editing that
+/// line renames the bubble and orphans everything attached to it. Remapping all
+/// the maps in a single write is what keeps a rename from half-applying — a
+/// model that followed but tags that did not would be worse than neither.
+#[tauri::command]
+fn rename_bubble_key(
+    id: String,
+    old_key: String,
+    new_key: String,
+    state: State<AppState>,
+) -> Result<()> {
+    let old_key = old_key.trim().to_string();
+    let new_key = new_key.trim().to_string();
+    if old_key.is_empty() || new_key.is_empty() || old_key == new_key {
+        return Ok(());
+    }
+
+    save(&state, &id, move |note| {
+        move_bubble_key(&mut note.frontmatter, &old_key, &new_key)
+    })
+}
+
+/// Move every per-bubble entry from one key to another.
+///
+/// Kept separate from the command so the guarantee that matters — all the maps
+/// move together, or the bubble ends up half-renamed — can be tested directly.
+fn move_bubble_key(fm: &mut note::Frontmatter, old_key: &str, new_key: &str) {
+    if let Some(model) = fm.models.remove(old_key) {
+        fm.models.insert(new_key.to_string(), model);
+    }
+    if let Some(tags) = fm.bubble_tags.remove(old_key) {
+        fm.bubble_tags.insert(new_key.to_string(), tags);
+    }
+    // Issue links move with everything else, so renaming a bubble no longer
+    // detaches it from the issue it became.
+    if let Some(issue) = fm.bubble_issues.remove(old_key) {
+        fm.bubble_issues.insert(new_key.to_string(), issue);
+    }
+}
+
 /// Replace the tags attached to one idea bubble. Empty tag lists clear the
 /// entry. Returns the updated map so the editor can update without reloading.
 #[tauri::command]
@@ -2348,7 +2390,8 @@ fn resolve_link(title: String, state: State<AppState>) -> Result<Option<String>>
 #[cfg(test)]
 mod tests {
     use super::{
-        bubble_blocks, bubble_entries, metadata_matches, parse_search_spec, remove_bubble_named,
+        bubble_blocks, bubble_entries, metadata_matches, move_bubble_key, parse_search_spec,
+        remove_bubble_named,
         search_vault, strip_paste, Index,
         Note, OpenVault, Vault,
     };
@@ -2406,6 +2449,42 @@ mod tests {
         assert_eq!(blocks[0].label, "One");
         assert_eq!(&body[blocks[0].text.clone()], "One\n\nTwo");
         assert_eq!(&body[blocks[0].span.clone()], body);
+    }
+
+    #[test]
+    fn a_bubble_rename_moves_every_map_together() {
+        let mut note = Note::new("Roadmap", "Old first line\n".into());
+        note.frontmatter
+            .models
+            .insert("Old first line".into(), "anthropic/claude-opus-5".into());
+        note.frontmatter
+            .bubble_tags
+            .insert("Old first line".into(), vec!["design".into()]);
+        note.frontmatter
+            .bubble_issues
+            .insert("Old first line".into(), "o/r#7".into());
+
+        move_bubble_key(&mut note.frontmatter, "Old first line", "New first line");
+
+        let fm = &note.frontmatter;
+        assert_eq!(fm.models.get("New first line").map(String::as_str), Some("anthropic/claude-opus-5"));
+        assert_eq!(fm.bubble_tags.get("New first line"), Some(&vec!["design".to_string()]));
+        assert_eq!(fm.bubble_issues.get("New first line").map(String::as_str), Some("o/r#7"));
+        // Nothing may be left behind under the old key.
+        assert!(!fm.models.contains_key("Old first line"));
+        assert!(!fm.bubble_tags.contains_key("Old first line"));
+        assert!(!fm.bubble_issues.contains_key("Old first line"));
+    }
+
+    #[test]
+    fn a_rename_of_an_unknown_bubble_changes_nothing() {
+        let mut note = Note::new("Roadmap", "text".into());
+        note.frontmatter.models.insert("Kept".into(), "m".into());
+
+        move_bubble_key(&mut note.frontmatter, "Missing", "Renamed");
+
+        assert_eq!(note.frontmatter.models.get("Kept").map(String::as_str), Some("m"));
+        assert!(!note.frontmatter.models.contains_key("Renamed"));
     }
 
     #[test]
@@ -2703,6 +2782,7 @@ pub fn run() {
             set_note_mark,
             set_bubble_model,
             set_bubble_tags,
+            rename_bubble_key,
             draft_bubble_issue,
             create_bubble_issue,
             rename_note,

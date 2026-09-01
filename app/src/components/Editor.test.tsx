@@ -203,9 +203,7 @@ describe("bubble model persistence during typing", () => {
       aiSettings: {
         enabled: true,
         showBubbleMetadata: true,
-        debounceMs: 500,
-        contextNotes: 5,
-        reviewDismissed: 0,
+        configured: true,
       },
     });
 
@@ -273,9 +271,7 @@ describe("bubble model persistence during typing", () => {
       aiSettings: {
         enabled: true,
         showBubbleMetadata: true,
-        debounceMs: 500,
-        contextNotes: 5,
-        reviewDismissed: 0,
+        configured: true,
       },
     });
 
@@ -310,9 +306,7 @@ describe("bubble model persistence during typing", () => {
       aiSettings: {
         enabled: true,
         showBubbleMetadata: true,
-        debounceMs: 500,
-        contextNotes: 5,
-        reviewDismissed: 0,
+        configured: true,
       },
     });
 
@@ -346,9 +340,7 @@ describe("bubble model persistence during typing", () => {
       aiSettings: {
         enabled: true,
         showBubbleMetadata: true,
-        debounceMs: 500,
-        contextNotes: 5,
-        reviewDismissed: 0,
+        configured: true,
       },
     });
 
@@ -385,9 +377,7 @@ describe("bubble model persistence during typing", () => {
       aiSettings: {
         enabled: true,
         showBubbleMetadata: true,
-        debounceMs: 500,
-        contextNotes: 5,
-        reviewDismissed: 0,
+        configured: true,
       },
     });
 

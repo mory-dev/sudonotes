@@ -270,6 +270,9 @@ export const api = {
    *  AI is off or the model call fails, so it always returns something. */
   draftBubbleIssue: (id: string, label: string) =>
     invoke<IssueDraft>("draft_bubble_issue", { id, label }),
+  /** Move a bubble's model, tags and issue link to its new first line. */
+  renameBubbleKey: (id: string, oldKey: string, newKey: string) =>
+    invoke<void>("rename_bubble_key", { id, oldKey, newKey }),
   createBubbleIssue: (id: string, label: string, title: string, body: string) =>
     invoke<IssueRef>("create_bubble_issue", { id, label, title, body }),
   /** Refresh every linked issue's state. A no-op when signed out. */

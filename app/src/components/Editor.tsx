@@ -1300,6 +1300,7 @@ export const bubbleModelPersistence = EditorView.updateListener.of((update) => {
   const nextBubbles = computeBubbles(update.state);
   const currentModels = store.active?.models ?? {};
   const currentTags = store.active?.bubbleTags ?? {};
+  const currentIssues = store.active?.bubbleIssues ?? {};
 
   const migrations: Array<{ oldKey: string; newKey: string }> = [];
 
@@ -1308,7 +1309,10 @@ export const bubbleModelPersistence = EditorView.updateListener.of((update) => {
     if (!oldLabel) continue;
     const hasModel = !!resolveBubbleModel(currentModels, oldLabel);
     const hasTags = resolveBubbleTags(currentTags, oldLabel).length > 0;
-    if (!hasModel && !hasTags) continue;
+    // A bubble carrying only an issue link is still worth following, or
+    // renaming it would detach the issue it became.
+    const hasIssue = !!currentIssues[oldLabel];
+    if (!hasModel && !hasTags && !hasIssue) continue;
 
     const mappedFrom = update.changes.mapPos(prevB.from, 1);
     const mappedTo = update.changes.mapPos(prevB.to, -1);
