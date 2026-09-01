@@ -6,6 +6,9 @@ import {
   type AnalysisResult,
   type ChildPrompt,
   type DraftPrompt,
+  type GithubAuth,
+  type IdeaMarkState,
+  type IssueRef,
   type NoteDetail,
   type NoteMeta,
   type NoteType,
@@ -172,6 +175,8 @@ interface AppState {
   confirm: DialogRequest | null;
   /** Whether the settings dialog, opened from the status bar, is showing. */
   settingsOpen: boolean;
+  /** The bubble whose GitHub issue is being drafted, or null when closed. */
+  issueDraft: { noteId: string; label: string } | null;
   /** Right-click menu position in the editor, or null when closed. */
   menuAt: {
     x: number;
@@ -207,6 +212,8 @@ interface AppState {
   dirty: boolean;
   error: string | null;
   notice: string | null;
+  /** An action offered alongside the current notice, cleared with it. */
+  noticeAction: { label: string; run: () => void } | null;
   /** Prompts detected in a paste, awaiting confirmation. Nothing is on disk yet. */
   drafts: DraftPrompt[] | null;
   /** The raw pasted text, so the split can consume exactly it and no more. */
@@ -216,6 +223,8 @@ interface AppState {
    *  Disarmed by any other key and consumed by the paste handlers. */
   oneBlockPaste: boolean;
   aiSettings: AiSettings;
+  /** GitHub sign-in state, loaded once at boot. null until it has been read. */
+  githubAuth: GithubAuth | null;
   /** Whether the AI proxy actually answered. null until a call has been tried —
    *  the settings only say AI is *configured*, never that it is reachable. */
   aiReachable: boolean | null;
@@ -250,9 +259,15 @@ interface AppState {
    *  add it as a single prompt when it has no structure to split. */
   pasteIntoCollection: (text: string, forceOne?: boolean) => Promise<void>;
   queueSave: (id: string, body: string) => void;
+  /** Drop a queued save without writing it.
+   *
+   *  Needed before replacing the open note's text from underneath the editor:
+   *  the pending body predates the replacement, so letting it land would undo
+   *  the very thing that was just restored. */
+  discardPendingSave: () => void;
   updateModel: (model: string | null) => Promise<void>;
-  /** Toggle the paused/on-hold marker for an idea in the sidebar. */
-  setNoteOnHold: (id: string, onHold: boolean) => Promise<void>;
+  /** Cycle or set the idea marker for an idea in the sidebar. */
+  setNoteMark: (id: string, mark: boolean | IdeaMarkState | string) => Promise<void>;
   /** Assign a model to the bubble whose first line is `key`. */
   setBubbleModel: (key: string, model: string | null) => Promise<void>;
   /** Replace the tags attached to the bubble whose first line is `key`. */
@@ -271,6 +286,11 @@ interface AppState {
   /** Open the search palette pre-filled with a query (from a clicked tag). */
   openPalette: (query: string) => void;
   setSettings: (open: boolean) => void;
+  /** Draft a GitHub issue for the bubble whose first line is `label`. */
+  openIssueDraft: (label: string) => void;
+  closeIssueDraft: () => void;
+  /** Record the issue a bubble just became, without waiting for a reload. */
+  noteBubbleIssue: (label: string, issue: IssueRef) => void;
   requestConfirm: (message: string, onConfirm: () => void, confirmLabel?: string) => void;
   requestChoice: (request: DialogRequest) => void;
   cancelConfirm: () => void;
@@ -302,7 +322,11 @@ interface AppState {
   releaseHoverPrompt: () => void;
   setError: (error: string | null) => void;
   setNotice: (notice: string | null) => void;
+  /** A notice with one thing to do about it, e.g. undoing a cleanup. */
+  setNoticeAction: (notice: string, label: string, run: () => void) => void;
   loadAiSettings: () => Promise<void>;
+  loadGithubAuth: () => Promise<void>;
+  setGithubAuth: (auth: GithubAuth) => void;
   saveAiSettings: (enabled: boolean) => Promise<void>;
   saveBubbleMetadataVisible: (visible: boolean) => Promise<void>;
 }
@@ -318,6 +342,7 @@ export const useStore = create<AppState>((set, get) => ({
   paletteQuery: "",
   confirm: null,
   settingsOpen: false,
+  issueDraft: null,
   menuAt: null,
   linkPickerOpen: false,
   insertLink: null,
@@ -332,10 +357,12 @@ export const useStore = create<AppState>((set, get) => ({
   dirty: false,
   error: null,
   notice: null,
+  noticeAction: null,
   drafts: null,
   pastedText: "",
   oneBlockPaste: false,
   aiSettings: { enabled: true, showBubbleMetadata: true, configured: true },
+  githubAuth: null,
   aiReachable: null,
   aiHealth: null,
   analysis: null,
@@ -388,6 +415,26 @@ export const useStore = create<AppState>((set, get) => ({
   setPalette: (paletteOpen) => set({ paletteOpen, paletteQuery: paletteOpen ? get().paletteQuery : "" }),
   openPalette: (query) => set({ paletteOpen: true, paletteQuery: query }),
   setSettings: (settingsOpen) => set({ settingsOpen }),
+
+  openIssueDraft: (label) => {
+    const active = get().active;
+    if (!active) return;
+    set({ issueDraft: { noteId: active.id, label } });
+  },
+
+  closeIssueDraft: () => set({ issueDraft: null }),
+
+  noteBubbleIssue: (label, issue) => {
+    const active = get().active;
+    if (!active) return;
+    set({
+      active: {
+        ...active,
+        bubbleIssues: { ...active.bubbleIssues, [label]: issue.key },
+        issueStates: { ...active.issueStates, [label]: issue },
+      },
+    });
+  },
   requestConfirm: (message, onConfirm, confirmLabel = "Confirm") =>
     set({
       confirm: {
@@ -488,15 +535,29 @@ export const useStore = create<AppState>((set, get) => ({
     set({ find: { ...find, index: next, move: true } });
   },
   setError: (error) => set({ error }),
-  setNotice: (notice) => set({ notice }),
+  // Clearing the action with the notice keeps a stale "Undo" from surviving
+  // onto an unrelated message.
+  setNotice: (notice) => set({ notice, noticeAction: null }),
+  setNoticeAction: (notice, label, run) => set({ notice, noticeAction: { label, run } }),
 
   loadAiSettings: async () => {
     try {
       set({ aiSettings: await api.getAiSettings() });
     } catch {
-      // AI is optional; a missing keychain backend must not block the vault.
+      // AI is optional; a failure here must not block the vault.
     }
   },
+
+  loadGithubAuth: async () => {
+    try {
+      set({ githubAuth: await api.githubAuth() });
+    } catch {
+      // GitHub is optional; an unusable credential store must not block the
+      // vault. The bubble action stays hidden until this succeeds.
+    }
+  },
+
+  setGithubAuth: (githubAuth) => set({ githubAuth }),
 
   saveAiSettings: async (enabled) => {
     try {
@@ -690,6 +751,15 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  discardPendingSave: () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    pending = null;
+    set({ dirty: false });
+  },
+
   queueSave: (id, body) => {
     pending = { id, body };
     set({ dirty: true });
@@ -709,11 +779,13 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  setNoteOnHold: async (id, onHold) => {
+  setNoteMark: async (id, mark) => {
     try {
-      await api.setNoteOnHold(id, onHold);
+      await api.setNoteMark(id, mark);
       const active = get().active;
-      if (active?.id === id) set({ active: { ...active, onHold } });
+      if (active?.id === id) set({ active: { ...active, mark } });
+      const notes = get().notes.map((n) => (n.id === id ? { ...n, mark } : n));
+      set({ notes });
       await get().refresh();
     } catch (e) {
       set({ error: message(e) });
@@ -866,18 +938,33 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   /** Something changed on disk outside the app: resync, and reload the open
-   *  note unless the user has unsaved edits that would be clobbered. */
+   *  note. Unsaved edits keep their text; metadata is refreshed either way. */
   reloadExternal: async () => {
     await get().refresh();
 
     const active = get().active;
-    if (!active || get().dirty) return;
+    if (!active) return;
 
     try {
       const fresh = await api.readNote(active.id);
-      if (fresh.body !== active.body || fresh.title !== active.title) {
-        set({ active: fresh, docVersion: get().docVersion + 1 });
+
+      // Mid-edit, the text on disk is older than what is on screen, so it must
+      // not be taken. The issue states are not the user's to edit and change
+      // without them, so those are merged in regardless — otherwise a sync that
+      // lands between two keystrokes is simply lost, and a bubble keeps showing
+      // a state its issue left minutes ago.
+      if (get().dirty) {
+        set({ active: { ...active, issueStates: fresh.issueStates } });
+        return;
       }
+
+      // Always take the fresh copy: metadata can change with the text
+      // untouched — an issue closing is exactly that, and gating the whole
+      // note on a text change left the editor showing a stale issue state
+      // forever. Only the doc version is gated, because bumping it reloads
+      // CodeMirror and moves the cursor.
+      const textChanged = fresh.body !== active.body || fresh.title !== active.title;
+      set(textChanged ? { active: fresh, docVersion: get().docVersion + 1 } : { active: fresh });
     } catch {
       // The note was deleted or moved while it was open.
       set({ active: null, backlinks: [] });

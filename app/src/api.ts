@@ -2,6 +2,34 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type NoteType = "prompt" | "idea";
 
+export type IdeaMarkState = "orange" | "green" | "off";
+
+export function normalizeIdeaMark(
+  value: boolean | IdeaMarkState | string | null | undefined,
+): IdeaMarkState {
+  if (value === true || value === "orange" || value === "on") {
+    return "orange";
+  }
+  if (value === "green") {
+    return "green";
+  }
+  return "off";
+}
+
+export function nextIdeaMark(
+  current: boolean | IdeaMarkState | string | null | undefined,
+): IdeaMarkState {
+  const normalized = normalizeIdeaMark(current);
+  switch (normalized) {
+    case "off":
+      return "orange";
+    case "orange":
+      return "green";
+    case "green":
+      return "off";
+  }
+}
+
 export interface NoteMeta {
   id: string;
   title: string;
@@ -17,8 +45,8 @@ export interface NoteMeta {
   position?: number | null;
   /** Project folder a linked idea mirrors into, if any. */
   project?: string | null;
-  /** Whether this idea is currently paused/on hold in the sidebar. */
-  onHold: boolean;
+  /** Idea marking state in the sidebar ("orange", "green", "off", or boolean for compatibility). */
+  mark?: boolean | IdeaMarkState | string | null;
   /** Favicon of the linked project, when one was found. */
   icon?: string | null;
   /** Blank-line separated groups in the body. Shown beside an idea's title. */
@@ -51,9 +79,22 @@ export interface NoteDetail extends NoteMeta {
   models: Record<string, string>;
   /** Per-bubble tags for idea notes: bubble first line -> tags. */
   bubbleTags: Record<string, string[]>;
+  /** Per-bubble GitHub issue links: bubble first line -> `owner/repo#123`. */
+  bubbleIssues: Record<string, string>;
+  /** Cached state of those issues, by bubble first line. Populated from the
+   *  index, so it is present offline and empty until the first sync. */
+  issueStates: Record<string, IssueRef>;
+  /** The GitHub repo this idea's linked project pushes to, when it has one. */
+  remote: GithubRemote | null;
   created: string;
   body: string;
   path: string;
+}
+
+/** The GitHub repository a project's `origin` points at. */
+export interface GithubRemote {
+  owner: string;
+  repo: string;
 }
 
 export interface ProjectInfo {
@@ -63,6 +104,8 @@ export interface ProjectInfo {
   isGitRepo: boolean;
   /** Favicon found in the project, as a data: URI. */
   icon: string | null;
+  /** Set only when `origin` names a GitHub repository. */
+  remote: GithubRemote | null;
 }
 
 export interface LinkResult {
@@ -128,6 +171,52 @@ export interface BackupSettings {
   last: BackupInfo | null;
 }
 
+export interface GithubAuth {
+  connected: boolean;
+  login: string | null;
+  /** Why signing in is impossible on this machine, when it is. */
+  error: string | null;
+}
+
+/** A device-flow code the user types into github.com to authorise the app. */
+export interface DeviceCode {
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+}
+
+export interface GithubSettings {
+  /** Remove a bubble once its issue closes. Off by default — it deletes text. */
+  autoDeleteClosed: boolean;
+}
+
+/** What one issue sync changed. */
+export interface IssueSync {
+  /** Linked issues whose state changed since the last sync. */
+  changed: number;
+  /** Bubbles removed because their issue closed and the setting is on. */
+  removed: number;
+  /** Repositories that could not be reached — a silent failure otherwise looks
+   *  identical to nothing having changed. */
+  failed: number;
+}
+
+/** A proposed issue, shown for editing before anything is filed. */
+export interface IssueDraft {
+  title: string;
+  body: string;
+}
+
+/** A GitHub issue a bubble is linked to. */
+export interface IssueRef {
+  /** `owner/repo#123` — the key stored in note frontmatter. */
+  key: string;
+  number: number;
+  state: "open" | "closed";
+  title: string;
+  url: string;
+}
+
 export interface SearchBubble {
   /** First line that identifies this idea bubble. */
   label: string;
@@ -163,6 +252,33 @@ export const api = {
     invoke<AiSettings>("set_bubble_metadata_visible", { visible }),
   /** Whether the AI proxy answers its health endpoint. */
   aiHealth: () => invoke<boolean>("ai_health"),
+  githubAuth: () => invoke<GithubAuth>("github_auth"),
+  /** Ask GitHub for a device code; show it, then call `githubAwaitLogin`. */
+  githubDeviceCode: () => invoke<DeviceCode>("github_device_code"),
+  /** Resolves only once the user approves, denies, or the code expires. */
+  githubAwaitLogin: () => invoke<GithubAuth>("github_await_login"),
+  githubLogout: () => invoke<GithubAuth>("github_logout"),
+  /** Where to grant repository access. Pass the repo's owner so the page opens
+   *  on that account — GitHub otherwise redirects to an existing installation. */
+  githubInstallUrl: (owner?: string) => invoke<string>("github_install_url", { owner: owner ?? null }),
+  /** Whether the App is installed on a repo. Being signed in does not imply it. */
+  githubRepoAccess: (owner: string, repo: string) =>
+    invoke<boolean>("github_repo_access", { owner, repo }),
+  /** Whether the App is installed anywhere — a fresh account has granted nothing. */
+  githubHasInstallation: () => invoke<boolean>("github_has_installation"),
+  /** Draft an issue from one bubble. Falls back to the bubble's own text when
+   *  AI is off or the model call fails, so it always returns something. */
+  draftBubbleIssue: (id: string, label: string) =>
+    invoke<IssueDraft>("draft_bubble_issue", { id, label }),
+  createBubbleIssue: (id: string, label: string, title: string, body: string) =>
+    invoke<IssueRef>("create_bubble_issue", { id, label, title, body }),
+  /** Refresh every linked issue's state. A no-op when signed out. */
+  syncGithubIssues: () => invoke<IssueSync>("sync_github_issues"),
+  /** Restore the bodies auto-delete replaced, while this session remembers them. */
+  undoIssueCleanup: () => invoke<number>("undo_issue_cleanup"),
+  getGithubSettings: () => invoke<GithubSettings>("get_github_settings"),
+  setGithubAutoDelete: (enabled: boolean) =>
+    invoke<GithubSettings>("set_github_auto_delete", { enabled }),
   appVersion: () => invoke<string>("app_version"),
   modelCatalog: (force = false) => invoke<ModelCatalog>("model_catalog", { force }),
   autoTagNote: (id: string) => invoke<string[]>("auto_tag_note", { id }),
@@ -201,9 +317,9 @@ export const api = {
   writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),
-  /** Toggle the paused/on-hold marker shown beside an idea. */
-  setNoteOnHold: (id: string, onHold: boolean) =>
-    invoke<void>("set_note_on_hold", { id, onHold }),
+  /** Set or cycle the marking state shown beside an idea. */
+  setNoteMark: (id: string, mark: boolean | IdeaMarkState | string) =>
+    invoke<void>("set_note_mark", { id, mark }),
   /** Assign the model a bubble's prompt targets, keyed by its first line. */
   setBubbleModel: (id: string, key: string, model: string) =>
     invoke<Record<string, string>>("set_bubble_model", { id, key, model }),
