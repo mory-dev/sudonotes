@@ -545,6 +545,85 @@ pub fn extract_links(body: &str) -> Vec<String> {
     links
 }
 
+
+
+pub const LLM_DIRECTIVE_HEADER: &str = "<!--\n  sudonotes: Project Idea Backlog (synced with sudonotes)\n  - This file contains the project roadmap, ideas, and feature backlog.\n  - Ideas are separated by blank lines or <!-- bubble --> tags.\n  - Changes made to this file automatically sync into sudonotes.\n-->";
+
+/// Check if content (or note body) contains the sudonotes LLM directive comment block.
+pub fn has_directive_header(content: &str) -> bool {
+    let (_, body) = split_frontmatter(content);
+    let target = if body.trim_start().starts_with("<!--") {
+        body.trim_start()
+    } else {
+        content.trim_start()
+    };
+    target.starts_with("<!--") && target.contains("sudonotes: Project Idea Backlog")
+}
+
+/// Ensure markdown contains the standard LLM directive header.
+/// When frontmatter is present, the directive block is placed at the top of the body.
+/// When no frontmatter is present, it is placed at the top of the file.
+pub fn ensure_directive_header(markdown: &str) -> String {
+    if has_directive_header(markdown) {
+        return markdown.to_string();
+    }
+
+    let (fields, body) = split_frontmatter(markdown);
+    let trimmed_body = body.trim_start();
+    let directive = LLM_DIRECTIVE_HEADER;
+
+    if fields.is_empty() && !markdown.trim_start().starts_with("---") {
+        let trimmed = markdown.trim_start();
+        if trimmed.is_empty() {
+            directive.to_string()
+        } else {
+            format!("{directive}\n\n{trimmed}")
+        }
+    } else {
+        let stripped = markdown.strip_prefix("\u{feff}").unwrap_or(markdown);
+        let Some(rest) = stripped.strip_prefix("---\n").or_else(|| stripped.strip_prefix("---\r\n")) else {
+            return format!("{directive}\n\n{markdown}");
+        };
+        let mut offset = 0usize;
+        let mut end: Option<usize> = None;
+        for line in rest.split_inclusive('\n') {
+            if line.trim_end_matches(['\r', '\n']) == "---" {
+                end = Some(offset + line.len());
+                break;
+            }
+            offset += line.len();
+        }
+        if let Some(body_start) = end {
+            let header_part = &stripped[..(stripped.len() - rest.len() + body_start)];
+            if trimmed_body.is_empty() {
+                format!("{header_part}\n{directive}\n")
+            } else {
+                format!("{header_part}\n{directive}\n\n{trimmed_body}")
+            }
+        } else {
+            format!("{directive}\n\n{markdown}")
+        }
+    }
+}
+
+/// Strip the directive header from content if present.
+pub fn strip_directive_header(content: &str) -> &str {
+    let trimmed = content.trim_start();
+    if !has_directive_header(trimmed) {
+        return content;
+    }
+    // Find the closing "-->" on its own line
+    if let Some(pos) = trimmed.find("\n-->") {
+        let after = &trimmed[pos + 4..];
+        after.strip_prefix("\r\n").or_else(|| after.strip_prefix('\n')).unwrap_or(after)
+    } else if let Some(pos) = trimmed.find("\r\n-->") {
+        let after = &trimmed[pos + 5..];
+        after.strip_prefix("\r\n").or_else(|| after.strip_prefix('\n')).unwrap_or(after)
+    } else {
+        content
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,4 +774,40 @@ mod tests {
         assert!(!changed);
         assert_eq!(updated, body);
     }
+
+
+    #[test]
+    fn adds_directive_header_to_note_with_frontmatter() {
+        let original = "---\nid: abc\ntitle: \"My Note\"\ntags: []\ncreated: c\nupdated: u\n---\n\nFirst bubble\n";
+        let formatted = ensure_directive_header(original);
+        assert!(has_directive_header(&formatted));
+        assert!(formatted.starts_with("---\nid: abc\n"));
+        assert!(formatted.contains(LLM_DIRECTIVE_HEADER));
+        assert!(formatted.ends_with("First bubble\n"));
+
+        // Idempotent: should not duplicate
+        let formatted_again = ensure_directive_header(&formatted);
+        assert_eq!(formatted, formatted_again);
+    }
+
+    #[test]
+    fn adds_directive_header_to_plain_markdown() {
+        let original = "# Ideas\n\n- Idea 1\n- Idea 2\n";
+        let formatted = ensure_directive_header(original);
+        assert!(has_directive_header(&formatted));
+        assert!(formatted.starts_with(LLM_DIRECTIVE_HEADER));
+        assert!(formatted.contains("# Ideas"));
+
+        // Idempotent
+        assert_eq!(ensure_directive_header(&formatted), formatted);
+    }
+
+    #[test]
+    fn strips_directive_header() {
+        let with_directive = format!("{}\n\nReal content here", LLM_DIRECTIVE_HEADER);
+        let stripped = strip_directive_header(&with_directive);
+        assert_eq!(stripped.trim(), "Real content here");
+        assert!(!has_directive_header(stripped));
+    }
+
 }

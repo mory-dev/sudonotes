@@ -73,23 +73,43 @@ function nextDefaultTitle(noteType: NoteType, notes: NoteMeta[]): string {
  *  per explicit `<!-- bubble -->` pair. The same grouping the editor draws
  *  bubbles around and the sidebar outlines, so a move made from either place
  *  lands on the same block. */
-function bubbleRanges(body: string): { from: number; to: number }[] {
+export function bubbleRanges(body: string): { from: number; to: number }[] {
   const pairs = bubbleMarkerPairs(body);
   const out: { from: number; to: number }[] = [];
   let from = -1;
   let offset = 0;
+  let inComment = false;
 
   for (const line of body.split("\n")) {
-    // Marker pairs own everything between their lines: never start or extend a
-    // blank-line bubble across them.
+    const trimmed = line.trim();
+
+    if (inComment) {
+      if (trimmed === "-->" || trimmed.startsWith("-->")) {
+        inComment = false;
+      }
+      offset += line.length + 1;
+      continue;
+    }
+
+    if (trimmed === "<!--" || (trimmed.startsWith("<!--") && !trimmed.startsWith("<!-- bubble"))) {
+      if (from >= 0) {
+        out.push({ from, to: offset - 1 });
+        from = -1;
+      }
+      if (trimmed === "<!--" || !trimmed.endsWith("-->")) {
+        inComment = true;
+      }
+      offset += line.length + 1;
+      continue;
+    }
+
     if (pairs.some((p) => offset >= p.from && offset <= p.to)) {
       if (from >= 0) {
         out.push({ from, to: offset - 1 });
         from = -1;
       }
-    } else if (line.trim() === "") {
+    } else if (trimmed === "") {
       if (from >= 0) {
-        // Ends at the previous line's last character, not at this blank one.
         out.push({ from, to: offset - 1 });
         from = -1;
       }
@@ -105,10 +125,6 @@ function bubbleRanges(body: string): { from: number; to: number }[] {
   return out;
 }
 
-/** A bubble can be delimited explicitly by these marker lines, so a block of
- *  text keeps every blank line and still reads as one bubble. The markers are
- *  ordinary HTML comments: invisible in any rendered markdown, meaningful only
- *  to sudonotes. Blank-line rules apply outside marker pairs. */
 export const BUBBLE_START = "<!-- bubble -->";
 export const BUBBLE_END = "<!-- /bubble -->";
 
@@ -132,10 +148,19 @@ export function bubbleMarkerPairs(body: string): { from: number; to: number }[] 
   return pairs;
 }
 
-function titleFromFirstLine(body: string): string {
+export function titleFromFirstLine(body: string): string {
+  let inComment = false;
   for (const raw of body.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
+    if (inComment) {
+      if (line === "-->" || line.startsWith("-->")) inComment = false;
+      continue;
+    }
+    if (line === "<!--" || (line.startsWith("<!--") && !line.startsWith("<!-- bubble"))) {
+      if (line === "<!--" || !line.endsWith("-->")) inComment = true;
+      continue;
+    }
     return line.replace(/^#{1,6}\s+/, "").trim();
   }
   return "";

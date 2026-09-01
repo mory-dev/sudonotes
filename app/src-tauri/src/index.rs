@@ -45,11 +45,47 @@ pub struct NoteMeta {
 
 /// The bubbles of a body: runs of non-blank lines, matching the boxes the
 /// editor draws and the "In this idea" outline.
-fn count_bubbles(body: &str) -> u32 {
+pub fn count_bubbles(body: &str) -> u32 {
     let mut count = 0;
     let mut in_group = false;
+    let mut in_comment = false;
+    let mut in_explicit_bubble = false;
+
     for line in body.lines() {
-        if line.trim().is_empty() {
+        let trimmed = line.trim();
+
+        if trimmed == "<!-- bubble -->" {
+            in_explicit_bubble = true;
+            if !in_group {
+                in_group = true;
+                count += 1;
+            }
+            continue;
+        }
+        if trimmed == "<!-- /bubble -->" {
+            in_explicit_bubble = false;
+            in_group = false;
+            continue;
+        }
+        if in_explicit_bubble {
+            continue;
+        }
+
+        if in_comment {
+            if trimmed == "-->" || trimmed.starts_with("-->") {
+                in_comment = false;
+            }
+            continue;
+        }
+
+        if trimmed == "<!--" || (trimmed.starts_with("<!--") && !trimmed.starts_with("<!-- bubble")) {
+            if trimmed == "<!--" || !trimmed.ends_with("-->") {
+                in_comment = true;
+            }
+            continue;
+        }
+
+        if trimmed.is_empty() {
             in_group = false;
         } else if !in_group {
             in_group = true;
@@ -85,6 +121,15 @@ pub struct SearchHit {
     /// Tags that matched a tag-only query (or a bubble's metadata search).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tags: Vec<String>,
+}
+
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct LinkedIdeaPath {
+    pub id: String,
+    pub path: PathBuf,
+    pub project: PathBuf,
 }
 
 pub struct Index {
@@ -314,6 +359,22 @@ impl Index {
     }
 
     /// Notes whose body contains a `[[link]]` pointing at `title`.
+
+    /// Every idea note linked to a project root, as (id, path, project_path).
+    pub fn linked_ideas(&self) -> rusqlite::Result<Vec<LinkedIdeaPath>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, path, project FROM notes WHERE type = 'idea' AND project != ''",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(LinkedIdeaPath {
+                id: r.get(0)?,
+                path: PathBuf::from(r.get::<_, String>(1)?),
+                project: PathBuf::from(r.get::<_, String>(2)?),
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn backlinks(&self, title: &str) -> rusqlite::Result<Vec<NoteMeta>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT n.id, n.title, n.type, n.tags, n.collection, n.summary, n.updated, n.project, n.on_hold, n.model, n.position, n.bubbles
@@ -676,4 +737,43 @@ mod tests {
         assert!(index.list(None).unwrap().is_empty());
         assert!(index.search("body", 10).unwrap().is_empty());
     }
+
+    #[test]
+    fn counts_bubbles_ignoring_directive_and_html_comments() {
+        let body = r#"<!--
+  sudonotes: Project Idea Backlog (synced with sudonotes)
+  - This file contains the project roadmap, ideas, and feature backlog.
+  - Ideas are separated by blank lines or <!-- bubble --> tags.
+  - Changes made to this file automatically sync into sudonotes.
+-->
+
+First idea bubble here.
+Second line of first idea.
+
+Second idea bubble here."#;
+        assert_eq!(count_bubbles(body), 2);
+    }
+
+    #[test]
+    fn counts_explicit_bubble_markers() {
+        let body = "<!-- bubble -->\nMulti-line idea\n\nwith blank line inside\n<!-- /bubble -->\n\nNext idea";
+        assert_eq!(count_bubbles(body), 2);
+    }
+
+    #[test]
+    fn lists_linked_ideas() {
+        let index = Index::open_in_memory().unwrap();
+        let mut linked = note("Linked Idea", "some body");
+        linked.frontmatter.project = Some("/path/to/project".into());
+        index.upsert(NoteType::Idea, Path::new("/v/ideas/linked.md"), &linked, 1).unwrap();
+
+        let unlinked = note("Unlinked Idea", "some body");
+        index.upsert(NoteType::Idea, Path::new("/v/ideas/unlinked.md"), &unlinked, 1).unwrap();
+
+        let list = index.linked_ideas().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, linked.frontmatter.id);
+        assert_eq!(list[0].project, PathBuf::from("/path/to/project"));
+    }
+
 }

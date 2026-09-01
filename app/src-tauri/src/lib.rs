@@ -25,7 +25,7 @@ struct OpenVault {
     vault: Vault,
     index: Index,
     /// Held only so the watcher keeps running; dropping it stops watching.
-    _watcher: Option<notify::RecommendedWatcher>,
+    _watcher: Option<watcher::WatcherHandle>,
 }
 
 #[derive(Default)]
@@ -1426,6 +1426,7 @@ fn bubble_entries(body: &str) -> Vec<(String, usize)> {
     let mut entries = Vec::new();
     let mut active: Option<(Option<(String, usize)>, bool)> = None;
     let mut offset = 0usize;
+    let mut in_comment = false;
 
     for raw_line in body.split_inclusive('\n') {
         let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
@@ -1444,6 +1445,25 @@ fn bubble_entries(body: &str) -> Vec<(String, usize)> {
         if trimmed == BUBBLE_END {
             if let Some((Some((label, start)), _)) = active.take() {
                 entries.push((label, start));
+            }
+            offset += raw_line.len();
+            continue;
+        }
+
+        if in_comment {
+            if trimmed == "-->" || trimmed.starts_with("-->") {
+                in_comment = false;
+            }
+            offset += raw_line.len();
+            continue;
+        }
+
+        if trimmed == "<!--" || (trimmed.starts_with("<!--") && !trimmed.starts_with("<!-- bubble")) {
+            if let Some((Some((label, start)), _)) = active.take() {
+                entries.push((label, start));
+            }
+            if trimmed == "<!--" || !trimmed.ends_with("-->") {
+                in_comment = true;
             }
             offset += raw_line.len();
             continue;

@@ -5,7 +5,9 @@
 //! without the note ever being committed. The vault copy stays canonical — the
 //! mirror is rewritten on every save.
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -13,6 +15,11 @@ use std::time::{Duration, SystemTime};
 use base64::Engine;
 use serde::Serialize;
 use walkdir::WalkDir;
+
+#[allow(unused_imports)]
+pub use sudonotes_core::note::{
+    ensure_directive_header, has_directive_header, strip_directive_header, LLM_DIRECTIVE_HEADER,
+};
 
 /// Cap on favicon size, so a stray large file cannot bloat the payload.
 const MAX_ICON_BYTES: u64 = 512 * 1024;
@@ -80,6 +87,54 @@ const ICON_CACHE_TTL: Duration = Duration::from_secs(30);
 
 static ICON_CACHE: OnceLock<Mutex<HashMap<PathBuf, (Option<String>, SystemTime)>>> =
     OnceLock::new();
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct SyncRecord {
+    pub hash: u64,
+    pub mtime: i64,
+}
+
+static SYNC_GUARD: OnceLock<Mutex<HashMap<PathBuf, SyncRecord>>> = OnceLock::new();
+
+pub fn hash_content(content: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for line in content.lines() {
+        line.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Record that sudonotes itself wrote this content to path, so subsequent
+/// watcher events with matching content hash are ignored as echoes.
+pub fn record_sync(path: &Path, content: &str, mtime: i64) {
+    let guard = SYNC_GUARD.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut map) = guard.lock() {
+        let norm_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        map.insert(
+            norm_path,
+            SyncRecord {
+                hash: hash_content(content),
+                mtime,
+            },
+        );
+    }
+}
+
+/// Check whether the content on disk matches what sudonotes previously wrote,
+/// suppressing infinite echo loops.
+pub fn is_echo(path: &Path, content: &str) -> bool {
+    let guard = SYNC_GUARD.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(map) = guard.lock() {
+        let norm_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        if let Some(rec) = map.get(&norm_path) {
+            if rec.hash == hash_content(content) {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -224,7 +279,7 @@ pub fn mirror_path(root: &Path, slug: &str) -> PathBuf {
     root.join(format!("{slug}.md"))
 }
 
-/// Write the idea into the project root and make sure git ignores it.
+/// Write the idea into the project root with the LLM directive header and make sure git ignores it.
 pub fn write_mirror(root: &Path, slug: &str, contents: &str) -> std::io::Result<PathBuf> {
     if !root.is_dir() {
         return Err(std::io::Error::new(
@@ -232,11 +287,16 @@ pub fn write_mirror(root: &Path, slug: &str, contents: &str) -> std::io::Result<
             "project folder does not exist",
         ));
     }
+    let formatted = ensure_directive_header(contents);
     let path = mirror_path(root, slug);
     let tmp = path.with_extension("md.tmp");
-    std::fs::write(&tmp, contents)?;
+    std::fs::write(&tmp, &formatted)?;
     std::fs::rename(&tmp, &path)?;
     ensure_ignored(root, &format!("{slug}.md"));
+
+    let mtime = crate::index::file_mtime(&path);
+    record_sync(&path, &formatted, mtime);
+
     Ok(path)
 }
 
@@ -290,12 +350,35 @@ mod tests {
 
         write_mirror(&dir, "my-idea", "# hello\n").unwrap();
 
-        assert_eq!(
-            std::fs::read_to_string(dir.join("my-idea.md")).unwrap(),
-            "# hello\n"
-        );
+        let written = std::fs::read_to_string(dir.join("my-idea.md")).unwrap();
+        assert!(written.contains("# hello\n"));
+        assert!(has_directive_header(&written));
+
         let ignored = std::fs::read_to_string(dir.join(".gitignore")).unwrap();
         assert!(ignored.contains("my-idea.md"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn writes_mirror_with_directive_header() {
+        let dir = temp_dir("directive-mirror");
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+
+        let raw_note = "---\nid: 123\ntitle: \"Test\"\ncreated: c\nupdated: u\n---\n\n# Feature Roadmap\n";
+        write_mirror(&dir, "IDEAS", raw_note).unwrap();
+
+        let mirror_content = std::fs::read_to_string(dir.join("IDEAS.md")).unwrap();
+        assert!(has_directive_header(&mirror_content));
+        assert!(mirror_content.contains(LLM_DIRECTIVE_HEADER));
+        assert!(mirror_content.contains("# Feature Roadmap"));
+
+        // Echo prevention: reading the written file must register as echo
+        assert!(is_echo(&dir.join("IDEAS.md"), &mirror_content));
+
+        // External modification is not an echo
+        let modified = format!("{}\n\nAdded by Cursor/Claude", mirror_content);
+        assert!(!is_echo(&dir.join("IDEAS.md"), &modified));
 
         std::fs::remove_dir_all(&dir).ok();
     }
