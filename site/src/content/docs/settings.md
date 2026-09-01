@@ -10,9 +10,11 @@ sources:
   - app/src/components/Settings.tsx
   - app/src-tauri/src/ai.rs
   - app/src-tauri/src/backup.rs
+  - app/src-tauri/src/github.rs
 related:
   - privacy
   - backups-and-recovery
+  - github-issues
   - interface
 searchTerms:
   - preferences
@@ -37,6 +39,25 @@ generated titles, and on-demand note review.
 
 Turning the switch off does not affect storage, search, manual tags, models, links, placeholders,
 backups, or project mirroring.
+
+## GitHub
+
+Connects an account so idea bubbles can become GitHub issues. See
+[GitHub issues from bubbles](/docs/github-issues) for the whole workflow.
+
+- **Connect GitHub** starts the device flow: a short code is copied for you and github.com opens to
+  accept it.
+- **Choose repositories…** opens GitHub to grant access. Access is per account, so a personal
+  account and an organization each need their own grant.
+- **Delete a bubble when its issue closes** is off by default. A closed issue always dims its
+  bubble; this removes it as well.
+
+Linked issues refresh on their own — on opening the vault, on returning to the app, and on a
+five-minute backstop — so there is nothing to press.
+
+The sign-in belongs to the installation and is kept in the operating system’s credential store —
+never in the vault. The auto-delete preference belongs to the vault, in
+`<vault>/.sudonotes/github.json`.
 
 ## Backups
 

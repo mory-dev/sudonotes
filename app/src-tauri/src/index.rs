@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
+use crate::github::IssueRef;
 use crate::note::{extract_links, Note, NoteType};
 use crate::vault::{title_from_path, Vault};
 
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteMeta {
@@ -113,7 +114,9 @@ impl Index {
             conn.execute_batch(
                 "DROP TABLE IF EXISTS notes;
                  DROP TABLE IF EXISTS notes_fts;
-                 DROP TABLE IF EXISTS links;",
+                 DROP TABLE IF EXISTS links;
+                 DROP TABLE IF EXISTS note_issues;
+                 DROP TABLE IF EXISTS github_issues;",
             )?;
         }
 
@@ -146,7 +149,25 @@ impl Index {
                  target_title TEXT NOT NULL
              );
              CREATE INDEX IF NOT EXISTS idx_links_target ON links(target_title);
-             CREATE INDEX IF NOT EXISTS idx_links_src ON links(src_id);",
+             CREATE INDEX IF NOT EXISTS idx_links_src ON links(src_id);
+             -- Which notes reference which issues, mirrored out of frontmatter
+             -- on every upsert. This is what makes a sync one query rather than
+             -- a re-read of every note, the same way `links` backs backlinks.
+             CREATE TABLE IF NOT EXISTS note_issues (
+                 src_id TEXT NOT NULL,
+                 key    TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_note_issues_src ON note_issues(src_id);
+             -- The volatile half: open or closed, fetched from GitHub. Never
+             -- written to markdown, and safe to lose.
+             CREATE TABLE IF NOT EXISTS github_issues (
+                 key     TEXT PRIMARY KEY,
+                 state   TEXT NOT NULL,
+                 title   TEXT NOT NULL,
+                 url     TEXT NOT NULL,
+                 number  INTEGER NOT NULL,
+                 checked INTEGER NOT NULL
+             );",
         )?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
 
@@ -207,6 +228,86 @@ impl Index {
 
     pub fn remove_path(&self, path: &Path) -> rusqlite::Result<()> {
         remove_in(&self.conn, &path.to_string_lossy())
+    }
+
+    /// Every issue any bubble in the vault is linked to, deduplicated. This is
+    /// the work list for a sync.
+    pub fn tracked_issues(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT DISTINCT key FROM note_issues")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    }
+
+    /// Cached state for the given issue keys. Keys never fetched are absent
+    /// rather than defaulted, so a bubble waiting on its first sync can be told
+    /// apart from one whose issue is open.
+    pub fn issue_states(&self, keys: &[String]) -> rusqlite::Result<HashMap<String, IssueRef>> {
+        let mut found = HashMap::new();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, state, title, url, number FROM github_issues WHERE key = ?1")?;
+        for key in keys {
+            let mut rows = stmt.query_map(params![key], |r| {
+                Ok(IssueRef {
+                    key: r.get(0)?,
+                    state: r.get(1)?,
+                    title: r.get(2)?,
+                    url: r.get(3)?,
+                    number: r.get::<_, i64>(4)? as u64,
+                })
+            })?;
+            if let Some(Ok(issue)) = rows.next() {
+                found.insert(issue.key.clone(), issue);
+            }
+        }
+        Ok(found)
+    }
+
+    /// Record what GitHub reported. Returns the keys whose state actually
+    /// changed, which is what drives muting and the auto-delete setting.
+    pub fn put_issues(&self, issues: &[IssueRef], checked: i64) -> rusqlite::Result<Vec<IssueRef>> {
+        let previous = self.issue_states(
+            &issues.iter().map(|issue| issue.key.clone()).collect::<Vec<_>>(),
+        )?;
+        let mut changed = Vec::new();
+        for issue in issues {
+            if previous.get(&issue.key).map(|old| old.state.as_str()) != Some(issue.state.as_str()) {
+                changed.push(issue.clone());
+            }
+            self.conn.execute(
+                "INSERT INTO github_issues (key, state, title, url, number, checked)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(key) DO UPDATE SET
+                   state = excluded.state, title = excluded.title,
+                   url = excluded.url, number = excluded.number, checked = excluded.checked",
+                params![
+                    issue.key,
+                    issue.state,
+                    issue.title,
+                    issue.url,
+                    issue.number as i64,
+                    checked
+                ],
+            )?;
+        }
+        Ok(changed)
+    }
+
+    /// Note ids with a bubble linked to any of `keys`.
+    pub fn notes_with_issues(&self, keys: &[String]) -> rusqlite::Result<Vec<String>> {
+        let mut ids = Vec::new();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT src_id FROM note_issues WHERE key = ?1")?;
+        for key in keys {
+            for row in stmt.query_map(params![key], |r| r.get::<_, String>(0))? {
+                let id = row?;
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        Ok(ids)
     }
 
     pub fn list(&self, note_type: Option<NoteType>) -> rusqlite::Result<Vec<NoteMeta>> {
@@ -357,6 +458,7 @@ fn upsert_in(
     conn.execute("DELETE FROM notes WHERE path = ?1 OR id = ?2", params![key, fm.id])?;
     conn.execute("DELETE FROM notes_fts WHERE id = ?1", params![fm.id])?;
     conn.execute("DELETE FROM links WHERE src_id = ?1", params![fm.id])?;
+    conn.execute("DELETE FROM note_issues WHERE src_id = ?1", params![fm.id])?;
 
     conn.execute(
         "INSERT INTO notes (id, path, type, title, tags, collection, summary, project, on_hold, model, position, created, updated, mtime, bubbles)
@@ -383,6 +485,13 @@ fn upsert_in(
         "INSERT INTO notes_fts (id, title, body) VALUES (?1, ?2, ?3)",
         params![fm.id, fm.title, note.body],
     )?;
+
+    for key in fm.bubble_issues.values() {
+        conn.execute(
+            "INSERT INTO note_issues (src_id, key) VALUES (?1, ?2)",
+            params![fm.id, key],
+        )?;
+    }
 
     for target in extract_links(&note.body) {
         conn.execute(

@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ContextMenu } from "./components/ContextMenu";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Editor } from "./components/Editor";
+import { IssueDraftDialog } from "./components/IssueDraft";
 import { IdeaMark, PromptMark } from "./components/NoteMarks";
 import { NotePicker } from "./components/NotePicker";
 import { PromptCards } from "./components/PromptCards";
@@ -20,6 +21,7 @@ import { TooltipLayer } from "./components/TooltipLayer";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { Welcome } from "./components/Welcome";
 import { WindowChrome } from "./components/WindowChrome";
+import { api } from "./api";
 import { useStore } from "./store";
 
 import "./App.css";
@@ -29,6 +31,18 @@ const MIN_SPLASH_MS = 900;
 
 /** Toasts (errors and notices) retire themselves after this long. */
 const TOAST_DISMISS_MS = 5000;
+
+/** Longer, for a toast whose action is the only way to reverse something. */
+const ACTION_TOAST_DISMISS_MS = 20000;
+
+/** Backstop for refreshing linked GitHub issues when the window never loses
+ *  focus — on a second monitor, say. Regaining focus is the real trigger. */
+const ISSUE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Enough to coalesce a burst of alt-tabbing, short enough that coming back
+ *  from closing an issue feels immediate. One request per repository, so even
+ *  continuous switching stays far under the rate limit. */
+const FOCUS_SYNC_THROTTLE_MS = 8 * 1000;
 
 /** Browser chrome the webview still offers but a desktop note app has no use
  *  for: print, open-file, view-source, downloads, bookmark, find-next. Ctrl+P
@@ -77,8 +91,10 @@ export default function App() {
   const error = useStore((s) => s.error);
   const setError = useStore((s) => s.setError);
   const notice = useStore((s) => s.notice);
+  const noticeAction = useStore((s) => s.noticeAction);
   const setNotice = useStore((s) => s.setNotice);
   const loadAiSettings = useStore((s) => s.loadAiSettings);
+  const loadGithubAuth = useStore((s) => s.loadGithubAuth);
   const restoreVault = useStore((s) => s.restoreVault);
   const hasChildren = useStore((s) => s.children.length > 0);
 
@@ -86,7 +102,8 @@ export default function App() {
 
   useEffect(() => {
     void loadAiSettings();
-  }, [loadAiSettings]);
+    void loadGithubAuth();
+  }, [loadAiSettings, loadGithubAuth]);
 
   useEffect(() => {
     const startedAt = Date.now();
@@ -191,6 +208,79 @@ export default function App() {
     return () => void unlisten.then((stop) => stop());
   }, []);
 
+  // Linked GitHub issues close without telling us, so their state is polled.
+  // One request per repository per run keeps this far inside the rate limit.
+  useEffect(() => {
+    if (!vaultPath) return;
+    // Reported once per session: a repository that cannot be reached will fail
+    // on every run, and a toast on each one would be a nag rather than news.
+    let reportedFailure = false;
+    const sync = async () => {
+      try {
+        const result = await api.syncGithubIssues();
+        if (result.failed > 0 && !reportedFailure) {
+          reportedFailure = true;
+          useStore
+            .getState()
+            .setError(
+              `Could not check linked issues on ${result.failed} repository${result.failed === 1 ? "" : " repositories"}. Their bubbles will keep showing the last known state.`,
+            );
+        }
+        if (result.removed > 0) {
+          useStore
+            .getState()
+            .setNoticeAction(
+              `Removed ${result.removed} bubble${result.removed === 1 ? "" : "s"} for closed issues`,
+              "Undo",
+              () => void undoCleanup(),
+            );
+        }
+      } catch {
+        // Signed out, offline, or GitHub is down. Nothing to say about it.
+      }
+    };
+    const undoCleanup = async () => {
+      try {
+        // The editor's queued body is the one with the bubble already gone. It
+        // has to be dropped before the restore, or it lands afterwards and
+        // deletes the bubble a second time — and while it is queued the note
+        // counts as dirty, which suppresses the reload entirely.
+        useStore.getState().discardPendingSave();
+        const restored = await api.undoIssueCleanup();
+        if (restored === 0) {
+          useStore
+            .getState()
+            .setError("Nothing left to restore — the undo buffer only lasts while the app is open.");
+          return;
+        }
+        await useStore.getState().reloadExternal();
+      } catch (e) {
+        useStore.getState().setError(String(e));
+      }
+    };
+
+    // Issues are closed in a browser, so returning to the window is the moment
+    // the answer is most likely to have changed — far more useful than any
+    // interval. Throttled, because alt-tabbing is not a request to poll, and
+    // deliberately not tied to typing: a sync per keystroke would be absurd for
+    // something that changes a few times a day.
+    let lastRun = 0;
+    const syncIfDue = () => {
+      const now = Date.now();
+      if (now - lastRun < FOCUS_SYNC_THROTTLE_MS) return;
+      lastRun = now;
+      void sync();
+    };
+
+    syncIfDue();
+    window.addEventListener("focus", syncIfDue);
+    const timer = window.setInterval(syncIfDue, ISSUE_SYNC_INTERVAL_MS);
+    return () => {
+      window.removeEventListener("focus", syncIfDue);
+      window.clearInterval(timer);
+    };
+  }, [vaultPath]);
+
   // A toast never outlives its point: an error or notice dismisses itself
   // after a few seconds, or as soon as a newer one replaces it.
   useEffect(() => {
@@ -201,9 +291,14 @@ export default function App() {
 
   useEffect(() => {
     if (!notice) return;
-    const timer = setTimeout(() => setNotice(null), TOAST_DISMISS_MS);
+    // A notice offering an action has to outlast a glance: five seconds is not
+    // long enough to read "removed 3 bubbles", decide, and reach for Undo.
+    const timer = setTimeout(
+      () => setNotice(null),
+      noticeAction ? ACTION_TOAST_DISMISS_MS : TOAST_DISMISS_MS,
+    );
     return () => clearTimeout(timer);
-  }, [notice, setNotice]);
+  }, [notice, noticeAction, setNotice]);
 
   // Never lose an in-flight edit when the window goes away.
   useEffect(() => {
@@ -252,6 +347,7 @@ export default function App() {
       <ContextMenu />
       <NotePicker />
       <ConfirmDialog />
+      <IssueDraftDialog />
       <Settings />
       <TooltipLayer />
 
@@ -267,6 +363,17 @@ export default function App() {
       {notice && (
         <div className="toast success" role="status">
           <span>{notice}</span>
+          {noticeAction && (
+            <button
+              className="toast-action"
+              onClick={() => {
+                noticeAction.run();
+                setNotice(null);
+              }}
+            >
+              {noticeAction.label}
+            </button>
+          )}
           <button className="icon-button" onClick={() => setNotice(null)}>
             ×
           </button>

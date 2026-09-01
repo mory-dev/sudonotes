@@ -61,6 +61,10 @@ pub struct Frontmatter {
     /// Per-bubble tags for idea notes: the first line of a bubble maps to the
     /// small set of tags attached to that bubble.
     pub bubble_tags: BTreeMap<String, Vec<String>>,
+    /// Per-bubble GitHub issue: the first line of a bubble maps to the issue it
+    /// became, as `owner/repo#123`. Only which issue is durable — whether it is
+    /// open or closed is cached in the index and re-fetched, never written here.
+    pub bubble_issues: BTreeMap<String, String>,
     pub created: String,
     pub updated: String,
 }
@@ -98,6 +102,7 @@ impl Note {
                 on_hold: false,
                 models: BTreeMap::new(),
                 bubble_tags: BTreeMap::new(),
+                bubble_issues: BTreeMap::new(),
                 created: now.clone(),
                 updated: now,
             },
@@ -164,6 +169,12 @@ impl Note {
             .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, Vec<String>>>(v).ok())
             .unwrap_or_default();
 
+        let bubble_issues = fields
+            .iter()
+            .find(|(k, _)| k == "bubbleIssues")
+            .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, String>>(v).ok())
+            .unwrap_or_default();
+
         let on_hold = optional("onHold")
             .or_else(|| optional("on_hold"))
             .map(|value| {
@@ -187,6 +198,7 @@ impl Note {
                 on_hold,
                 models,
                 bubble_tags,
+                bubble_issues,
                 created,
                 updated,
             },
@@ -231,6 +243,11 @@ impl Note {
         if !fm.bubble_tags.is_empty() {
             if let Ok(json) = serde_json::to_string(&fm.bubble_tags) {
                 extras.push_str(&format!("bubbleTags: {json}\n"));
+            }
+        }
+        if !fm.bubble_issues.is_empty() {
+            if let Ok(json) = serde_json::to_string(&fm.bubble_issues) {
+                extras.push_str(&format!("bubbleIssues: {json}\n"));
             }
         }
 
@@ -632,6 +649,25 @@ mod tests {
 
         let plain = Note::new("x", "y".into());
         assert!(!plain.to_markdown().contains("bubbleTags:"));
+    }
+
+    #[test]
+    fn round_trips_bubble_issues() {
+        let mut note = Note::new("Brainstorm", "First bubble.\n\nSecond bubble.\n".into());
+        note.frontmatter
+            .bubble_issues
+            .insert("First bubble.".into(), "mory-dev/sudonotes#42".into());
+        let markdown = note.to_markdown();
+        let reparsed = Note::parse(&markdown, "fallback");
+        assert_eq!(
+            reparsed.frontmatter.bubble_issues.get("First bubble."),
+            Some(&"mory-dev/sudonotes#42".to_string())
+        );
+        assert!(markdown.contains("bubbleIssues:"));
+
+        // A note with no linked issues never emits the key.
+        let plain = Note::new("x", "y".into());
+        assert!(!plain.to_markdown().contains("bubbleIssues:"));
     }
 
     #[test]
