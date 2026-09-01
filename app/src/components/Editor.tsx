@@ -36,6 +36,8 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { siGithub } from "simple-icons";
 
 import { BUBBLE_END, BUBBLE_START, useStore } from "../store";
 import { getUiZoom, viewportToLayout } from "../uiScale";
@@ -1044,6 +1046,12 @@ class BubbleMetadataWidget extends WidgetType {
   }
 }
 
+/** The GitHub address of an `owner/repo#123` issue key. */
+function issueUrl(key: string): string {
+  const [slug, number] = key.split("#");
+  return `https://github.com/${slug}/issues/${number}`;
+}
+
 /** Wrap each idea in the note in a subtle box: a paragraph together with any
  *  list or quote that follows it directly forms one bubble. Only applied to
  *  idea notes; prompt children keep the bare editor. */
@@ -1055,10 +1063,14 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const doc = view.state.doc;
   const runs = computeBubbles(view.state);
+  const issueStates = useStore.getState().active?.issueStates ?? {};
 
   for (const block of runs) {
     const firstLine = doc.lineAt(block.from);
     const lastLine = doc.lineAt(block.to);
+    // A bubble whose issue has been closed is dimmed rather than removed —
+    // deleting it is opt-in, in settings.
+    const closed = issueStates[bubbleFirstText(doc, block.from)]?.state === "closed";
     // A marker bubble's box hugs its content: the first/last classes land on
     // the first/last content lines, never the collapsed marker lines.
     let boxFirst = firstLine;
@@ -1088,6 +1100,7 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
         n === boxFirst.number ? "first" : "",
         n === boxLast.number ? "last" : "",
         n === boxFirst.number && block.heading ? "cm-bubble-header" : "",
+        closed ? "cm-para-closed" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -1198,6 +1211,7 @@ const heatBars = ViewPlugin.fromClass(
           this.alive &&
           (state.active?.models !== previous.active?.models ||
             state.active?.bubbleTags !== previous.active?.bubbleTags ||
+            state.active?.issueStates !== previous.active?.issueStates ||
             state.active?.tags !== previous.active?.tags ||
             state.aiSettings.showBubbleMetadata !== previous.aiSettings.showBubbleMetadata)
         ) {
@@ -1230,7 +1244,15 @@ const paragraphBoxes = ViewPlugin.fromClass(
       this.decorations = buildParagraphDecorations(view);
     }
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      // The metadata effect also carries "an issue changed state", which has to
+      // re-run the boxes so a newly closed bubble dims without a doc edit.
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.transactions.some((transaction) =>
+          transaction.effects.some((effect) => effect.is(bubbleMetadataEffect)),
+        )
+      ) {
         this.decorations = buildParagraphDecorations(update.view);
       }
     }
@@ -1589,6 +1611,11 @@ const theme = EditorView.theme(
     },
     ".cm-para-hover.first": { borderTopColor: "rgba(255,255,255,0.18)" },
     ".cm-para-hover.last": { borderBottomColor: "rgba(255,255,255,0.18)" },
+    // A bubble whose issue closed. Dimmed, not hidden: the text stays readable
+    // and editable, it just stops competing with live ideas.
+    ".cm-para-closed": { opacity: "0.45" },
+    // Hovering restores it, so a closed bubble can still be read comfortably.
+    ".cm-para-closed.cm-para-hover": { opacity: "1" },
     // Marker lines are structural: hidden and collapsed to zero height so they
     // never take space inside the bubble.
     ".cm-line.cm-bubble-marker": {
@@ -1760,6 +1787,7 @@ const theme = EditorView.theme(
 
 export function Editor() {
   const active = useStore((s) => s.active);
+  const githubAuth = useStore((s) => s.githubAuth);
   const docVersion = useStore((s) => s.docVersion);
   const insertLink = useStore((s) => s.insertLink);
   const mergeSelection = useStore((s) => s.mergeSelection);
@@ -1865,6 +1893,29 @@ export function Editor() {
     void navigator.clipboard.writeText(bubbleMenu.text);
     setCopiedBubble(true);
     setTimeout(() => setCopiedBubble(false), 1200);
+  };
+
+  /** The GitHub issue this bubble became, if any, and what the button should do
+   *  about it. Only ever offered for an idea whose project has a GitHub remote;
+   *  without one there is nothing to file against. */
+  const issueKey = bubbleMenu ? (active?.bubbleIssues?.[bubbleMenu.label] ?? null) : null;
+  const issue = bubbleMenu ? (active?.issueStates?.[bubbleMenu.label] ?? null) : null;
+
+  const issueAction = () => {
+    if (!bubbleMenu) return;
+    if (issueKey) {
+      // The cached URL is authoritative; before the first sync it is derived
+      // from the key, which is the same address.
+      void openUrl(issue?.url ?? issueUrl(issueKey));
+      return;
+    }
+    if (!githubAuth?.connected) {
+      setBubbleMenu(null);
+      useStore.getState().setSettings(true);
+      return;
+    }
+    setBubbleMenu(null);
+    useStore.getState().openIssueDraft(bubbleMenu.label);
   };
 
   /** Remove the `<!-- bubble -->` markers around the hovered bubble, turning
@@ -2637,6 +2688,28 @@ export function Editor() {
                 <path d="M5.3 5.7a1.6 1.6 0 0 1 1.7-1.1" />
               </svg>
             </button>
+            {active.remote && (
+              <button
+                className={
+                  issue?.state === "closed"
+                    ? "bubble-model-copy bubble-issue closed"
+                    : "bubble-model-copy bubble-issue"
+                }
+                data-tooltip={
+                  issueKey
+                    ? `${issueKey} · ${issue?.state ?? "not synced yet"}`
+                    : githubAuth?.connected
+                      ? `Create an issue on ${active.remote.owner}/${active.remote.repo}`
+                      : "Connect GitHub"
+                }
+                onClick={issueAction}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={siGithub.path} />
+                </svg>
+              </button>
+            )}
             <button
               className="bubble-model-copy"
               data-tooltip="Copy bubble"
