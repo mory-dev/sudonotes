@@ -273,6 +273,9 @@ export const api = {
   /** Move a bubble's model, tags and issue link to its new first line. */
   renameBubbleKey: (id: string, oldKey: string, newKey: string) =>
     invoke<void>("rename_bubble_key", { id, oldKey, newKey }),
+  /** Drop everything attached to a bubble that has been deleted. */
+  forgetBubbleKey: (id: string, key: string) =>
+    invoke<void>("forget_bubble_key", { id, key }),
   createBubbleIssue: (id: string, label: string, title: string, body: string) =>
     invoke<IssueRef>("create_bubble_issue", { id, label, title, body }),
   /** Refresh every linked issue's state. A no-op when signed out. */

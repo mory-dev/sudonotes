@@ -393,3 +393,77 @@ describe("bubble model persistence during typing", () => {
     expect(active?.models?.["# Marked idea title updated"]).toBe(modelMarked);
   });
 });
+
+describe("deleting a bubble does not hand its metadata to a neighbour", () => {
+  function makeIdeaEditor(initialDoc: string): EditorView {
+    return new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: initialDoc,
+        extensions: [markdown(), bubbleMetadataDecorations, bubbleModelPersistence],
+      }),
+    });
+  }
+
+  /** Deleting a bubble collapses its range onto the deletion point, which lands
+   *  inside whatever moves up to fill the gap. That used to read as a rename,
+   *  so a deleted bubble's issue link and model were inherited by the bubble
+   *  below it — which then muted itself against an issue it never had. */
+  it("drops the metadata instead of migrating it to the bubble below", () => {
+    const first = "Deleted bubble";
+    const second = "Surviving bubble";
+    const initialDoc = `${first}\ndetails\n\n${second}\nmore details`;
+
+    useStore.setState({
+      active: {
+        id: "note-1",
+        type: "idea",
+        models: { [first]: "anthropic/claude-opus-5" },
+        bubbleTags: { [first]: ["urgent"] },
+        bubbleIssues: { [first]: "o/r#9" },
+        issueStates: {},
+        tags: [],
+      } as never,
+      aiSettings: { enabled: true, showBubbleMetadata: true, configured: true },
+    });
+
+    const view = makeIdeaEditor(initialDoc);
+
+    // Remove the first bubble and its trailing blank line, exactly as the
+    // bubble menu and the sidebar's "Delete bubble" both do.
+    view.dispatch({
+      changes: { from: 0, to: initialDoc.indexOf(second), insert: "" },
+    });
+
+    expect(view.state.doc.toString()).toBe(`${second}\nmore details`);
+
+    const active = useStore.getState().active;
+    expect(active?.models?.[second]).toBeUndefined();
+    expect(active?.bubbleTags?.[second]).toBeUndefined();
+    expect(active?.bubbleIssues?.[second]).toBeUndefined();
+  });
+
+  it("still migrates when the first line is edited rather than deleted", () => {
+    const initialDoc = "Kept bubble\ndetails\n\nOther bubble\nmore";
+
+    useStore.setState({
+      active: {
+        id: "note-1",
+        type: "idea",
+        models: {},
+        bubbleTags: {},
+        bubbleIssues: { "Kept bubble": "o/r#9" },
+        issueStates: {},
+        tags: [],
+      } as never,
+      aiSettings: { enabled: true, showBubbleMetadata: true, configured: true },
+    });
+
+    const view = makeIdeaEditor(initialDoc);
+    view.dispatch({ changes: { from: "Kept bubble".length, insert: " renamed" } });
+
+    const active = useStore.getState().active;
+    expect(active?.bubbleIssues?.["Kept bubble renamed"]).toBe("o/r#9");
+    expect(active?.bubbleIssues?.["Other bubble"]).toBeUndefined();
+  });
+});

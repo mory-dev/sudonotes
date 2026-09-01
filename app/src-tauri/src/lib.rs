@@ -1250,6 +1250,25 @@ fn rename_bubble_key(
     })
 }
 
+/// Drop everything attached to a bubble that no longer exists.
+///
+/// Without this the entry outlives its bubble, and a later bubble that happens
+/// to start with the same line silently inherits a model, tags and an issue it
+/// never had.
+#[tauri::command]
+fn forget_bubble_key(id: String, key: String, state: State<AppState>) -> Result<()> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Ok(());
+    }
+    save(&state, &id, move |note| {
+        let fm = &mut note.frontmatter;
+        fm.models.remove(&key);
+        fm.bubble_tags.remove(&key);
+        fm.bubble_issues.remove(&key);
+    })
+}
+
 /// Move every per-bubble entry from one key to another.
 ///
 /// Kept separate from the command so the guarantee that matters — all the maps
@@ -2783,6 +2802,7 @@ pub fn run() {
             set_bubble_model,
             set_bubble_tags,
             rename_bubble_key,
+            forget_bubble_key,
             draft_bubble_issue,
             create_bubble_issue,
             rename_note,

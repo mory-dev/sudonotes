@@ -315,6 +315,8 @@ interface AppState {
   findMove: (dir: 1 | -1) => void;
   /** Remove the bubble starting at `start` in the open idea's body. */
   deleteBubbleAt: (start: number) => void;
+  /** Drop the model, tags and issue link of a bubble that has been deleted. */
+  forgetBubbleKey: (key: string) => void;
   setHoverBubble: (label: string | null) => void;
   setCursorBubble: (label: string | null) => void;
   setHoverPrompt: (prompt: ChildPrompt | null) => void;
@@ -485,12 +487,39 @@ export const useStore = create<AppState>((set, get) => ({
       if (before) from -= before[0].length;
     }
 
+    // The bubble's own first line, before it is cut, is the key everything
+    // attached to it is filed under.
+    const label = body.slice(start, to).split("\n")[0]?.trim() ?? "";
+
     const next = body.slice(0, from) + body.slice(to);
     set({
       active: { ...active, body: next },
       docVersion: get().docVersion + 1,
     });
     get().queueSave(active.id, next);
+    if (label) get().forgetBubbleKey(label);
+  },
+
+  forgetBubbleKey: (key) => {
+    const active = get().active;
+    if (!active || !key) return;
+
+    const models = { ...(active.models ?? {}) };
+    const bubbleTags = { ...(active.bubbleTags ?? {}) };
+    const bubbleIssues = { ...(active.bubbleIssues ?? {}) };
+    const issueStates = { ...(active.issueStates ?? {}) };
+    if (!(key in models) && !(key in bubbleTags) && !(key in bubbleIssues)) return;
+
+    delete models[key];
+    delete bubbleTags[key];
+    delete bubbleIssues[key];
+    delete issueStates[key];
+    set({ active: { ...active, models, bubbleTags, bubbleIssues, issueStates } });
+
+    void api.forgetBubbleKey(active.id, key).catch(() => {
+      // Leaving the entry on disk is untidy, not harmful — it attaches to
+      // nothing. Not worth surfacing over a deleted bubble.
+    });
   },
 
   setHoverBubble: (label) => {

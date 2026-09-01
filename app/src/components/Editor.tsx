@@ -1303,6 +1303,13 @@ export const bubbleModelPersistence = EditorView.updateListener.of((update) => {
   const currentIssues = store.active?.bubbleIssues ?? {};
 
   const migrations: Array<{ oldKey: string; newKey: string }> = [];
+  // Labels that still belong to a bubble of their own after the edit. A bubble
+  // that kept its first line has not been renamed, and nothing may be moved
+  // onto it — that is how a delete used to hand its issue to its neighbour.
+  const survivingLabels = new Set(
+    nextBubbles.map((nb) => bubbleFirstText(nextDoc, nb.from)).filter(Boolean),
+  );
+  const claimed = new Set<number>();
 
   for (const prevB of prevBubbles) {
     const oldLabel = bubbleFirstText(prevDoc, prevB.from);
@@ -1317,16 +1324,27 @@ export const bubbleModelPersistence = EditorView.updateListener.of((update) => {
     const mappedFrom = update.changes.mapPos(prevB.from, 1);
     const mappedTo = update.changes.mapPos(prevB.to, -1);
 
-    const matchingNextB = nextBubbles.find(
-      (nb) =>
-        (mappedFrom >= nb.from && mappedFrom <= nb.to) ||
-        (mappedTo >= nb.from && mappedTo <= nb.to) ||
-        (nb.from >= mappedFrom && nb.to <= Math.max(mappedFrom, mappedTo)),
+    // Deleting a bubble collapses its range onto the deletion point, which sits
+    // inside whatever moved up to fill the gap. That is a removal, not a
+    // rename: the metadata belongs to nothing now, so it must not follow.
+    if (mappedTo <= mappedFrom) continue;
+
+    const matchingIndex = nextBubbles.findIndex(
+      (nb, index) =>
+        !claimed.has(index) &&
+        ((mappedFrom >= nb.from && mappedFrom <= nb.to) ||
+          (mappedTo >= nb.from && mappedTo <= nb.to) ||
+          (nb.from >= mappedFrom && nb.to <= Math.max(mappedFrom, mappedTo))),
     );
 
-    if (matchingNextB) {
+    if (matchingIndex >= 0) {
+      const matchingNextB = nextBubbles[matchingIndex];
       const newLabel = bubbleFirstText(nextDoc, matchingNextB.from);
-      if (newLabel && newLabel !== oldLabel) {
+      // A target that still carries its own first line is a different bubble
+      // that merely shifted position; taking it over would overwrite its
+      // metadata with the neighbour's.
+      if (newLabel && newLabel !== oldLabel && !survivingLabels.has(oldLabel)) {
+        claimed.add(matchingIndex);
         migrations.push({ oldKey: oldLabel, newKey: newLabel });
       }
     }
@@ -2395,6 +2413,10 @@ export function Editor() {
     });
     setBubbleMenu(null);
     useStore.getState().setHoverBubble(null);
+    // The bubble is gone, so its model, tags and issue link have nothing left
+    // to belong to. Dropping them stops a later bubble that happens to start
+    // with the same line from inheriting them.
+    useStore.getState().forgetBubbleKey(bubbleMenu.label);
     editor.focus();
   };
 
