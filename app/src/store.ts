@@ -42,6 +42,7 @@ function shouldAutoTag(id: string, body: string): boolean {
  *  save can never land on the wrong note after the user switches away. */
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let pending: { id: string; body: string } | null = null;
+let pendingMigrations: Array<{ id: string; oldKey: string; newKey: string }> = [];
 
 const message = (e: unknown) => (typeof e === "string" ? e : String(e));
 
@@ -256,6 +257,8 @@ interface AppState {
   setBubbleModel: (key: string, model: string | null) => Promise<void>;
   /** Replace the tags attached to the bubble whose first line is `key`. */
   setBubbleTags: (key: string, tags: string[]) => Promise<void>;
+  /** Migrate bubble model and tag keys when a bubble's first line changes. */
+  migrateBubbleKeys: (migrations: Array<{ oldKey: string; newKey: string }>) => void;
   flushSave: () => Promise<void>;
   rename: (title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -726,6 +729,41 @@ export const useStore = create<AppState>((set, get) => ({
       await get().refresh();
     } catch (e) {
       set({ error: message(e) });
+    }
+  },
+
+  migrateBubbleKeys: (migrations) => {
+    const active = get().active;
+    if (!active || migrations.length === 0) return;
+    let modelsChanged = false;
+    let tagsChanged = false;
+    const nextModels = { ...(active.models ?? {}) };
+    const nextTags = { ...(active.bubbleTags ?? {}) };
+
+    for (const { oldKey, newKey } of migrations) {
+      if (!oldKey || !newKey || oldKey === newKey) continue;
+      if (Object.prototype.hasOwnProperty.call(nextModels, oldKey)) {
+        nextModels[newKey] = nextModels[oldKey];
+        delete nextModels[oldKey];
+        modelsChanged = true;
+        pendingMigrations.push({ id: active.id, oldKey, newKey });
+      }
+      if (Object.prototype.hasOwnProperty.call(nextTags, oldKey)) {
+        nextTags[newKey] = nextTags[oldKey];
+        delete nextTags[oldKey];
+        tagsChanged = true;
+        pendingMigrations.push({ id: active.id, oldKey, newKey });
+      }
+    }
+
+    if (modelsChanged || tagsChanged) {
+      set({
+        active: {
+          ...active,
+          models: modelsChanged ? nextModels : active.models,
+          bubbleTags: tagsChanged ? nextTags : active.bubbleTags,
+        },
+      });
     }
   },
 

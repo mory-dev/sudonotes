@@ -8,10 +8,16 @@ import { EditorView, keymap } from "@codemirror/view";
 import { useStore } from "../store";
 import {
   bubbleForModA,
+  bubbleMetadataDecorations,
+  bubbleModelPersistence,
   bubbleTagsForLabel,
+  buildHeatDecorations,
   computeBubbles,
   inferBubbleTags,
   modABinding,
+  normalizeBubbleKey,
+  resolveBubbleModel,
+  resolveBubbleTags,
 } from "./Editor";
 
 /** A minimal idea-note editor with the real Ctrl+A binding and CodeMirror's
@@ -114,5 +120,286 @@ describe("Ctrl+A in an idea note", () => {
     pressA(view);
     expect(view.state.selection.main.from).toBe(0);
     expect(view.state.selection.main.to).toBe(DOC.length);
+  });
+});
+
+describe("resilient bubble model and tag resolution", () => {
+  it("normalizes bubble keys by stripping markdown header tokens and list markers", () => {
+    expect(normalizeBubbleKey("# My Feature")).toBe("My Feature");
+    expect(normalizeBubbleKey("### Deep Header")).toBe("Deep Header");
+    expect(normalizeBubbleKey("- A list item")).toBe("A list item");
+    expect(normalizeBubbleKey("1. Numbered item")).toBe("Numbered item");
+    expect(normalizeBubbleKey("Plain title")).toBe("Plain title");
+  });
+
+  it("resolves model by exact match and normalized match", () => {
+    const models = {
+      "Refactor Editor": "anthropic/claude-3-5-sonnet",
+      "# Implement Search": "openai/gpt-4o",
+    };
+
+    // Exact match
+    expect(resolveBubbleModel(models, "Refactor Editor")).toBe("anthropic/claude-3-5-sonnet");
+
+    // Normalized match with markdown formatting added
+    expect(resolveBubbleModel(models, "## Refactor Editor")).toBe("anthropic/claude-3-5-sonnet");
+    expect(resolveBubbleModel(models, "Implement Search")).toBe("openai/gpt-4o");
+
+    // Non-existent
+    expect(resolveBubbleModel(models, "Unassigned Idea")).toBeNull();
+  });
+
+  it("resolves model during prefix/in-progress typing edits", () => {
+    const models = {
+      "Persistent Model Tracking": "anthropic/claude-3-5-sonnet",
+    };
+
+    // Typing at the end of the line
+    expect(resolveBubbleModel(models, "Persistent Model Tracking in Editor")).toBe("anthropic/claude-3-5-sonnet");
+
+    // Truncated during partial edit
+    expect(resolveBubbleModel(models, "Persistent Model")).toBe("anthropic/claude-3-5-sonnet");
+  });
+
+  it("resolves bubble tags resiliently across formatting changes", () => {
+    const bubbleTags = {
+      "Core UI": ["frontend", "v1"],
+    };
+
+    expect(resolveBubbleTags(bubbleTags, "Core UI")).toEqual(["frontend", "v1"]);
+    expect(resolveBubbleTags(bubbleTags, "# Core UI")).toEqual(["frontend", "v1"]);
+    expect(resolveBubbleTags(bubbleTags, "Core UI components")).toEqual(["frontend", "v1"]);
+    expect(resolveBubbleTags(bubbleTags, "Unrelated")).toEqual([]);
+  });
+});
+
+describe("bubble model persistence during typing", () => {
+  function makeIdeaEditor(initialDoc: string): EditorView {
+    return new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: initialDoc,
+        extensions: [
+          markdown(),
+          bubbleMetadataDecorations,
+          bubbleModelPersistence,
+        ],
+      }),
+    });
+  }
+
+  it("preserves assigned model when typing in and modifying the first line of a bubble", () => {
+    const initialDoc = "First bubble idea\nSome details here\n\nSecond bubble idea\nMore details";
+    const initialModel = "anthropic/claude-3-5-sonnet-20241022";
+
+    useStore.setState({
+      active: {
+        id: "note-1",
+        type: "idea",
+        models: { "First bubble idea": initialModel },
+        bubbleTags: { "First bubble idea": ["urgent"] },
+        tags: [],
+      } as never,
+      aiSettings: {
+        enabled: true,
+        showBubbleMetadata: true,
+        debounceMs: 500,
+        contextNotes: 5,
+        reviewDismissed: 0,
+      },
+    });
+
+    const view = makeIdeaEditor(initialDoc);
+
+    // Initial decorations verify model widget is active
+    let decos = buildHeatDecorations(view.state);
+    let iter = decos.iter();
+    let hasModelWidget = false;
+    while (iter.value) {
+      if ((iter.value.spec as { widget?: { model?: string } })?.widget?.model === initialModel) {
+        hasModelWidget = true;
+      }
+      iter.next();
+    }
+    expect(hasModelWidget).toBe(true);
+
+    // Type in the first line: insert " - refined" into "First bubble idea"
+    const insertPos = "First bubble idea".length;
+    view.dispatch({
+      changes: { from: insertPos, insert: " - refined" },
+    });
+
+    // Verify document updated
+    expect(view.state.doc.sliceString(0, "First bubble idea - refined".length)).toBe(
+      "First bubble idea - refined",
+    );
+
+    // 1. The store models mapping must have automatically migrated to the new first line key
+    const active = useStore.getState().active;
+    expect(active?.models?.["First bubble idea - refined"]).toBe(initialModel);
+    expect(active?.models?.["First bubble idea"]).toBeUndefined();
+
+    // 2. The store bubbleTags mapping must have automatically migrated as well
+    expect(active?.bubbleTags?.["First bubble idea - refined"]).toEqual(["urgent"]);
+    expect(active?.bubbleTags?.["First bubble idea"]).toBeUndefined();
+
+    // 3. The decoration builder must preserve and display the assigned model badge
+    decos = buildHeatDecorations(view.state);
+    iter = decos.iter();
+    hasModelWidget = false;
+    while (iter.value) {
+      if ((iter.value.spec as { widget?: { model?: string } })?.widget?.model === initialModel) {
+        hasModelWidget = true;
+      }
+      iter.next();
+    }
+    expect(hasModelWidget).toBe(true);
+  });
+
+  it("persists model assignment when backspacing/deleting text in the first line", () => {
+    const initialDoc = "A very long detailed bubble title\nContent body";
+    const model = "openai/gpt-4o";
+
+    useStore.setState({
+      active: {
+        id: "note-4",
+        type: "idea",
+        models: {
+          "A very long detailed bubble title": model,
+        },
+        bubbleTags: {},
+        tags: [],
+      } as never,
+      aiSettings: {
+        enabled: true,
+        showBubbleMetadata: true,
+        debounceMs: 500,
+        contextNotes: 5,
+        reviewDismissed: 0,
+      },
+    });
+
+    const view = makeIdeaEditor(initialDoc);
+
+    // Delete " detailed bubble" -> "A very long title"
+    const from = "A very long".length;
+    const to = "A very long detailed bubble".length;
+    view.dispatch({
+      changes: { from, to, insert: "" },
+    });
+
+    const active = useStore.getState().active;
+    expect(active?.models?.["A very long title"]).toBe(model);
+    expect(active?.models?.["A very long detailed bubble title"]).toBeUndefined();
+  });
+
+  it("handles changing header levels without dropping model badge", () => {
+    const initialDoc = "# Idea Heading\nContent";
+    const model = "anthropic/claude-3-5-haiku";
+
+    useStore.setState({
+      active: {
+        id: "note-5",
+        type: "idea",
+        models: {
+          "# Idea Heading": model,
+        },
+        bubbleTags: {},
+        tags: [],
+      } as never,
+      aiSettings: {
+        enabled: true,
+        showBubbleMetadata: true,
+        debounceMs: 500,
+        contextNotes: 5,
+        reviewDismissed: 0,
+      },
+    });
+
+    const view = makeIdeaEditor(initialDoc);
+
+    // Change # to ###
+    view.dispatch({
+      changes: { from: 0, to: 1, insert: "###" },
+    });
+
+    const active = useStore.getState().active;
+    expect(active?.models?.["### Idea Heading"]).toBe(model);
+  });
+
+  it("maintains separate model assignments across multiple bubbles when one is edited", () => {
+    const initialDoc = "Alpha Bubble\nLine 1\n\nBeta Bubble\nLine 2";
+    const modelAlpha = "anthropic/claude-3-5-sonnet";
+    const modelBeta = "openai/gpt-4o";
+
+    useStore.setState({
+      active: {
+        id: "note-2",
+        type: "idea",
+        models: {
+          "Alpha Bubble": modelAlpha,
+          "Beta Bubble": modelBeta,
+        },
+        bubbleTags: {},
+        tags: [],
+      } as never,
+      aiSettings: {
+        enabled: true,
+        showBubbleMetadata: true,
+        debounceMs: 500,
+        contextNotes: 5,
+        reviewDismissed: 0,
+      },
+    });
+
+    const view = makeIdeaEditor(initialDoc);
+
+    // Edit Alpha Bubble to "Alpha Bubble v2"
+    view.dispatch({
+      changes: { from: "Alpha Bubble".length, insert: " v2" },
+    });
+
+    const active = useStore.getState().active;
+    // Alpha migrated to "Alpha Bubble v2"
+    expect(active?.models?.["Alpha Bubble v2"]).toBe(modelAlpha);
+    expect(active?.models?.["Alpha Bubble"]).toBeUndefined();
+
+    // Beta remains unchanged
+    expect(active?.models?.["Beta Bubble"]).toBe(modelBeta);
+  });
+
+  it("persists model assignment when editing first text line in marked bubbles", () => {
+    const initialDoc = "<!-- bubble -->\n# Marked idea title\nBody content\n<!-- /bubble -->";
+    const modelMarked = "meta-llama/llama-3.3-70b-instruct";
+
+    useStore.setState({
+      active: {
+        id: "note-3",
+        type: "idea",
+        models: {
+          "# Marked idea title": modelMarked,
+        },
+        bubbleTags: {},
+        tags: [],
+      } as never,
+      aiSettings: {
+        enabled: true,
+        showBubbleMetadata: true,
+        debounceMs: 500,
+        contextNotes: 5,
+        reviewDismissed: 0,
+      },
+    });
+
+    const view = makeIdeaEditor(initialDoc);
+
+    // Edit the heading title inside the marked bubble
+    const pos = initialDoc.indexOf("Marked idea title") + "Marked idea title".length;
+    view.dispatch({
+      changes: { from: pos, insert: " updated" },
+    });
+
+    const active = useStore.getState().active;
+    expect(active?.models?.["# Marked idea title updated"]).toBe(modelMarked);
   });
 });

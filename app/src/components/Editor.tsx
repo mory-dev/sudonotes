@@ -690,11 +690,113 @@ export function computeBubbles(
 
 /** Read only the tags explicitly assigned to this bubble. Note-level tags are
  * deliberately not a fallback, because they describe the whole idea. */
+/** Strip leading markdown heading tokens, bullet/number prefixes, and trim. */
+export function normalizeBubbleKey(key: string): string {
+  return key
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^[-*+]\s+/, "")
+    .replace(/^\d+[.)]\s+/, "")
+    .trim();
+}
+
+/**
+ * Resiliently resolve the model assigned to a bubble given its current label.
+ * Checks exact match first, then normalized (stripped markdown) match,
+ * then prefix/inclusion match, ensuring that editing or reformatting the
+ * first line does not drop the assigned model badge.
+ */
+export function resolveBubbleModel(
+  models: Record<string, string> | undefined | null,
+  label: string,
+): string | null {
+  if (!models || !label) return null;
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+
+  // 1. Exact match
+  if (Object.prototype.hasOwnProperty.call(models, trimmed) && models[trimmed]) {
+    return models[trimmed];
+  }
+  if (Object.prototype.hasOwnProperty.call(models, label) && models[label]) {
+    return models[label];
+  }
+
+  // 2. Normalized match (ignoring markdown headings / list markers / case)
+  const normLabel = normalizeBubbleKey(trimmed).toLowerCase();
+  if (normLabel) {
+    for (const [key, model] of Object.entries(models)) {
+      if (!model) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (normKey && normKey === normLabel) {
+        return model;
+      }
+    }
+
+    // 3. Prefix / Substring match (for in-progress live typing or truncation)
+    for (const [key, model] of Object.entries(models)) {
+      if (!model) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (!normKey) continue;
+      if (
+        (normKey.length >= 3 && normLabel.startsWith(normKey)) ||
+        (normLabel.length >= 3 && normKey.startsWith(normLabel))
+      ) {
+        return model;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function resolveBubbleTags(
+  bubbleTags: Record<string, string[]> | undefined | null,
+  label: string,
+): string[] {
+  if (!bubbleTags || !label) return [];
+  const trimmed = label.trim();
+  if (!trimmed) return [];
+
+  if (Object.prototype.hasOwnProperty.call(bubbleTags, trimmed)) {
+    return bubbleTags[trimmed] ?? [];
+  }
+  if (Object.prototype.hasOwnProperty.call(bubbleTags, label)) {
+    return bubbleTags[label] ?? [];
+  }
+
+  const normLabel = normalizeBubbleKey(trimmed).toLowerCase();
+  if (normLabel) {
+    for (const [key, tags] of Object.entries(bubbleTags)) {
+      if (!tags || tags.length === 0) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (normKey && normKey === normLabel) {
+        return tags;
+      }
+    }
+
+    for (const [key, tags] of Object.entries(bubbleTags)) {
+      if (!tags || tags.length === 0) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (!normKey) continue;
+      if (
+        (normKey.length >= 3 && normLabel.startsWith(normKey)) ||
+        (normLabel.length >= 3 && normKey.startsWith(normLabel))
+      ) {
+        return tags;
+      }
+    }
+  }
+
+  return [];
+}
+
+/** Read only the tags explicitly assigned to this bubble. Note-level tags are
+ * deliberately not a fallback, because they describe the whole idea. */
 export function bubbleTagsForLabel(
   bubbleTags: Record<string, string[]>,
   label: string,
 ): string[] {
-  return Object.prototype.hasOwnProperty.call(bubbleTags, label) ? bubbleTags[label] : [];
+  return resolveBubbleTags(bubbleTags, label);
 }
 
 /** Small, deterministic aliases for deriving a display-only tag from an
@@ -1102,7 +1204,7 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
 /** The priority heat bars, in their own plugin: a widget sharing its position
  *  with a line decoration is not rendered, so the bars live apart from the
  *  bubble boxes. */
-function buildHeatDecorations(state: EditorState): DecorationSet {
+export function buildHeatDecorations(state: EditorState): DecorationSet {
   if (useStore.getState().active?.type !== "idea") {
     return Decoration.none;
   }
@@ -1132,10 +1234,10 @@ function buildHeatDecorations(state: EditorState): DecorationSet {
     // Metadata is keyed by the bubble's first line and lives in a block widget
     // after its last visible line, visually outside the bubble border.
     const label = bubbleFirstText(doc, block.from);
-    const model = models[label];
+    const model = resolveBubbleModel(models, label);
     // Tags are intentionally per-bubble. Note-level tags are not copied here:
     // doing so makes unrelated bubbles look identically classified.
-    const explicitTags = bubbleTagsForLabel(bubbleTags, label);
+    const explicitTags = resolveBubbleTags(bubbleTags, label);
     const tags =
       explicitTags.length > 0
         ? explicitTags
@@ -1172,7 +1274,53 @@ const bubbleMetadataEffect = StateEffect.define<null>();
 /** Block widgets must be provided through a state field, not indirectly from a
  *  ViewPlugin. Keeping the decoration set here prevents CodeMirror's layout
  *  engine from throwing when an idea note is opened. */
-const bubbleMetadataDecorations = StateField.define<DecorationSet>({
+/** CodeMirror extension that tracks bubble key changes and automatically migrates
+ *  assigned models and tags when a bubble's first line is edited. */
+export const bubbleModelPersistence = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return;
+  const store = useStore.getState();
+  if (store.active?.type !== "idea") return;
+
+  const prevDoc = update.startState.doc;
+  const nextDoc = update.state.doc;
+  const prevBubbles = computeBubbles(update.startState);
+  const nextBubbles = computeBubbles(update.state);
+  const currentModels = store.active?.models ?? {};
+  const currentTags = store.active?.bubbleTags ?? {};
+
+  const migrations: Array<{ oldKey: string; newKey: string }> = [];
+
+  for (const prevB of prevBubbles) {
+    const oldLabel = bubbleFirstText(prevDoc, prevB.from);
+    if (!oldLabel) continue;
+    const hasModel = !!resolveBubbleModel(currentModels, oldLabel);
+    const hasTags = resolveBubbleTags(currentTags, oldLabel).length > 0;
+    if (!hasModel && !hasTags) continue;
+
+    const mappedFrom = update.changes.mapPos(prevB.from, 1);
+    const mappedTo = update.changes.mapPos(prevB.to, -1);
+
+    const matchingNextB = nextBubbles.find(
+      (nb) =>
+        (mappedFrom >= nb.from && mappedFrom <= nb.to) ||
+        (mappedTo >= nb.from && mappedTo <= nb.to) ||
+        (nb.from >= mappedFrom && nb.to <= Math.max(mappedFrom, mappedTo)),
+    );
+
+    if (matchingNextB) {
+      const newLabel = bubbleFirstText(nextDoc, matchingNextB.from);
+      if (newLabel && newLabel !== oldLabel) {
+        migrations.push({ oldKey: oldLabel, newKey: newLabel });
+      }
+    }
+  }
+
+  if (migrations.length > 0) {
+    store.migrateBubbleKeys(migrations);
+  }
+});
+
+export const bubbleMetadataDecorations = StateField.define<DecorationSet>({
   create: buildHeatDecorations,
   update(decorations, transaction) {
     if (
@@ -2318,6 +2466,7 @@ export function Editor() {
           headings,
           paragraphBoxes,
           bubbleMetadataDecorations,
+          bubbleModelPersistence,
           heatBars,
           placeholders,
           bubbleHover,
@@ -2615,7 +2764,7 @@ export function Editor() {
         >
           <div className="bubble-model-row">
             <ModelPicker
-              value={active.models?.[bubbleMenu.label] ?? ""}
+              value={resolveBubbleModel(active.models, bubbleMenu.label) ?? ""}
               onChange={(value) =>
                 void useStore.getState().setBubbleModel(bubbleMenu.label, value || null)
               }
