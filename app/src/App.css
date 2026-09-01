@@ -3670,3 +3670,54 @@ button.status-item:hover {
 .backup-number span {
   color: var(--muted);
 }
+/* Visual Divider Lines: ___ (bold) and --- (subtle hairline) */
+.cm-divider-line {
+  position: relative;
+  padding-top: 0.85em;
+  padding-bottom: 0.85em;
+}
+
+.cm-divider-line.cm-divider-active {
+  padding-top: 0.35em;
+  padding-bottom: 0.35em;
+}
+
+.cm-divider {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  cursor: text;
+}
+
+.cm-divider-graphic {
+  width: 100%;
+  transition: all 150ms ease;
+}
+
+.cm-divider-bold .cm-divider-graphic {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent, #f59e0b);
+  box-shadow: 0 0 8px var(--accent-soft, rgba(245, 158, 11, 0.45)), 0 0 2px var(--accent, #f59e0b);
+}
+
+.cm-divider-subtle .cm-divider-graphic {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.cm-divider-raw {
+  font-family: var(--font-mono);
+  letter-spacing: 2px;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.cm-divider-raw-bold {
+  color: var(--accent, #f59e0b);
+  font-weight: 600;
+}
+
+.cm-divider-raw-subtle {
+  color: var(--muted);
+}

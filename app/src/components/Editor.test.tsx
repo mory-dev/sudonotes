@@ -11,13 +11,18 @@ import {
   bubbleMetadataDecorations,
   bubbleModelPersistence,
   bubbleTagsForLabel,
+  buildDividerDecorations,
   buildHeatDecorations,
   computeBubbles,
+  getDividerType,
+  getFrontmatterEndLine,
   inferBubbleTags,
+  isLineSelected,
   modABinding,
   normalizeBubbleKey,
   resolveBubbleModel,
   resolveBubbleTags,
+  visualDividers,
 } from "./Editor";
 
 /** A minimal idea-note editor with the real Ctrl+A binding and CodeMirror's
@@ -122,7 +127,6 @@ describe("Ctrl+A in an idea note", () => {
     expect(view.state.selection.main.to).toBe(DOC.length);
   });
 });
-
 describe("resilient bubble model and tag resolution", () => {
   it("normalizes bubble keys by stripping markdown header tokens and list markers", () => {
     expect(normalizeBubbleKey("# My Feature")).toBe("My Feature");
@@ -465,5 +469,167 @@ describe("deleting a bubble does not hand its metadata to a neighbour", () => {
     const active = useStore.getState().active;
     expect(active?.bubbleIssues?.["Kept bubble renamed"]).toBe("o/r#9");
     expect(active?.bubbleIssues?.["Other bubble"]).toBeUndefined();
+  });
+});
+
+describe("visual divider lines (___ and ---)", () => {
+  it("detects when a selection overlaps a line range", () => {
+    const state = EditorState.create({
+      doc: "Line 1\nLine 2\nLine 3",
+      selection: { anchor: 8, head: 8 },
+    });
+    expect(isLineSelected(state, 7, 13)).toBe(true);
+    expect(isLineSelected(state, 0, 6)).toBe(false);
+    expect(isLineSelected(state, 14, 20)).toBe(false);
+  });
+
+  it("classifies divider types correctly", () => {
+    expect(getDividerType("___")).toBe("bold");
+    expect(getDividerType("____")).toBe("bold");
+    expect(getDividerType("_ _ _")).toBe("bold");
+    expect(getDividerType("   ___   ")).toBe("bold");
+
+    expect(getDividerType("---")).toBe("subtle");
+    expect(getDividerType("----")).toBe("subtle");
+    expect(getDividerType("- - -")).toBe("subtle");
+    expect(getDividerType("   ---   ")).toBe("subtle");
+    expect(getDividerType("***")).toBe("subtle");
+
+    expect(getDividerType("__")).toBeNull();
+    expect(getDividerType("--")).toBeNull();
+    expect(getDividerType("regular text")).toBeNull();
+    expect(getDividerType("## Heading")).toBeNull();
+    expect(getDividerType("--- title: idea")).toBeNull();
+  });
+
+  it("detects frontmatter end line and ignores non-frontmatter documents", () => {
+    const fmDoc = EditorState.create({
+      doc: "---\nid: 123\ntitle: Test\n---\nFirst paragraph\n---\nSecond paragraph",
+    }).doc;
+    expect(getFrontmatterEndLine(fmDoc)).toBe(4);
+
+    const plainDoc = EditorState.create({
+      doc: "First paragraph\n---\nSecond paragraph",
+    }).doc;
+    expect(getFrontmatterEndLine(plainDoc)).toBe(0);
+
+    const unterminatedDoc = EditorState.create({
+      doc: "---\nid: 123\ntitle: Test\nFirst paragraph",
+    }).doc;
+    expect(getFrontmatterEndLine(unterminatedDoc)).toBe(0);
+  });
+
+  it("builds bold widget decoration for ___ and subtle widget decoration for --- when cursor is away", () => {
+    const doc = "Paragraph 1\n\n___\n\nParagraph 2\n\n---\n\nParagraph 3";
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown(), visualDividers],
+        selection: { anchor: 0 },
+      }),
+    });
+
+    const decos = buildDividerDecorations(view);
+    let boldLineFound = false;
+    let boldWidgetFound = false;
+    let subtleLineFound = false;
+    let subtleWidgetFound = false;
+
+    decos.between(0, doc.length, (_from, _to, value) => {
+      const spec = (value as unknown as { spec: Record<string, unknown> }).spec;
+      if (spec.class === "cm-divider-line cm-divider-line-bold") {
+        boldLineFound = true;
+      }
+      if (spec.class === "cm-divider-line cm-divider-line-subtle") {
+        subtleLineFound = true;
+      }
+      if (spec.widget && (spec.widget as { kind?: string }).kind === "bold") {
+        boldWidgetFound = true;
+      }
+      if (spec.widget && (spec.widget as { kind?: string }).kind === "subtle") {
+        subtleWidgetFound = true;
+      }
+    });
+
+    expect(boldLineFound).toBe(true);
+    expect(boldWidgetFound).toBe(true);
+    expect(subtleLineFound).toBe(true);
+    expect(subtleWidgetFound).toBe(true);
+  });
+
+  it("reveals raw text and does not replace with widget when cursor is on the divider line", () => {
+    const doc = "Paragraph 1\n\n___\n\nParagraph 2";
+    const dividerPos = doc.indexOf("___");
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown(), visualDividers],
+        selection: { anchor: dividerPos + 1 }, // caret inside '___'
+      }),
+    });
+
+    const decos = buildDividerDecorations(view);
+    let activeLineFound = false;
+    let rawMarkFound = false;
+    let widgetFound = false;
+
+    decos.between(0, doc.length, (_from, _to, value) => {
+      const spec = (value as unknown as { spec: Record<string, unknown> }).spec;
+      if (spec.class === "cm-divider-line cm-divider-line-bold cm-divider-active") {
+        activeLineFound = true;
+      }
+      if (spec.class === "cm-divider-raw cm-divider-raw-bold") {
+        rawMarkFound = true;
+      }
+      if (spec.widget) {
+        widgetFound = true;
+      }
+    });
+
+    expect(activeLineFound).toBe(true);
+    expect(rawMarkFound).toBe(true);
+    expect(widgetFound).toBe(false); // Widget replacement must not be present while active
+  });
+
+  it("does not decorate frontmatter delimiters as visual dividers", () => {
+    const doc = "---\nid: test\ntitle: Note\n---\n\nBody paragraph\n\n---\n\nSecond paragraph";
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown(), visualDividers],
+        selection: { anchor: 0 },
+      }),
+    });
+
+    const decos = buildDividerDecorations(view);
+    const decoratedOffsets: number[] = [];
+
+    decos.between(0, doc.length, (from) => {
+      decoratedOffsets.push(from);
+    });
+
+    // Line 1 (pos 0) and Line 4 (closing frontmatter) must NOT be decorated.
+    // Only the standalone --- inside the body (after line 4) should be decorated.
+    const bodyDividerPos = doc.lastIndexOf("---");
+    expect(decoratedOffsets).not.toContain(0);
+    expect(decoratedOffsets).toContain(bodyDividerPos);
+  });
+
+  it("ensures divider lines do not break bubble counting and outline navigation", () => {
+    const doc = "Bubble 1\n\n___\n\nBubble 2\n\n---\n\nBubble 3";
+    const state = EditorState.create({ doc, extensions: [markdown()] });
+    const bubbles = computeBubbles(state);
+
+    expect(bubbles).toHaveLength(3);
+    expect(state.doc.sliceString(bubbles[0].from, bubbles[0].to)).toBe("Bubble 1");
+    expect(state.doc.sliceString(bubbles[1].from, bubbles[1].to)).toBe("Bubble 2");
+    expect(state.doc.sliceString(bubbles[2].from, bubbles[2].to)).toBe("Bubble 3");
+
+    // Caret on divider line returns null for bubble selection, allowing immediate fall-through to select-all
+    const dividerPos = doc.indexOf("___");
+    expect(bubbleForModA(dividerPos, dividerPos, dividerPos, bubbles)).toBeNull();
   });
 });

@@ -77,6 +77,11 @@ function nextDefaultTitle(noteType: NoteType, notes: NoteMeta[]): string {
  *  per explicit `<!-- bubble -->` pair. The same grouping the editor draws
  *  bubbles around and the sidebar outlines, so a move made from either place
  *  lands on the same block. */
+function isDividerLine(line: string): boolean {
+  const t = line.trim();
+  return /^(_\s*){3,}$/.test(t) || /^(-\s*){3,}$/.test(t) || /^(\*\s*){3,}$/.test(t);
+}
+
 function bubbleRanges(body: string): { from: number; to: number }[] {
   const pairs = bubbleMarkerPairs(body);
   const out: { from: number; to: number }[] = [];
@@ -84,6 +89,7 @@ function bubbleRanges(body: string): { from: number; to: number }[] {
   let offset = 0;
 
   for (const line of body.split("\n")) {
+    const trimmed = line.trim();
     // Marker pairs own everything between their lines: never start or extend a
     // blank-line bubble across them.
     if (pairs.some((p) => offset >= p.from && offset <= p.to)) {
@@ -91,7 +97,7 @@ function bubbleRanges(body: string): { from: number; to: number }[] {
         out.push({ from, to: offset - 1 });
         from = -1;
       }
-    } else if (line.trim() === "") {
+    } else if (trimmed === "" || isDividerLine(trimmed)) {
       if (from >= 0) {
         // Ends at the previous line's last character, not at this blank one.
         out.push({ from, to: offset - 1 });
@@ -139,7 +145,7 @@ export function bubbleMarkerPairs(body: string): { from: number; to: number }[] 
 function titleFromFirstLine(body: string): string {
   for (const raw of body.split("\n")) {
     const line = raw.trim();
-    if (!line) continue;
+    if (!line || isDividerLine(line)) continue;
     return line.replace(/^#{1,6}\s+/, "").trim();
   }
   return "";

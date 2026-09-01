@@ -617,6 +617,133 @@ const headings = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+export type DividerType = "bold" | "subtle";
+
+/** Determine whether a markdown line represents a bold (___) or subtle (---) visual divider. */
+export function getDividerType(text: string): DividerType | null {
+  const trimmed = text.trim();
+  if (/^(_\s*){3,}$/.test(trimmed)) {
+    return "bold";
+  }
+  if (/^(-\s*){3,}$/.test(trimmed)) {
+    return "subtle";
+  }
+  if (/^(\*\s*){3,}$/.test(trimmed)) {
+    return "subtle";
+  }
+  return null;
+}
+
+/** Identify the closing line number of YAML frontmatter if present, so frontmatter delimiters are not decorated as dividers. */
+export function getFrontmatterEndLine(doc: Text): number {
+  if (doc.lines < 2) return 0;
+  const firstLine = doc.line(1).text.trim();
+  if (firstLine !== "---") return 0;
+  for (let n = 2; n <= doc.lines; n++) {
+    if (doc.line(n).text.trim() === "---") {
+      return n;
+    }
+  }
+  return 0;
+}
+
+/** Check if any selection or caret overlaps the given line range. */
+export function isLineSelected(state: EditorState, lineFrom: number, lineTo: number): boolean {
+  for (const range of state.selection.ranges) {
+    if (range.from <= lineTo && range.to >= lineFrom) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export class DividerWidget extends WidgetType {
+  constructor(readonly kind: DividerType) {
+    super();
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement("div");
+    el.className = `cm-divider cm-divider-${this.kind}`;
+    el.setAttribute("aria-hidden", "true");
+    const line = document.createElement("div");
+    line.className = "cm-divider-graphic";
+    el.appendChild(line);
+    return el;
+  }
+
+  eq(other: DividerWidget): boolean {
+    return other.kind === this.kind;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** Build visual divider decorations for `___` (bold accent) and `---` (subtle hairline).
+ *  When the cursor is on the line, the raw text remains editable cleanly. */
+export function buildDividerDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+  const frontmatterEnd = getFrontmatterEndLine(doc);
+  const ranges = view.visibleRanges.length > 0 ? view.visibleRanges : [{ from: 0, to: doc.length }];
+
+  for (const { from, to } of ranges) {
+    const tree = ensureSyntaxTree(view.state, to, 50) ?? syntaxTree(view.state);
+    tree.iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (node.name !== "HorizontalRule") return;
+        const line = doc.lineAt(node.from);
+        if (line.number <= frontmatterEnd) return;
+
+        const type = getDividerType(line.text);
+        if (!type) return;
+
+        const active = isLineSelected(view.state, line.from, line.to);
+        const lineClass = `cm-divider-line cm-divider-line-${type}${active ? " cm-divider-active" : ""}`;
+
+        builder.add(line.from, line.from, Decoration.line({ class: lineClass, side: -2 }));
+
+        if (active) {
+          builder.add(
+            line.from,
+            line.to,
+            Decoration.mark({ class: `cm-divider-raw cm-divider-raw-${type}` }),
+          );
+        } else {
+          builder.add(
+            line.from,
+            line.to,
+            Decoration.replace({ widget: new DividerWidget(type) }),
+          );
+        }
+      },
+    });
+  }
+
+  return builder.finish();
+}
+
+export const visualDividers = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildDividerDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        this.decorations = buildDividerDecorations(update.view);
+      }
+    }
+  },
+  {
+    decorations: (plugin) => plugin.decorations,
+  },
+);
+
 /** The top-level bubbles of an idea note: each block group and whether it
  *  starts with a heading. Shared by the bubble decorations, the heat bars,
  *  Ctrl+A, and the hover menu's copy button. */
@@ -1747,6 +1874,48 @@ const theme = EditorView.theme(
       paddingBottom: "0.45em",
       borderBottom: "1px solid rgba(255, 255, 255, 0.07)",
     },
+    ".cm-divider-line": {
+      position: "relative",
+      paddingTop: "0.85em",
+      paddingBottom: "0.85em",
+    },
+    ".cm-divider-line.cm-divider-active": {
+      paddingTop: "0.35em",
+      paddingBottom: "0.35em",
+    },
+    ".cm-divider": {
+      display: "flex",
+      alignItems: "center",
+      width: "100%",
+      cursor: "text",
+    },
+    ".cm-divider-graphic": {
+      width: "100%",
+      transition: "all 150ms ease",
+    },
+    ".cm-divider-bold .cm-divider-graphic": {
+      height: "2px",
+      borderRadius: "2px",
+      background: "var(--accent, #f59e0b)",
+      boxShadow: "0 0 8px var(--accent-soft, rgba(245, 158, 11, 0.45)), 0 0 2px var(--accent, #f59e0b)",
+    },
+    ".cm-divider-subtle .cm-divider-graphic": {
+      height: "1px",
+      background: "rgba(255, 255, 255, 0.12)",
+    },
+    ".cm-divider-raw": {
+      fontFamily: "var(--font-mono)",
+      letterSpacing: "2px",
+      fontSize: "0.9em",
+      opacity: 0.8,
+    },
+    ".cm-divider-raw-bold": {
+      color: "var(--accent, #f59e0b)",
+      fontWeight: 600,
+    },
+    ".cm-divider-raw-subtle": {
+      color: "var(--muted)",
+    },
     ".cm-para": {
       borderLeft: "1px solid rgba(255,255,255,0.08)",
       borderRight: "1px solid rgba(255,255,255,0.08)",
@@ -2541,6 +2710,7 @@ export function Editor() {
           bubbleMarkers,
           jumpHighlight,
           headings,
+          visualDividers,
           paragraphBoxes,
           bubbleMetadataDecorations,
           bubbleModelPersistence,
