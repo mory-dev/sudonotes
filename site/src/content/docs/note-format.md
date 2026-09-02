@@ -37,7 +37,10 @@ model: "openai/gpt-5.2"
 source: "Release workflow"
 position: 2
 project: "C:\\code\\release-tool"
+mark: green
 models: {"Check the migration.":"anthropic/claude-sonnet-4-5"}
+bubbleTags: {"Check the migration.":["testing"]}
+bubbleIssues: {"Check the migration.":"mory-dev/sudonotes#42"}
 created: 2026-08-06T09:12:08Z
 updated: 2026-08-09T03:21:10Z
 ---
@@ -60,12 +63,27 @@ Ordinary notes omit optional keys, so most headers are shorter.
 | `source` | No | Parent collection title for a child note |
 | `position` | No | One-based order within a collection |
 | `project` | No | Absolute linked-project path for an idea |
+| `mark` | No | Sidebar marker on an idea: `orange` or `green`. Omitted when unmarked |
 | `models` | No | JSON object mapping idea-bubble first lines to model IDs |
+| `bubbleTags` | No | JSON object mapping idea-bubble first lines to their tags |
+| `bubbleIssues` | No | JSON object mapping idea-bubble first lines to `owner/repo#123` |
 | `created` | Yes | RFC 3339 creation timestamp |
 | `updated` | Yes | RFC 3339 last-write timestamp |
 
 Missing frontmatter is synthesized in memory from the filename and current time. It becomes explicit
 the first time sudonotes writes the note.
+
+The three `bubble*`/`models` maps are keyed by a bubble's **first line**. Renaming that line moves
+every entry with it; deleting the bubble drops them. Both happen automatically — nothing here needs
+maintaining by hand.
+
+<div class="callout">
+  <strong class="callout-title">`onHold: true` was replaced by `mark`.</strong>
+  Notes written before three-state marking existed still parse: <code>onHold: true</code> reads as
+  <code>mark: orange</code>, and the key is rewritten the next time sudonotes saves the note. Only
+  <em>which</em> issue a bubble became is stored in <code>bubbleIssues</code> — whether it is open or
+  closed is cached in the index and refetched, never written to the file.
+</div>
 
 ## Parser compatibility
 

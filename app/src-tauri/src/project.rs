@@ -88,6 +88,22 @@ const ICON_CACHE_TTL: Duration = Duration::from_secs(30);
 static ICON_CACHE: OnceLock<Mutex<HashMap<PathBuf, (Option<String>, SystemTime)>>> =
     OnceLock::new();
 
+/// A project's GitHub `origin`, when it has one. This is what makes a bubble
+/// eligible to become an issue — no remote, no issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRemote {
+    pub owner: String,
+    pub repo: String,
+}
+
+impl GithubRemote {
+    /// `owner/repo`, the form GitHub URLs and issue keys are built from.
+    pub fn slug(&self) -> String {
+        format!("{}/{}", self.owner, self.repo)
+    }
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct SyncRecord {
@@ -146,6 +162,8 @@ pub struct ProjectInfo {
     pub is_git_repo: bool,
     /// Favicon as a `data:` URI, ready to drop into an `<img src>`.
     pub icon: Option<String>,
+    /// The GitHub repository this project pushes to, when `origin` names one.
+    pub remote: Option<GithubRemote>,
 }
 
 pub fn describe(path: &Path) -> ProjectInfo {
@@ -159,7 +177,102 @@ pub fn describe(path: &Path) -> ProjectInfo {
         exists: path.is_dir(),
         is_git_repo: path.join(".git").exists(),
         icon: cached_icon(path),
+        remote: github_remote(path),
     }
+}
+
+/// The project's git directory. Usually `<root>/.git`, but in a worktree or a
+/// submodule `.git` is a file holding a `gitdir:` pointer — following it keeps
+/// those checkouts from looking like repos with no remote.
+fn git_dir(root: &Path) -> Option<PathBuf> {
+    let dot_git = root.join(".git");
+    let meta = std::fs::metadata(&dot_git).ok()?;
+    if meta.is_dir() {
+        return Some(dot_git);
+    }
+
+    let pointer = std::fs::read_to_string(&dot_git).ok()?;
+    let target = pointer
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("gitdir:"))?
+        .trim();
+    let target = Path::new(target);
+    Some(if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        root.join(target)
+    })
+}
+
+/// The GitHub `origin` of a project, or `None` when it has no remote, the
+/// remote is not on GitHub, or the folder is not a repository at all.
+///
+/// The config is parsed by hand rather than through a git library: it is a
+/// handful of lines, and the one thing needed from it is a single URL.
+pub fn github_remote(root: &Path) -> Option<GithubRemote> {
+    let config = std::fs::read_to_string(git_dir(root)?.join("config")).ok()?;
+
+    let mut in_origin = false;
+    for line in config.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if line.starts_with('[') {
+            // Section headers are `[remote "origin"]`; whitespace inside varies
+            // between git versions and hand edits.
+            in_origin = line
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                == r#"remote "origin""#;
+            continue;
+        }
+        if !in_origin {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            if key.trim() == "url" {
+                return parse_github_url(value.trim().trim_matches('"'));
+            }
+        }
+    }
+    None
+}
+
+/// Pull `owner/repo` out of any of the remote URL forms git accepts.
+///
+/// Only github.com is recognised; a GitLab or self-hosted remote reports
+/// `None` so the issue actions stay hidden rather than failing on use.
+fn parse_github_url(url: &str) -> Option<GithubRemote> {
+    let url = url.trim().trim_end_matches('/');
+
+    // `scheme://[user@]host[:port]/owner/repo` vs scp-style `[user@]host:owner/repo`.
+    let (authority, path) = match url.split_once("://") {
+        Some((_, rest)) => rest.split_once('/')?,
+        None => url.split_once(':')?,
+    };
+
+    // Drop any `user@` prefix and `:port` suffix before comparing the host.
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = host.split_once(':').map_or(host, |(h, _)| h);
+    if !host.eq_ignore_ascii_case("github.com") {
+        return None;
+    }
+
+    let mut segments = path.split('/').filter(|part| !part.is_empty());
+    let owner = segments.next()?;
+    let repo = segments.next()?.trim_end_matches(".git");
+    if segments.next().is_some() || owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+
+    Some(GithubRemote {
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+    })
 }
 
 /// The project's icon, cached briefly so repeated list/project lookups stay
@@ -406,6 +519,106 @@ mod tests {
         assert!(!dir.join(".gitignore").exists());
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A repo whose `.git/config` names `origin` with the given URL.
+    fn repo_with_origin(name: &str, url: &str) -> PathBuf {
+        let dir = temp_dir(name);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(
+            dir.join(".git/config"),
+            format!("[core]\n\tbare = false\n[remote \"origin\"]\n\turl = {url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"),
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn reads_every_remote_url_shape() {
+        let expected = Some(GithubRemote {
+            owner: "mory-dev".into(),
+            repo: "sudonotes".into(),
+        });
+        for url in [
+            "https://github.com/mory-dev/sudonotes.git",
+            "https://github.com/mory-dev/sudonotes",
+            "https://user@github.com/mory-dev/sudonotes.git",
+            "git@github.com:mory-dev/sudonotes.git",
+            "ssh://git@github.com/mory-dev/sudonotes.git",
+            "git://github.com/mory-dev/sudonotes.git",
+            "https://GitHub.com/mory-dev/sudonotes/",
+        ] {
+            assert_eq!(parse_github_url(url), expected, "failed on {url}");
+        }
+    }
+
+    #[test]
+    fn reads_the_origin_from_a_git_config() {
+        let dir = repo_with_origin("remote", "git@github.com:mory-dev/sudonotes.git");
+
+        assert_eq!(github_remote(&dir).unwrap().slug(), "mory-dev/sudonotes");
+        assert_eq!(describe(&dir).remote.unwrap().owner, "mory-dev");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ignores_remotes_other_than_origin() {
+        let dir = temp_dir("upstream");
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(
+            dir.join(".git/config"),
+            "[remote \"upstream\"]\n\turl = https://github.com/other/repo.git\n",
+        )
+        .unwrap();
+
+        assert_eq!(github_remote(&dir), None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ignores_remotes_that_are_not_on_github() {
+        for url in [
+            "https://gitlab.com/owner/repo.git",
+            "git@bitbucket.org:owner/repo.git",
+            "https://github.example.com/owner/repo.git",
+            "https://github.com/owner",
+            "https://github.com/",
+            "not a url",
+        ] {
+            assert_eq!(parse_github_url(url), None, "accepted {url}");
+        }
+    }
+
+    #[test]
+    fn reports_no_remote_for_a_repo_without_one() {
+        let dir = temp_dir("no-remote");
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(dir.join(".git/config"), "[core]\n\tbare = false\n").unwrap();
+
+        assert!(describe(&dir).is_git_repo);
+        assert_eq!(describe(&dir).remote, None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn follows_a_worktree_gitdir_pointer() {
+        // A worktree's `.git` is a file, so reading `<root>/.git/config`
+        // directly would report a repo with no remote.
+        let real = repo_with_origin("worktree-main", "https://github.com/mory-dev/sudonotes.git");
+        let tree = temp_dir("worktree");
+        std::fs::write(
+            tree.join(".git"),
+            format!("gitdir: {}\n", real.join(".git").display()),
+        )
+        .unwrap();
+
+        assert_eq!(github_remote(&tree).unwrap().slug(), "mory-dev/sudonotes");
+
+        std::fs::remove_dir_all(&real).ok();
+        std::fs::remove_dir_all(&tree).ok();
     }
 
     #[test]

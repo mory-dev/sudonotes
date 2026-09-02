@@ -1,6 +1,7 @@
 mod index;
 mod ai;
 mod backup;
+mod github;
 mod models;
 mod note;
 mod project;
@@ -13,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 #[cfg(not(target_os = "windows"))]
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
@@ -49,11 +50,20 @@ struct NoteDetail {
     /// Project folder this idea is linked to, if any.
     project: Option<String>,
     /// Whether this idea is currently paused/on hold in the sidebar.
-    on_hold: bool,
+    /// Sidebar marker: "off", "orange" or "green".
+    mark: String,
     /// Per-bubble model assignment for idea notes: bubble first line -> model.
     models: BTreeMap<String, String>,
     /// Per-bubble tags for idea notes: bubble first line -> tags.
     bubble_tags: BTreeMap<String, Vec<String>>,
+    /// Per-bubble GitHub issue links: bubble first line -> `owner/repo#123`.
+    bubble_issues: BTreeMap<String, String>,
+    /// Cached state of those issues, keyed the same way, so the editor can mute
+    /// a closed bubble without a network call.
+    issue_states: BTreeMap<String, github::IssueRef>,
+    /// The GitHub repo this idea's linked project pushes to, when it has one.
+    /// A bubble can only become an issue when this is set.
+    remote: Option<project::GithubRemote>,
     created: String,
     updated: String,
     body: String,
@@ -200,6 +210,65 @@ fn set_bubble_metadata_visible(
 #[tauri::command]
 async fn ai_health() -> bool {
     ai::health().await
+}
+
+/// Whether GitHub is connected, and why it cannot be if it cannot.
+#[tauri::command]
+fn github_auth() -> github::GithubAuth {
+    github::auth()
+}
+
+/// Start the device flow. The caller shows the code and opens the URL, then
+/// calls `github_await_login`, which is what actually waits.
+#[tauri::command]
+async fn github_device_code() -> Result<github::DeviceCode> {
+    github::begin_login().await
+}
+
+#[tauri::command]
+async fn github_await_login() -> Result<github::GithubAuth> {
+    github::finish_login().await
+}
+
+#[tauri::command]
+fn github_logout() -> github::GithubAuth {
+    github::sign_out();
+    github::auth()
+}
+
+/// Where to send someone to grant repository access. Pass the repository's
+/// owner so the page opens on that account rather than on whichever one the App
+/// happens to be installed on already.
+#[tauri::command]
+async fn github_install_url(owner: Option<String>) -> String {
+    github::install_url(owner.as_deref()).await
+}
+
+/// Whether the App is installed on this repository. Signing in does not imply
+/// it — checking here is what lets the UI offer the install instead of failing.
+#[tauri::command]
+async fn github_repo_access(owner: String, repo: String) -> Result<bool> {
+    github::has_repo_access(&project::GithubRemote { owner, repo }).await
+}
+
+/// Whether the App is installed anywhere. Used right after sign-in to tell a
+/// brand-new account apart from one that simply has not linked this repo.
+#[tauri::command]
+async fn github_has_installation() -> Result<bool> {
+    github::has_any_installation().await
+}
+
+#[tauri::command]
+fn get_github_settings(state: State<AppState>) -> Result<github::GithubSettings> {
+    Ok(github::settings(&vault_root(&state)?))
+}
+
+#[tauri::command]
+fn set_github_auto_delete(
+    state: State<AppState>,
+    enabled: bool,
+) -> Result<github::GithubSettings> {
+    github::save_settings(&vault_root(&state)?, enabled)
 }
 
 /// The running app version, e.g. "0.1.1", for the title-bar hover tooltip.
@@ -772,6 +841,24 @@ fn read_note(id: String, state: State<AppState>) -> Result<NoteDetail> {
         let note = Note::parse(&content, &title_from_path(&path));
 
         let fm = note.frontmatter;
+        // Both of these are lookups, not writes: the issue states come from the
+        // index cache and the remote from the project's `.git/config`.
+        let issue_states = open
+            .index
+            .issue_states(&fm.bubble_issues.values().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let issue_states = fm
+            .bubble_issues
+            .iter()
+            .filter_map(|(label, key)| {
+                issue_states.get(key).map(|issue| (label.clone(), issue.clone()))
+            })
+            .collect();
+        let remote = fm
+            .project
+            .as_deref()
+            .and_then(|path| project::github_remote(std::path::Path::new(path)));
+
         Ok(NoteDetail {
             id: fm.id,
             title: fm.title,
@@ -782,9 +869,12 @@ fn read_note(id: String, state: State<AppState>) -> Result<NoteDetail> {
             collection: fm.source,
             position: fm.position,
             project: fm.project,
-            on_hold: fm.on_hold,
+            mark: fm.mark.as_str().to_string(),
             models: fm.models,
             bubble_tags: fm.bubble_tags,
+            bubble_issues: fm.bubble_issues,
+            issue_states,
+            remote,
             created: fm.created,
             updated: fm.updated,
             body: note.body,
@@ -1129,8 +1219,72 @@ fn set_bubble_model(
 
 /// Toggle the paused/on-hold marker shown beside an idea in the sidebar.
 #[tauri::command]
-fn set_note_on_hold(id: String, on_hold: bool, state: State<AppState>) -> Result<()> {
-    save(&state, &id, |note| note.frontmatter.on_hold = on_hold)
+fn set_note_mark(id: String, mark: String, state: State<AppState>) -> Result<()> {
+    // Unrecognised values read as "off" rather than erroring: the marker is a
+    // three-way toggle, and no input from it is worth failing a save over.
+    let mark = note::MarkState::parse(&mark);
+    save(&state, &id, |note| note.frontmatter.mark = mark)
+}
+
+/// Move one bubble's metadata from `old_key` to `new_key`.
+///
+/// Every per-bubble map is keyed by the bubble's first line, so editing that
+/// line renames the bubble and orphans everything attached to it. Remapping all
+/// the maps in a single write is what keeps a rename from half-applying — a
+/// model that followed but tags that did not would be worse than neither.
+#[tauri::command]
+fn rename_bubble_key(
+    id: String,
+    old_key: String,
+    new_key: String,
+    state: State<AppState>,
+) -> Result<()> {
+    let old_key = old_key.trim().to_string();
+    let new_key = new_key.trim().to_string();
+    if old_key.is_empty() || new_key.is_empty() || old_key == new_key {
+        return Ok(());
+    }
+
+    save(&state, &id, move |note| {
+        move_bubble_key(&mut note.frontmatter, &old_key, &new_key)
+    })
+}
+
+/// Drop everything attached to a bubble that no longer exists.
+///
+/// Without this the entry outlives its bubble, and a later bubble that happens
+/// to start with the same line silently inherits a model, tags and an issue it
+/// never had.
+#[tauri::command]
+fn forget_bubble_key(id: String, key: String, state: State<AppState>) -> Result<()> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Ok(());
+    }
+    save(&state, &id, move |note| {
+        let fm = &mut note.frontmatter;
+        fm.models.remove(&key);
+        fm.bubble_tags.remove(&key);
+        fm.bubble_issues.remove(&key);
+    })
+}
+
+/// Move every per-bubble entry from one key to another.
+///
+/// Kept separate from the command so the guarantee that matters — all the maps
+/// move together, or the bubble ends up half-renamed — can be tested directly.
+fn move_bubble_key(fm: &mut note::Frontmatter, old_key: &str, new_key: &str) {
+    if let Some(model) = fm.models.remove(old_key) {
+        fm.models.insert(new_key.to_string(), model);
+    }
+    if let Some(tags) = fm.bubble_tags.remove(old_key) {
+        fm.bubble_tags.insert(new_key.to_string(), tags);
+    }
+    // Issue links move with everything else, so renaming a bubble no longer
+    // detaches it from the issue it became.
+    if let Some(issue) = fm.bubble_issues.remove(old_key) {
+        fm.bubble_issues.insert(new_key.to_string(), issue);
+    }
 }
 
 /// Replace the tags attached to one idea bubble. Empty tag lists clear the
@@ -1218,6 +1372,314 @@ fn rename_note(id: String, title: String, state: State<AppState>) -> Result<()> 
             .sync(&open.vault)
             .map_err(|e| err("could not reindex vault", e))
     })
+}
+
+/// Everything needed to turn one bubble into an issue, read from the note on
+/// disk rather than the editor's buffer.
+struct BubbleContext {
+    text: String,
+    note_title: String,
+    model: Option<String>,
+    tags: Vec<String>,
+    remote: Option<project::GithubRemote>,
+}
+
+fn bubble_context(state: &State<AppState>, id: &str, label: &str) -> Result<BubbleContext> {
+    with_vault(state, |open| {
+        let path = open
+            .index
+            .path_of(id)
+            .map_err(|e| err("lookup failed", e))?
+            .ok_or("note not found")?;
+        let content = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
+        let note = Note::parse(&content, &title_from_path(&path));
+
+        let block = bubble_blocks(&note.body)
+            .into_iter()
+            .find(|block| block.label == label)
+            // Bubbles are keyed by their first line, so editing that line
+            // detaches them. Say so rather than filing an empty issue.
+            .ok_or("that bubble is no longer in the note")?;
+
+        Ok(BubbleContext {
+            text: note.body[block.text].to_string(),
+            note_title: note.frontmatter.title.clone(),
+            // The bubble's own model if it has one, else whatever the note targets.
+            model: note
+                .frontmatter
+                .models
+                .get(label)
+                .cloned()
+                .or_else(|| note.frontmatter.model.clone()),
+            tags: note
+                .frontmatter
+                .bubble_tags
+                .get(label)
+                .cloned()
+                .unwrap_or_default(),
+            remote: note
+                .frontmatter
+                .project
+                .as_deref()
+                .and_then(|path| project::github_remote(std::path::Path::new(path))),
+        })
+    })
+}
+
+/// Draft an issue from one bubble, for the user to edit before filing.
+///
+/// Always returns a draft: with AI off, or when the model call fails, it falls
+/// back to the bubble's own text.
+#[tauri::command]
+async fn draft_bubble_issue(
+    id: String,
+    label: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ai::IssueDraft> {
+    let context = bubble_context(&state, &id, &label)?;
+    let plain = || ai::local_draft(&context.text, &context.note_title, context.model.as_deref());
+
+    if !ai::settings(&vault_root(&state)?).enabled {
+        return Ok(plain());
+    }
+    Ok(ai::draft_issue(
+        &app,
+        &context.text,
+        &context.note_title,
+        context.model.as_deref(),
+        &context.tags,
+    )
+    .await
+    .unwrap_or_else(|_| plain()))
+}
+
+/// File the issue and record it against the bubble.
+#[tauri::command]
+async fn create_bubble_issue(
+    id: String,
+    label: String,
+    title: String,
+    body: String,
+    state: State<'_, AppState>,
+) -> Result<github::IssueRef> {
+    let context = bubble_context(&state, &id, &label)?;
+    let remote = context
+        .remote
+        .ok_or("link this idea to a GitHub project first")?;
+
+    // The bubble's tags become labels on the issue, where GitHub can filter by
+    // them — far more useful than the line of text they used to be in the body.
+    let issue = github::create_issue(&remote, title.trim(), &body, &context.tags).await?;
+
+    // Which issue is durable, so it goes to the note; whether it is open is a
+    // cache, so it goes to the index.
+    let key = issue.key.clone();
+    save(&state, &id, move |note| {
+        note.frontmatter.bubble_issues.insert(label, key);
+    })?;
+    with_vault(&state, |open| {
+        open.index
+            .put_issues(std::slice::from_ref(&issue), unix_now())
+            .map_err(|e| err("could not cache the issue", e))
+    })?;
+
+    Ok(issue)
+}
+
+fn unix_now() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+/// What one sync changed, so the UI can say so without re-reading anything.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IssueSync {
+    /// How many linked issues changed state since the last sync.
+    changed: u32,
+    /// Bubbles removed because their issue closed and the setting is on.
+    removed: u32,
+    /// Repositories that could not be reached this run. A sync that silently
+    /// fails looks exactly like one where nothing changed, which is how a
+    /// revoked installation can leave every bubble reading "open" forever.
+    failed: u32,
+}
+
+/// Refresh the cached state of every issue the vault's bubbles link to.
+///
+/// Runs on a timer and on demand. Signed out, or with nothing linked, it is a
+/// no-op rather than an error — it is called speculatively.
+#[tauri::command]
+async fn sync_github_issues(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<IssueSync> {
+    if !github::auth().connected {
+        return Ok(IssueSync::default());
+    }
+    let keys = with_vault(&state, |open| {
+        open.index
+            .tracked_issues()
+            .map_err(|e| err("could not list linked issues", e))
+    })?;
+    if keys.is_empty() {
+        return Ok(IssueSync::default());
+    }
+
+    // One request per repository rather than per issue.
+    let mut by_repo: BTreeMap<String, (project::GithubRemote, Vec<u64>)> = BTreeMap::new();
+    for key in &keys {
+        if let Some((remote, number)) = github::parse_issue_key(key) {
+            by_repo
+                .entry(remote.slug())
+                .or_insert_with(|| (remote, Vec::new()))
+                .1
+                .push(number);
+        }
+    }
+
+    let mut fetched = Vec::new();
+    let mut failed = 0u32;
+    for (remote, numbers) in by_repo.into_values() {
+        // One unreachable repo — access revoked, repo deleted or renamed — must
+        // not stop the others from syncing, but it is counted so the caller can
+        // say so rather than reporting a quiet success.
+        match github::fetch_issues(&remote, &numbers).await {
+            Ok(issues) => fetched.extend(issues),
+            Err(error) => {
+                eprintln!("warning: could not sync {}: {error}", remote.slug());
+                failed += 1;
+            }
+        }
+    }
+
+    let changed = with_vault(&state, |open| {
+        open.index
+            .put_issues(&fetched, unix_now())
+            .map_err(|e| err("could not cache issue states", e))
+    })?;
+
+    let removed = if changed.is_empty() {
+        0
+    } else {
+        retire_closed_bubbles(&state, &changed)?
+    };
+
+    if !changed.is_empty() {
+        // The same event an external file edit raises: the UI already reloads
+        // the open note on it, which is exactly what muting needs.
+        let _ = app.emit(watcher::CHANGE_EVENT, ());
+    }
+
+    Ok(IssueSync {
+        changed: changed.len() as u32,
+        removed,
+        failed,
+    })
+}
+
+/// Delete the bubbles whose issues just closed, when the vault asks for it.
+///
+/// Off by default: this removes text the user wrote, and the app has no trash.
+/// The prior body goes to the undo buffer first so the toast can put it back.
+///
+/// "Just closed" means newly observed as closed, which on the first sync after
+/// enabling the setting includes issues that closed long ago. That is the point
+/// — otherwise the setting would never act on the ideas already in the vault —
+/// and it is why the undo buffer exists.
+fn retire_closed_bubbles(state: &State<AppState>, changed: &[github::IssueRef]) -> Result<u32> {
+    let root = vault_root(state)?;
+    if !github::settings(&root).auto_delete_closed {
+        return Ok(0);
+    }
+
+    let closed: Vec<String> = changed
+        .iter()
+        .filter(|issue| issue.state == "closed")
+        .map(|issue| issue.key.clone())
+        .collect();
+    if closed.is_empty() {
+        return Ok(0);
+    }
+
+    let note_ids = with_vault(state, |open| {
+        open.index
+            .notes_with_issues(&closed)
+            .map_err(|e| err("could not find linked notes", e))
+    })?;
+
+    let mut removed = 0u32;
+    for id in note_ids {
+        let mut before: Option<String> = None;
+        save(state, &id, |note| {
+            before = Some(note.body.clone());
+            let labels: Vec<String> = note
+                .frontmatter
+                .bubble_issues
+                .iter()
+                .filter(|(_, key)| closed.contains(key))
+                .map(|(label, _)| label.clone())
+                .collect();
+            for label in labels {
+                if remove_bubble_named(&mut note.body, &label) {
+                    removed += 1;
+                }
+                note.frontmatter.bubble_issues.remove(&label);
+                note.frontmatter.models.remove(&label);
+                note.frontmatter.bubble_tags.remove(&label);
+            }
+        })?;
+        if let Some(before) = before {
+            remember_undo(&id, before);
+        }
+    }
+    Ok(removed)
+}
+
+/// Cut the bubble whose first line is `label` out of `body`, separator and all.
+/// Returns whether anything was found to remove.
+fn remove_bubble_named(body: &mut String, label: &str) -> bool {
+    let Some(block) = bubble_blocks(body)
+        .into_iter()
+        .find(|block| block.label == label)
+    else {
+        return false;
+    };
+    body.replace_range(block.span, "");
+    true
+}
+
+/// Bodies replaced by auto-delete, so the toast can offer an undo.
+///
+/// Deliberately in memory and for this session only: it is a safety net for the
+/// moment a bubble vanishes, not a second store of note history.
+static UNDO: std::sync::OnceLock<Mutex<BTreeMap<String, String>>> = std::sync::OnceLock::new();
+
+fn remember_undo(id: &str, body: String) {
+    let undo = UNDO.get_or_init(|| Mutex::new(BTreeMap::new()));
+    if let Ok(mut guard) = undo.lock() {
+        guard.insert(id.to_string(), body);
+    }
+}
+
+/// Put back the body auto-delete replaced, if this session still has it.
+#[tauri::command]
+fn undo_issue_cleanup(state: State<AppState>) -> Result<u32> {
+    let pending: Vec<(String, String)> = UNDO
+        .get()
+        .and_then(|undo| undo.lock().ok())
+        .map(|mut guard| std::mem::take(&mut *guard).into_iter().collect())
+        .unwrap_or_default();
+
+    let mut restored = 0u32;
+    for (id, body) in pending {
+        // The issue links went with the bubbles; restoring the body alone
+        // leaves them detached, which is the honest outcome — the issues still
+        // exist on GitHub and can be relinked by filing again.
+        save(&state, &id, |note| note.body = body)?;
+        restored += 1;
+    }
+    Ok(restored)
 }
 
 /// Read a note, apply an edit, bump `updated`, write it back, and reindex.
@@ -1419,12 +1881,47 @@ fn metadata_matches(value: &str, query: &str) -> bool {
     !compact_query.is_empty() && compact_value.contains(&compact_query)
 }
 
-/// Return one `(label, UTF-16 start offset)` per bubble. Marker pairs are
-/// treated as a single bubble even when they contain blank lines, matching the
-/// editor's bubble grouping rules closely enough for search navigation.
-fn bubble_entries(body: &str) -> Vec<(String, usize)> {
-    let mut entries = Vec::new();
-    let mut active: Option<(Option<(String, usize)>, bool)> = None;
+/// One bubble in a note body, in byte offsets into that body.
+#[derive(Debug, Clone)]
+struct BubbleBlock {
+    /// The bubble's first line, which is how per-bubble metadata is keyed.
+    label: String,
+    /// The bubble's own text, with no marker lines.
+    text: std::ops::Range<usize>,
+    /// Everything that goes when the bubble is removed: its marker lines and
+    /// the blank line separating it from whatever follows.
+    span: std::ops::Range<usize>,
+}
+
+/// A bubble still being read.
+struct OpenBubble {
+    label: Option<String>,
+    text_start: usize,
+    text_end: usize,
+    span_start: usize,
+    /// Inside a `<!-- bubble -->` pair, where blank lines do not end the bubble.
+    in_marker: bool,
+}
+
+/// Group a note body into bubbles: blank-line separated runs of lines, or an
+/// explicit `<!-- bubble -->` … `<!-- /bubble -->` pair, which stays one bubble
+/// even when it contains blank lines.
+///
+/// This mirrors `computeBubbles` in the editor closely enough for search
+/// navigation, issue links, and removal.
+fn bubble_blocks(body: &str) -> Vec<BubbleBlock> {
+    fn close(blocks: &mut Vec<BubbleBlock>, open: Option<OpenBubble>, span_end: usize) {
+        let Some(open) = open else { return };
+        let Some(label) = open.label else { return };
+        blocks.push(BubbleBlock {
+            label,
+            text: open.text_start..open.text_end,
+            span: open.span_start..span_end.max(open.text_end),
+        });
+    }
+
+    let mut blocks: Vec<BubbleBlock> = Vec::new();
+    let mut open: Option<OpenBubble> = None;
     let mut offset = 0usize;
     let mut in_comment = false;
 
@@ -1432,21 +1929,26 @@ fn bubble_entries(body: &str) -> Vec<(String, usize)> {
         let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
         let line = line.strip_suffix('\r').unwrap_or(line);
         let trimmed = line.trim();
+        let line_end = offset + raw_line.len();
 
         if trimmed == BUBBLE_START {
-            if let Some((Some((label, start)), _)) = active.take() {
-                entries.push((label, start));
-            }
-            active = Some((None, true));
-            offset += raw_line.len();
+            close(&mut blocks, open.take(), offset);
+            open = Some(OpenBubble {
+                label: None,
+                text_start: line_end,
+                text_end: line_end,
+                span_start: offset,
+                in_marker: true,
+            });
+            offset = line_end;
             continue;
         }
 
         if trimmed == BUBBLE_END {
-            if let Some((Some((label, start)), _)) = active.take() {
-                entries.push((label, start));
-            }
-            offset += raw_line.len();
+            // The closing marker belongs to the bubble's span, so removing the
+            // bubble does not strand it.
+            close(&mut blocks, open.take(), line_end);
+            offset = line_end;
             continue;
         }
 
@@ -1454,56 +1956,63 @@ fn bubble_entries(body: &str) -> Vec<(String, usize)> {
             if trimmed == "-->" || trimmed.starts_with("-->") {
                 in_comment = false;
             }
-            offset += raw_line.len();
+            offset = line_end;
             continue;
         }
 
+        // An HTML comment — the LLM directive header, say — is not part of any
+        // bubble, so it closes the run rather than extending it. The bubble
+        // markers are the one comment form that means something here.
         if trimmed == "<!--" || (trimmed.starts_with("<!--") && !trimmed.starts_with("<!-- bubble")) {
-            if let Some((Some((label, start)), _)) = active.take() {
-                entries.push((label, start));
-            }
+            close(&mut blocks, open.take(), offset);
             if trimmed == "<!--" || !trimmed.ends_with("-->") {
                 in_comment = true;
             }
-            offset += raw_line.len();
+            offset = line_end;
             continue;
         }
 
         if trimmed.is_empty() {
-            let closes_regular_bubble = active
-                .as_ref()
-                .map(|(_, in_marker)| !*in_marker)
-                .unwrap_or(false);
-            if closes_regular_bubble {
-                if let Some((Some((label, start)), _)) = active.take() {
-                    entries.push((label, start));
-                }
+            if open.as_ref().is_some_and(|open| !open.in_marker) {
+                close(&mut blocks, open.take(), line_end);
             }
-            offset += raw_line.len();
+            offset = line_end;
             continue;
         }
 
-        match &mut active {
-            Some((label @ None, _)) => {
-                *label = Some((trimmed.to_string(), offset));
+        match &mut open {
+            Some(open) => {
+                if open.label.is_none() {
+                    open.label = Some(trimmed.to_string());
+                    open.text_start = offset;
+                }
+                open.text_end = offset + line.len();
             }
-            Some(_) => {}
             None => {
-                active = Some((Some((trimmed.to_string(), offset)), false));
+                open = Some(OpenBubble {
+                    label: Some(trimmed.to_string()),
+                    text_start: offset,
+                    text_end: offset + line.len(),
+                    span_start: offset,
+                    in_marker: false,
+                });
             }
         }
-        offset += raw_line.len();
+        offset = line_end;
     }
 
-    if let Some((Some((label, start)), _)) = active {
-        entries.push((label, start));
-    }
+    close(&mut blocks, open.take(), offset);
+    blocks
+}
 
-    entries
+/// Return one `(label, UTF-16 start offset)` per bubble, for jumping the editor
+/// to a search hit.
+fn bubble_entries(body: &str) -> Vec<(String, usize)> {
+    bubble_blocks(body)
         .into_iter()
-        .map(|(label, byte_start)| {
-            let utf16_start = body[..byte_start].encode_utf16().count();
-            (label, utf16_start)
+        .map(|block| {
+            let utf16_start = body[..block.text.start].encode_utf16().count();
+            (block.label, utf16_start)
         })
         .collect()
 }
@@ -1921,7 +2430,9 @@ fn resolve_link(title: String, state: State<AppState>) -> Result<Option<String>>
 #[cfg(test)]
 mod tests {
     use super::{
-        bubble_entries, metadata_matches, parse_search_spec, search_vault, strip_paste, Index,
+        bubble_blocks, bubble_entries, metadata_matches, move_bubble_key, parse_search_spec,
+        remove_bubble_named,
+        search_vault, strip_paste, Index,
         Note, OpenVault, Vault,
     };
     use std::collections::BTreeMap;
@@ -1955,6 +2466,85 @@ mod tests {
             entries[1].1,
             body[..body.find("Second").unwrap()].encode_utf16().count()
         );
+    }
+
+    #[test]
+    fn a_bubble_block_covers_its_text_but_its_span_covers_the_separator() {
+        let body = "First\nsecond line\n\nNext\n";
+        let blocks = bubble_blocks(body);
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(&body[blocks[0].text.clone()], "First\nsecond line");
+        // The blank line goes with the bubble, so removing it leaves no gap.
+        assert_eq!(&body[blocks[0].span.clone()], "First\nsecond line\n\n");
+        assert_eq!(&body[blocks[1].text.clone()], "Next");
+    }
+
+    #[test]
+    fn a_marked_bubble_span_includes_its_markers() {
+        let body = "<!-- bubble -->\nOne\n\nTwo\n<!-- /bubble -->\n";
+        let blocks = bubble_blocks(body);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].label, "One");
+        assert_eq!(&body[blocks[0].text.clone()], "One\n\nTwo");
+        assert_eq!(&body[blocks[0].span.clone()], body);
+    }
+
+    #[test]
+    fn a_bubble_rename_moves_every_map_together() {
+        let mut note = Note::new("Roadmap", "Old first line\n".into());
+        note.frontmatter
+            .models
+            .insert("Old first line".into(), "anthropic/claude-opus-5".into());
+        note.frontmatter
+            .bubble_tags
+            .insert("Old first line".into(), vec!["design".into()]);
+        note.frontmatter
+            .bubble_issues
+            .insert("Old first line".into(), "o/r#7".into());
+
+        move_bubble_key(&mut note.frontmatter, "Old first line", "New first line");
+
+        let fm = &note.frontmatter;
+        assert_eq!(fm.models.get("New first line").map(String::as_str), Some("anthropic/claude-opus-5"));
+        assert_eq!(fm.bubble_tags.get("New first line"), Some(&vec!["design".to_string()]));
+        assert_eq!(fm.bubble_issues.get("New first line").map(String::as_str), Some("o/r#7"));
+        // Nothing may be left behind under the old key.
+        assert!(!fm.models.contains_key("Old first line"));
+        assert!(!fm.bubble_tags.contains_key("Old first line"));
+        assert!(!fm.bubble_issues.contains_key("Old first line"));
+    }
+
+    #[test]
+    fn a_rename_of_an_unknown_bubble_changes_nothing() {
+        let mut note = Note::new("Roadmap", "text".into());
+        note.frontmatter.models.insert("Kept".into(), "m".into());
+
+        move_bubble_key(&mut note.frontmatter, "Missing", "Renamed");
+
+        assert_eq!(note.frontmatter.models.get("Kept").map(String::as_str), Some("m"));
+        assert!(!note.frontmatter.models.contains_key("Renamed"));
+    }
+
+    #[test]
+    fn removes_a_named_bubble_and_its_separator() {
+        let mut body = "First\n\nSecond\nmore\n\nThird\n".to_string();
+
+        assert!(remove_bubble_named(&mut body, "Second"));
+        assert_eq!(body, "First\n\nThird\n");
+        // The label is the bubble's first line; anything else is not a bubble.
+        assert!(!remove_bubble_named(&mut body, "more"));
+        assert_eq!(body, "First\n\nThird\n");
+    }
+
+    #[test]
+    fn removes_a_marked_bubble_with_its_markers() {
+        let mut body = "Keep\n\n<!-- bubble -->\nGone\n\nAlso gone\n<!-- /bubble -->\nTail\n"
+            .to_string();
+
+        assert!(remove_bubble_named(&mut body, "Gone"));
+        assert_eq!(body, "Keep\n\nTail\n");
     }
 
     #[test]
@@ -2198,6 +2788,17 @@ pub fn run() {
             set_ai_settings,
             set_bubble_metadata_visible,
             ai_health,
+            github_auth,
+            github_device_code,
+            github_await_login,
+            github_logout,
+            github_install_url,
+            github_repo_access,
+            github_has_installation,
+            get_github_settings,
+            set_github_auto_delete,
+            sync_github_issues,
+            undo_issue_cleanup,
             app_version,
             model_catalog,
             analyze_note,
@@ -2218,9 +2819,13 @@ pub fn run() {
             restore_backup,
             write_note,
             update_model,
-            set_note_on_hold,
+            set_note_mark,
             set_bubble_model,
             set_bubble_tags,
+            rename_bubble_key,
+            forget_bubble_key,
+            draft_bubble_issue,
+            create_bubble_issue,
             rename_note,
             update_note,
             delete_note,

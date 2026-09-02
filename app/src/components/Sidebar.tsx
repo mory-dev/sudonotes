@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 
-import type { NoteMeta, NoteType } from "../api";
+import { nextIdeaMark, normalizeIdeaMark, type NoteMeta, type NoteType } from "../api";
 import { useStore } from "../store";
 import { useListDrag, reordered, type NoteDragHandlers } from "../useListDrag";
 import { ModelStack } from "./ModelStack";
@@ -51,8 +51,14 @@ function bubbleCountHeatStyle(
   };
 }
 
+function isDividerLine(line: string): boolean {
+  const t = line.trim();
+  return /^(_\s*){3,}$/.test(t) || /^(-\s*){3,}$/.test(t) || /^(\*\s*){3,}$/.test(t);
+}
+
 /** The bubbles of an idea note: each paragraph (and the list that follows it)
- *  with the body position its first line starts at. */
+ *  with the body position its first line starts at. Visual divider lines are treated
+ *  as separators so they do not produce empty or broken outline entries. */
 function paragraphOutline(body: string): { start: number; label: string }[] {
   const out: { start: number; label: string }[] = [];
   const lines = body.split("\n");
@@ -60,7 +66,8 @@ function paragraphOutline(body: string): { start: number; label: string }[] {
   let buffer: string[] = [];
   let groupStart = 0;
   for (const line of lines) {
-    if (line.trim() === "") {
+    const trimmed = line.trim();
+    if (trimmed === "" || isDividerLine(trimmed)) {
       if (buffer.length > 0) {
         out.push({ start: groupStart, label: buffer[0].trim() });
         buffer = [];
@@ -75,29 +82,46 @@ function paragraphOutline(body: string): { start: number; label: string }[] {
   return out;
 }
 
-/** The small hover target used to mark an idea as paused/on hold. */
-function IdeaHoldToggle({ note }: { note: NoteMeta }) {
-  const setNoteOnHold = useStore((s) => s.setNoteOnHold);
+/** The small hover target used to mark an idea as in-progress (orange), complete (green), or unmarked (off). */
+export function IdeaHoldToggle({ note }: { note: NoteMeta }) {
+  const setNoteMark = useStore((s) => s.setNoteMark);
+  const markState = normalizeIdeaMark(note.mark);
 
-  const toggleOnHold = (event: React.MouseEvent) => {
+  const toggleMark = (event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    void setNoteOnHold(note.id, !note.onHold);
+    const nextState = nextIdeaMark(note.mark);
+    void setNoteMark(note.id, nextState);
   };
+
+  const isPressed = markState !== "off";
+  const title = note.title || "idea";
+  const ariaLabel =
+    markState === "orange"
+      ? `Cycle mark for ${title}`
+      : markState === "green"
+        ? `Unmark ${title}`
+        : `Mark ${title}`;
+
+  const tooltip =
+    markState === "orange"
+      ? "In progress · Click to cycle"
+      : markState === "green"
+        ? "Complete · Click to unmark"
+        : "Click to mark";
 
   return (
     <button
       type="button"
-      className={note.onHold ? "idea-hold-toggle on" : "idea-hold-toggle"}
-      aria-pressed={note.onHold}
-      aria-label={note.onHold ? `Resume ${note.title}` : `Put ${note.title} on hold`}
-      data-tooltip={
-        note.onHold ? "On hold · Click to resume" : "Active · Click to put on hold"
-      }
-      onClick={toggleOnHold}
+      className={`idea-hold-toggle state-${markState}${isPressed ? ` on ${markState}` : ""}`}
+      aria-pressed={isPressed}
+      aria-label={ariaLabel}
+      data-tooltip={tooltip}
+      data-state={markState}
+      onClick={toggleMark}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <span className="idea-hold-orb" aria-hidden="true" />
+      <span className={`idea-hold-orb orb-${markState}`} aria-hidden="true" />
     </button>
   );
 }
