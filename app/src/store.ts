@@ -1,3 +1,8 @@
+import {
+  loadPromptHeights,
+  removePromptHeight,
+  savePromptHeight,
+} from "./promptHeightStorage";
 import { create } from "zustand";
 
 import {
@@ -302,6 +307,12 @@ interface AppState {
   loadAiSettings: () => Promise<void>;
   saveAiSettings: (enabled: boolean) => Promise<void>;
   saveBubbleMetadataVisible: (visible: boolean) => Promise<void>;
+  /** Customized vertical heights for prompt collection cards keyed by prompt ID. */
+  promptHeights: Record<string, number>;
+  /** Save customized vertical height for a prompt collection card. */
+  setPromptHeight: (id: string, height: number) => void;
+  /** Reset customized vertical height for a prompt collection card to default. */
+  resetPromptHeight: (id: string) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -326,6 +337,24 @@ export const useStore = create<AppState>((set, get) => ({
   hoverBubble: null,
   cursorBubble: null,
   hoverPrompt: null,
+  promptHeights: loadPromptHeights(),
+  setPromptHeight: (id, height) => {
+    const clamped = savePromptHeight(id, height);
+    set((s) => ({
+      promptHeights: {
+        ...s.promptHeights,
+        [id]: clamped,
+      },
+    }));
+  },
+  resetPromptHeight: (id) => {
+    removePromptHeight(id);
+    set((s) => {
+      const next = { ...s.promptHeights };
+      delete next[id];
+      return { promptHeights: next };
+    });
+  },
   dirty: false,
   error: null,
   notice: null,
