@@ -1251,7 +1251,7 @@ function paraLineOf(target: EventTarget | null): HTMLElement | null {
 }
 
 /** The first line of the bubble a hovered line belongs to. */
-function bubbleFirstLine(line: HTMLElement): HTMLElement {
+export function bubbleFirstLine(line: HTMLElement): HTMLElement {
   let first = line;
   let prev = first.previousElementSibling;
   while (prev instanceof HTMLElement && prev.classList.contains("cm-para")) {
@@ -1259,6 +1259,42 @@ function bubbleFirstLine(line: HTMLElement): HTMLElement {
     prev = first.previousElementSibling;
   }
   return first;
+}
+
+/** The last line of the bubble a hovered line belongs to. */
+export function bubbleLastLine(line: HTMLElement): HTMLElement {
+  let last = line;
+  let next = last.nextElementSibling;
+  while (next instanceof HTMLElement && next.classList.contains("cm-para")) {
+    last = next;
+    next = last.nextElementSibling;
+  }
+  return last;
+}
+
+export const BUBBLE_MENU_CLEARANCE = 44;
+export const BUBBLE_MENU_GAP = 6;
+
+/** Calculates the hover menu coordinates relative to .editor-wrap.
+ *  When the first bubble starts at line 1 (especially with a markdown header),
+ *  the top clearance in .cm-scroller ensures the menu sits cleanly above the
+ *  header without occluding the text or blocking text selection and hover interactions.
+ *  If there is insufficient room above (e.g. when scrolled), the menu flips below
+ *  the entire bubble (after the last line) so no lines within the bubble are occluded.
+ */
+export function computeBubbleMenuPosition(
+  firstRect: { top: number; bottom: number; left: number },
+  lastRect: { top: number; bottom: number; left: number },
+  wrapRect: { top: number; left: number },
+  zoom = 1,
+): { top: number; left: number; below: boolean } {
+  const relTop = (firstRect.top - wrapRect.top) / zoom;
+  const relBottom = (lastRect.bottom - wrapRect.top) / zoom;
+  const left = (firstRect.left - wrapRect.left) / zoom;
+
+  const below = relTop < BUBBLE_MENU_CLEARANCE;
+  const top = below ? relBottom + BUBBLE_MENU_GAP : relTop - BUBBLE_MENU_GAP;
+  return { top, left, below };
 }
 
 class BubbleHover {
@@ -1489,7 +1525,7 @@ const theme = EditorView.theme(
     ".cm-scroller": {
       fontFamily: "var(--font-mono)",
       lineHeight: "1.7",
-      padding: "8px 24px 40vh",
+      padding: "52px 24px 40vh",
       position: "relative",
     },
     ".cm-content": { caretColor: "var(--accent)", maxWidth: "80ch" },
@@ -2138,15 +2174,14 @@ export function Editor() {
     useStore.getState().setHoverBubble(label);
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const rect = first.getBoundingClientRect();
+    const firstRect = first.getBoundingClientRect();
+    const last = bubbleLastLine(line);
+    const lastRect = last.getBoundingClientRect();
     const wrapRect = wrap.getBoundingClientRect();
     // Absolute offsets are layout pixels that scale with the UI zoom (Ctrl +/-),
     // so convert the visual viewport deltas back into that space first.
     const zoom = getUiZoom();
-    // Just above the bubble, or just below it when there is no room up there.
-    const below = rect.top < 120;
-    const top = ((below ? rect.bottom : rect.top) - wrapRect.top) / zoom;
-    const left = (rect.left - wrapRect.left) / zoom;
+    const { top, left, below } = computeBubbleMenuPosition(firstRect, lastRect, wrapRect, zoom);
     setBubbleMenu((current) => {
       if (
         current &&
@@ -2597,7 +2632,11 @@ export function Editor() {
       {bubbleMenu && active?.type === "idea" && (
         <div
           ref={menuRef}
-          className={menuFading ? "bubble-model-menu fading" : "bubble-model-menu"}
+           className={
+            menuFading
+              ? "bubble-model-menu bubble-hover-menu fading"
+              : "bubble-model-menu bubble-hover-menu"
+          }
           style={{
             top: bubbleMenu.top,
             left: bubbleMenu.left,

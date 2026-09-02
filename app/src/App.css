@@ -2648,7 +2648,8 @@ mark.cm-find-match {
 
 /* Hover menu above an idea bubble: pick the model that bubble's prompt targets.
    Absolute within .editor-wrap so it tracks the bubble at any UI zoom level. */
-.bubble-model-menu {
+.bubble-model-menu,
+.bubble-hover-menu {
   position: absolute;
   z-index: 30;
   /* Wider than the picker alone needs: copy, cut and delete sit beside it. */
@@ -2663,12 +2664,14 @@ mark.cm-find-match {
 }
 
 /* The last 200ms of the menu's 1.5s life. */
-.bubble-model-menu.fading {
+.bubble-model-menu.fading,
+.bubble-hover-menu.fading {
   opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bubble-model-menu {
+  .bubble-model-menu,
+  .bubble-hover-menu {
     transition: none;
   }
 }
