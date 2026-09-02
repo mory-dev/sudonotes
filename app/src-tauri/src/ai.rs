@@ -401,12 +401,8 @@ fn assemble_draft(
 
     // Tags are deliberately absent here: they are applied as GitHub labels, so
     // repeating them as prose would be noise.
-    out.push_str("\n\n---\nFrom [sudonotes](https://sudonotes.com) · idea: ");
-    out.push_str(note_title);
-    if let Some(model) = model.filter(|m| !m.is_empty()) {
-        out.push_str(" · model: ");
-        out.push_str(model);
-    }
+    out.push_str("\n\n---\n");
+    out.push_str(&crate::github::format_issue_footer(note_title, model));
     out.push('\n');
 
     IssueDraft { title, body: out }
@@ -547,9 +543,22 @@ mod tests {
         assert_eq!(draft.title, "Mute closed bubbles");
         assert!(draft.body.starts_with("# Mute closed bubbles"));
         assert!(draft.body.contains("idea: GitHub integration"));
-        assert!(draft.body.contains("model: deepseek/deepseek-chat"));
+        assert!(draft.body.contains("model: @deepseek-ai(deepseek-chat)"));
         // Tags belong on the issue as labels, not restated in the body.
         assert!(!draft.body.contains("tags:"));
+    }
+
+    #[test]
+    fn omits_model_in_draft_footer_when_missing() {
+        let draft = local_draft(
+            "# Mute closed bubbles\n\nThey should dim.",
+            "GitHub integration",
+            None,
+        );
+
+        assert_eq!(draft.title, "Mute closed bubbles");
+        assert!(draft.body.contains("From [sudonotes](https://sudonotes.com) · idea: GitHub integration"));
+        assert!(!draft.body.contains("· model:"));
     }
 
     #[test]

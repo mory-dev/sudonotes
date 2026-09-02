@@ -765,9 +765,125 @@ pub async fn fetch_issues(remote: &GithubRemote, numbers: &[u64]) -> Result<Vec<
     Ok(found)
 }
 
+/// Map an LLM provider identifier to its official GitHub handle.
+pub fn format_provider_handle(provider: &str) -> String {
+    let key = provider.trim().to_ascii_lowercase();
+    match key.as_str() {
+        "anthropic" => "@claude".to_string(),
+        "openai" => "@openai".to_string(),
+        "google" => "@google".to_string(),
+        "deepseek" => "@deepseek-ai".to_string(),
+        "meta" => "@meta".to_string(),
+        "mistral" => "@mistralai".to_string(),
+        _ => format!("@{key}"),
+    }
+}
+
+/// Format a model specifier for GitHub issue footers, e.g. `@claude(claude-opus-5)`.
+pub fn format_model_reference(model: &str) -> String {
+    let trimmed = model.trim();
+    if let Some((provider, model_id)) = trimmed.split_once('/') {
+        let handle = format_provider_handle(provider);
+        let model_id = model_id.trim();
+        format!("{handle}({model_id})")
+    } else {
+        let handle = format_provider_handle(trimmed);
+        format!("{handle}({trimmed})")
+    }
+}
+
+/// Format the footer appended to GitHub issues created from idea bubbles.
+///
+/// If a model is provided, includes ` · model: @<provider_handle>(<model_id>)`.
+/// If no model is assigned (None or empty), omits the model segment.
+pub fn format_issue_footer(note_title: &str, model: Option<&str>) -> String {
+    let title = note_title.trim();
+    let model = model.map(str::trim).filter(|m| !m.is_empty());
+    match model {
+        Some(m) => format!(
+            "From [sudonotes](https://sudonotes.com) · idea: {title} · model: {}",
+            format_model_reference(m)
+        ),
+        None => format!("From [sudonotes](https://sudonotes.com) · idea: {title}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn formats_provider_handles_correctly() {
+        assert_eq!(format_provider_handle("anthropic"), "@claude");
+        assert_eq!(format_provider_handle("Anthropic"), "@claude");
+        assert_eq!(format_provider_handle("openai"), "@openai");
+        assert_eq!(format_provider_handle("google"), "@google");
+        assert_eq!(format_provider_handle("deepseek"), "@deepseek-ai");
+        assert_eq!(format_provider_handle("meta"), "@meta");
+        assert_eq!(format_provider_handle("mistral"), "@mistralai");
+        assert_eq!(format_provider_handle("cohere"), "@cohere");
+        assert_eq!(format_provider_handle("qwen"), "@qwen");
+    }
+
+    #[test]
+    fn formats_model_references_correctly() {
+        assert_eq!(
+            format_model_reference("anthropic/claude-opus-5"),
+            "@claude(claude-opus-5)"
+        );
+        assert_eq!(
+            format_model_reference("openai/gpt-4o"),
+            "@openai(gpt-4o)"
+        );
+        assert_eq!(
+            format_model_reference("google/gemini-2.0-flash"),
+            "@google(gemini-2.0-flash)"
+        );
+        assert_eq!(
+            format_model_reference("deepseek/deepseek-chat"),
+            "@deepseek-ai(deepseek-chat)"
+        );
+        assert_eq!(
+            format_model_reference("meta/llama-3.3-70b-instruct"),
+            "@meta(llama-3.3-70b-instruct)"
+        );
+        assert_eq!(
+            format_model_reference("mistral/mistral-large-2407"),
+            "@mistralai(mistral-large-2407)"
+        );
+        assert_eq!(
+            format_model_reference("cohere/command-r-plus"),
+            "@cohere(command-r-plus)"
+        );
+        assert_eq!(
+            format_model_reference("custom-model"),
+            "@custom-model(custom-model)"
+        );
+    }
+
+    #[test]
+    fn formats_issue_footer_with_and_without_models() {
+        assert_eq!(
+            format_issue_footer("Roadmap", Some("anthropic/claude-opus-5")),
+            "From [sudonotes](https://sudonotes.com) · idea: Roadmap · model: @claude(claude-opus-5)"
+        );
+        assert_eq!(
+            format_issue_footer("Roadmap", Some("deepseek/deepseek-chat")),
+            "From [sudonotes](https://sudonotes.com) · idea: Roadmap · model: @deepseek-ai(deepseek-chat)"
+        );
+        assert_eq!(
+            format_issue_footer("Roadmap", None),
+            "From [sudonotes](https://sudonotes.com) · idea: Roadmap"
+        );
+        assert_eq!(
+            format_issue_footer("Roadmap", Some("")),
+            "From [sudonotes](https://sudonotes.com) · idea: Roadmap"
+        );
+        assert_eq!(
+            format_issue_footer("Roadmap", Some("   ")),
+            "From [sudonotes](https://sudonotes.com) · idea: Roadmap"
+        );
+    }
 
     #[test]
     fn round_trips_an_issue_key() {

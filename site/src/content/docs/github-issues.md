@@ -96,7 +96,7 @@ A short footer is appended by sudonotes, recording the idea the bubble came from
 
 ```
 ---
-From [sudonotes](https://sudonotes.com) · idea: Roadmap · model: anthropic/claude-opus-5
+From [sudonotes](https://sudonotes.com) · idea: Roadmap · model: @claude(claude-opus-5)
 ```
 
 Nothing is filed until you press **Create issue**. Afterwards the link is written into the note's
