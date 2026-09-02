@@ -631,6 +631,181 @@ const headings = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+export type DividerType = "bold" | "subtle";
+
+/** Determine whether a markdown line represents a bold (___) or subtle (---) visual divider. */
+export function getDividerType(text: string): DividerType | null {
+  const trimmed = text.trim();
+  if (/^(_\s*){3,}$/.test(trimmed)) {
+    return "bold";
+  }
+  if (/^(-\s*){3,}$/.test(trimmed)) {
+    return "subtle";
+  }
+  if (/^(\*\s*){3,}$/.test(trimmed)) {
+    return "subtle";
+  }
+  return null;
+}
+
+/** Identify the closing line number of YAML frontmatter if present, so frontmatter delimiters are not decorated as dividers. */
+export function getFrontmatterEndLine(doc: Text): number {
+  if (doc.lines < 2) return 0;
+  const firstLine = doc.line(1).text.trim();
+  if (firstLine !== "---") return 0;
+  for (let n = 2; n <= doc.lines; n++) {
+    if (doc.line(n).text.trim() === "---") {
+      return n;
+    }
+  }
+  return 0;
+}
+
+/** Check if any selection or caret overlaps the given line range. */
+export function isLineSelected(state: EditorState, lineFrom: number, lineTo: number): boolean {
+  for (const range of state.selection.ranges) {
+    if (range.from <= lineTo && range.to >= lineFrom) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export class DividerWidget extends WidgetType {
+  constructor(readonly kind: DividerType) {
+    super();
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement("div");
+    el.className = `cm-divider cm-divider-${this.kind}`;
+    el.setAttribute("aria-hidden", "true");
+    const line = document.createElement("div");
+    line.className = "cm-divider-graphic";
+    el.appendChild(line);
+    return el;
+  }
+
+  eq(other: DividerWidget): boolean {
+    return other.kind === this.kind;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** Build visual divider decorations for `___` (bold accent) and `---` (subtle hairline).
+ *  When the cursor is on the line, the raw text remains editable cleanly. */
+export function buildDividerDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+  const frontmatterEnd = getFrontmatterEndLine(doc);
+  const ranges = view.visibleRanges.length > 0 ? view.visibleRanges : [{ from: 0, to: doc.length }];
+
+  for (const { from, to } of ranges) {
+    const tree = ensureSyntaxTree(view.state, to, 50) ?? syntaxTree(view.state);
+    tree.iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (node.name !== "HorizontalRule") return;
+        const line = doc.lineAt(node.from);
+        if (line.number <= frontmatterEnd) return;
+
+        const type = getDividerType(line.text);
+        if (!type) return;
+
+        const active = isLineSelected(view.state, line.from, line.to);
+        const lineClass = `cm-divider-line cm-divider-line-${type}${active ? " cm-divider-active" : ""}`;
+
+        builder.add(line.from, line.from, Decoration.line({ class: lineClass, side: -2 }));
+
+        if (active) {
+          builder.add(
+            line.from,
+            line.to,
+            Decoration.mark({ class: `cm-divider-raw cm-divider-raw-${type}` }),
+          );
+        } else {
+          builder.add(
+            line.from,
+            line.to,
+            Decoration.replace({ widget: new DividerWidget(type) }),
+          );
+        }
+      },
+    });
+  }
+
+  return builder.finish();
+}
+
+/** Finish a divider the moment it is typed.
+ *
+ *  A divider only renders while the caret is elsewhere, so typing `___` left the
+ *  raw underscores on screen until the cursor happened to move away. Completing
+ *  the line drops the caret onto a fresh line below, which renders the divider
+ *  straight away and is where the next thought was going anyway. */
+export const dividerAutoBreak = ViewPlugin.fromClass(
+  class {
+    constructor(readonly view: EditorView) {}
+
+    update(update: ViewUpdate) {
+      if (!update.docChanged) return;
+      // Only typing. Pasting a document full of `---` must not rewrite it.
+      if (!update.transactions.some((tr) => tr.isUserEvent("input.type"))) return;
+
+      const head = update.state.selection.main.head;
+      const line = update.state.doc.lineAt(head);
+      // The caret has to be finishing the line, not editing inside one.
+      if (head !== line.to) return;
+      if (!getDividerType(line.text)) return;
+      if (line.number <= getFrontmatterEndLine(update.state.doc)) return;
+
+      // Adding a fourth dash to an existing divider is not a new one.
+      let wasDivider = false;
+      update.changes.iterChanges((fromA) => {
+        const old = update.startState.doc.lineAt(
+          Math.min(fromA, update.startState.doc.length),
+        );
+        if (getDividerType(old.text)) wasDivider = true;
+      });
+      if (wasDivider) return;
+
+      // A transaction cannot be dispatched from inside update().
+      queueMicrotask(() => {
+        const doc = this.view.state.doc;
+        if (line.to > doc.length) return;
+        const current = doc.lineAt(line.to);
+        if (!getDividerType(current.text)) return;
+        this.view.dispatch({
+          changes: { from: current.to, insert: "\n" },
+          selection: { anchor: current.to + 1 },
+          userEvent: "input.divider",
+        });
+      });
+    }
+  },
+);
+
+export const visualDividers = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildDividerDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        this.decorations = buildDividerDecorations(update.view);
+      }
+    }
+  },
+  {
+    decorations: (plugin) => plugin.decorations,
+  },
+);
+
 /** The top-level bubbles of an idea note: each block group and whether it
  *  starts with a heading. Shared by the bubble decorations, the heat bars,
  *  Ctrl+A, and the hover menu's copy button. */
@@ -1457,7 +1632,7 @@ function paraLineOf(target: EventTarget | null): HTMLElement | null {
 }
 
 /** The first line of the bubble a hovered line belongs to. */
-function bubbleFirstLine(line: HTMLElement): HTMLElement {
+export function bubbleFirstLine(line: HTMLElement): HTMLElement {
   let first = line;
   let prev = first.previousElementSibling;
   while (prev instanceof HTMLElement && prev.classList.contains("cm-para")) {
@@ -1465,6 +1640,42 @@ function bubbleFirstLine(line: HTMLElement): HTMLElement {
     prev = first.previousElementSibling;
   }
   return first;
+}
+
+/** The last line of the bubble a hovered line belongs to. */
+export function bubbleLastLine(line: HTMLElement): HTMLElement {
+  let last = line;
+  let next = last.nextElementSibling;
+  while (next instanceof HTMLElement && next.classList.contains("cm-para")) {
+    last = next;
+    next = last.nextElementSibling;
+  }
+  return last;
+}
+
+export const BUBBLE_MENU_CLEARANCE = 44;
+export const BUBBLE_MENU_GAP = 6;
+
+/** Calculates the hover menu coordinates relative to .editor-wrap.
+ *  When the first bubble starts at line 1 (especially with a markdown header),
+ *  the top clearance in .cm-scroller ensures the menu sits cleanly above the
+ *  header without occluding the text or blocking text selection and hover interactions.
+ *  If there is insufficient room above (e.g. when scrolled), the menu flips below
+ *  the entire bubble (after the last line) so no lines within the bubble are occluded.
+ */
+export function computeBubbleMenuPosition(
+  firstRect: { top: number; bottom: number; left: number },
+  lastRect: { top: number; bottom: number; left: number },
+  wrapRect: { top: number; left: number },
+  zoom = 1,
+): { top: number; left: number; below: boolean } {
+  const relTop = (firstRect.top - wrapRect.top) / zoom;
+  const relBottom = (lastRect.bottom - wrapRect.top) / zoom;
+  const left = (firstRect.left - wrapRect.left) / zoom;
+
+  const below = relTop < BUBBLE_MENU_CLEARANCE;
+  const top = below ? relBottom + BUBBLE_MENU_GAP : relTop - BUBBLE_MENU_GAP;
+  return { top, left, below };
 }
 
 class BubbleHover {
@@ -1695,7 +1906,7 @@ const theme = EditorView.theme(
     ".cm-scroller": {
       fontFamily: "var(--font-mono)",
       lineHeight: "1.7",
-      padding: "8px 24px 40vh",
+      padding: "52px 24px 40vh",
       position: "relative",
     },
     ".cm-content": { caretColor: "var(--accent)", maxWidth: "80ch" },
@@ -1760,6 +1971,48 @@ const theme = EditorView.theme(
       paddingTop: "1.15em",
       paddingBottom: "0.45em",
       borderBottom: "1px solid rgba(255, 255, 255, 0.07)",
+    },
+    ".cm-divider-line": {
+      position: "relative",
+      paddingTop: "0.85em",
+      paddingBottom: "0.85em",
+    },
+    ".cm-divider-line.cm-divider-active": {
+      paddingTop: "0.35em",
+      paddingBottom: "0.35em",
+    },
+    ".cm-divider": {
+      display: "flex",
+      alignItems: "center",
+      width: "100%",
+      cursor: "text",
+    },
+    ".cm-divider-graphic": {
+      width: "100%",
+      transition: "all 150ms ease",
+    },
+    ".cm-divider-bold .cm-divider-graphic": {
+      height: "2px",
+      borderRadius: "2px",
+      background: "var(--accent, #f59e0b)",
+      boxShadow: "0 0 8px var(--accent-soft, rgba(245, 158, 11, 0.45)), 0 0 2px var(--accent, #f59e0b)",
+    },
+    ".cm-divider-subtle .cm-divider-graphic": {
+      height: "1px",
+      background: "rgba(255, 255, 255, 0.12)",
+    },
+    ".cm-divider-raw": {
+      fontFamily: "var(--font-mono)",
+      letterSpacing: "2px",
+      fontSize: "0.9em",
+      opacity: 0.8,
+    },
+    ".cm-divider-raw-bold": {
+      color: "var(--accent, #f59e0b)",
+      fontWeight: 600,
+    },
+    ".cm-divider-raw-subtle": {
+      color: "var(--muted)",
     },
     ".cm-para": {
       borderLeft: "1px solid rgba(255,255,255,0.08)",
@@ -2373,15 +2626,14 @@ export function Editor() {
     useStore.getState().setHoverBubble(label);
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const rect = first.getBoundingClientRect();
+    const firstRect = first.getBoundingClientRect();
+    const last = bubbleLastLine(line);
+    const lastRect = last.getBoundingClientRect();
     const wrapRect = wrap.getBoundingClientRect();
     // Absolute offsets are layout pixels that scale with the UI zoom (Ctrl +/-),
     // so convert the visual viewport deltas back into that space first.
     const zoom = getUiZoom();
-    // Just above the bubble, or just below it when there is no room up there.
-    const below = rect.top < 120;
-    const top = ((below ? rect.bottom : rect.top) - wrapRect.top) / zoom;
-    const left = (rect.left - wrapRect.left) / zoom;
+    const { top, left, below } = computeBubbleMenuPosition(firstRect, lastRect, wrapRect, zoom);
     setBubbleMenu((current) => {
       if (
         current &&
@@ -2555,6 +2807,8 @@ export function Editor() {
       bubbleMarkers,
       jumpHighlight,
       headings,
+      visualDividers,
+      dividerAutoBreak,
       paragraphBoxes,
       bubbleMetadataDecorations,
       bubbleModelPersistence,
@@ -3010,7 +3264,11 @@ export function Editor() {
       {bubbleMenu && active?.type === "idea" && (
         <div
           ref={menuRef}
-          className={menuFading ? "bubble-model-menu fading" : "bubble-model-menu"}
+           className={
+            menuFading
+              ? "bubble-model-menu bubble-hover-menu fading"
+              : "bubble-model-menu bubble-hover-menu"
+          }
           style={{
             top: bubbleMenu.top,
             left: bubbleMenu.left,

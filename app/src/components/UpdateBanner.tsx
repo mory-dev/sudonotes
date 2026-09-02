@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
@@ -23,8 +24,9 @@ function fetchAvailableUpdate() {
   return updateCheckInFlight;
 }
 
-/** Auto-update banner: checks on startup and once a day while the app remains
- * open, then offers to download, install, and relaunch into the new version. */
+/** Auto-update toast: checks on startup and periodically while the app remains
+ * open, then offers a sleek floating toast in the bottom-right corner to download,
+ * install, and relaunch into the new version. */
 export function UpdateBanner() {
   const [update, setUpdate] = useState<Update | null>(null);
   const [status, setStatus] = useState<"idle" | "downloading" | "installing" | "error">("idle");
@@ -44,7 +46,7 @@ export function UpdateBanner() {
     async function run(force = false) {
       // The timestamp is intentionally shared between versions to avoid noisy
       // polling, but a version upgrade always gets one fresh check. This is
-      // what makes an update banner appear on first launch after a release,
+      // what makes an update toast appear on first launch after a release,
       // even when the old version checked within the last 24 hours.
       let currentVersion: string | null = null;
       try {
@@ -97,19 +99,24 @@ export function UpdateBanner() {
     let total = 0;
     let received = 0;
     try {
-      await update.downloadAndInstall((event) => {
-        if (event.event === "Started") {
-          total = event.data.contentLength ?? 0;
-        } else if (event.event === "Progress") {
-          received += event.data.chunkLength;
-          if (total > 0) {
-            setProgress(Math.min(100, Math.round((received / total) * 100)));
+      if (typeof update.downloadAndInstall === "function") {
+        await update.downloadAndInstall((event) => {
+          if (event.event === "Started") {
+            total = event.data.contentLength ?? 0;
+          } else if (event.event === "Progress") {
+            received += event.data.chunkLength;
+            if (total > 0) {
+              setProgress(Math.min(100, Math.round((received / total) * 100)));
+            }
+          } else if (event.event === "Finished") {
+            setStatus("installing");
           }
-        } else if (event.event === "Finished") {
-          setStatus("installing");
-        }
-      });
-      await relaunch();
+        });
+        await relaunch();
+      } else {
+        await openUrl("https://sudonotes.com/download");
+        setStatus("idle");
+      }
     } catch (error) {
       console.error("Could not install the sudonotes update", error);
       setStatus("error");
@@ -119,39 +126,89 @@ export function UpdateBanner() {
   const busy = status === "downloading" || status === "installing";
 
   return (
-    <div className="update-banner" role="status">
-      {busy ? (
-        <span>
-          {status === "downloading"
-            ? `Downloading ${update.version}… ${progress > 0 ? `${progress}%` : ""}`
-            : "Applying update… the app will restart itself."}
-        </span>
-      ) : status === "error" ? (
-        <>
-          <span>Couldn't apply the update.</span>
-          <button className="secondary" onClick={() => setStatus("idle")}>
-            Try again
-          </button>
-        </>
-      ) : (
-        <>
-          <span>
-            <strong>{update.version}</strong> is available — update sudonotes.
+    <aside
+      className="update-toast update-banner"
+      role="status"
+      aria-label="Application update available"
+    >
+      <div className="update-toast-header">
+        <div className="update-toast-title-row">
+          <span className="update-toast-badge">{update.version}</span>
+          <span className="update-toast-title">
+            {status === "downloading"
+              ? "Downloading update…"
+              : status === "installing"
+              ? "Applying update…"
+              : status === "error"
+              ? "Update failed"
+              : "Update available"}
           </span>
-          <button className="primary update-banner-action" onClick={() => void install()}>
-            Update
+        </div>
+        {!busy && (
+          <button
+            className="icon-button update-toast-close update-banner-close"
+            data-tooltip="Dismiss"
+            aria-label="Dismiss update notification"
+            onClick={() => setDismissed(true)}
+          >
+            ×
           </button>
-        </>
-      )}
-      {!busy && (
-        <button
-          className="icon-button update-banner-close"
-          data-tooltip="Dismiss"
-          onClick={() => setDismissed(true)}
-        >
-          ×
-        </button>
-      )}
-    </div>
+        )}
+      </div>
+
+      <div className="update-toast-body">
+        {busy ? (
+          <>
+            <p className="update-toast-desc">
+              {status === "downloading"
+                ? `Downloading ${update.version}… ${progress > 0 ? `${progress}%` : ""}`
+                : "Applying update… the app will restart itself."}
+            </p>
+            <div className="update-toast-progress-track">
+              <div
+                className={`update-toast-progress-fill ${
+                  status === "installing" || progress === 0 ? "indeterminate" : ""
+                }`}
+                style={status === "downloading" && progress > 0 ? { width: `${progress}%` } : undefined}
+              />
+            </div>
+          </>
+        ) : status === "error" ? (
+          <>
+            <p className="update-toast-desc">Couldn't apply the update automatically.</p>
+            <div className="update-toast-actions">
+              <button
+                className="primary update-toast-action update-banner-action"
+                onClick={() => void install()}
+              >
+                Try again
+              </button>
+              <button
+                className="secondary update-toast-secondary"
+                onClick={() => void openUrl("https://sudonotes.com/download")}
+              >
+                Manual download
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="update-toast-desc">
+              A new version of sudonotes is ready to install.
+            </p>
+            <div className="update-toast-actions">
+              <button
+                className="primary update-toast-action update-banner-action"
+                onClick={() => void install()}
+              >
+                Update now
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </aside>
   );
 }
+
+export const UpdateToast = UpdateBanner;

@@ -1,4 +1,6 @@
-﻿import { afterEach, describe, expect, it } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { closeBracketsKeymap } from "@codemirror/autocomplete";
 import {
   defaultKeymap,
@@ -22,20 +24,34 @@ import {
   serializeHistoryState,
 } from "../historyStorage";
 import {
+  BUBBLE_MENU_CLEARANCE,
+  BUBBLE_MENU_GAP,
+  bubbleFirstLine,
   bubbleForModA,
+  bubbleLastLine,
   bubbleMetadataDecorations,
   bubbleModelPersistence,
   bubbleOpEffect,
   bubbleTagsForLabel,
+  buildDividerDecorations,
   buildHeatDecorations,
+  computeBubbleMenuPosition,
   computeBubbles,
+  Editor,
+  getDividerType,
+  getFrontmatterEndLine,
   inferBubbleTags,
+  isLineSelected,
   modABinding,
   normalizeBubbleKey,
   reorderBubbles,
   resolveBubbleModel,
   resolveBubbleTags,
+  dividerAutoBreak,
+  visualDividers,
 } from "./Editor";
+
+(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 /** A minimal idea-note editor with history, bubble operations, and keymaps. */
 function makeView(doc: string): EditorView {
@@ -72,7 +88,7 @@ function pressA(view: EditorView) {
 const DOC = "First bubble\n\nSecond bubble\n\nThird bubble";
 
 afterEach(() => {
-  useStore.setState({ active: null });
+  useStore.setState({ active: null, hoverBubble: null });
   editorStateCache.clear();
   editorBridge.deleteBubbleAt = undefined;
   editorBridge.moveBubble = undefined;
@@ -150,6 +166,144 @@ describe("Ctrl+A in an idea note", () => {
     pressA(view);
     expect(view.state.selection.main.from).toBe(0);
     expect(view.state.selection.main.to).toBe(DOC.length);
+  });
+});
+
+describe("first bubble header hover occlusion & positioning", () => {
+  it("bubbleFirstLine and bubbleLastLine navigate the full extent of a multi-line bubble", () => {
+    const parent = document.createElement("div");
+    const line1 = document.createElement("div");
+    line1.className = "cm-line cm-para first cm-bubble-header";
+    const line2 = document.createElement("div");
+    line2.className = "cm-line cm-para";
+    const line3 = document.createElement("div");
+    line3.className = "cm-line cm-para last";
+    const separator = document.createElement("div");
+    separator.className = "cm-line";
+
+    parent.appendChild(line1);
+    parent.appendChild(line2);
+    parent.appendChild(line3);
+    parent.appendChild(separator);
+
+    expect(bubbleFirstLine(line2)).toBe(line1);
+    expect(bubbleFirstLine(line3)).toBe(line1);
+    expect(bubbleFirstLine(line1)).toBe(line1);
+
+    expect(bubbleLastLine(line1)).toBe(line3);
+    expect(bubbleLastLine(line2)).toBe(line3);
+    expect(bubbleLastLine(line3)).toBe(line3);
+  });
+
+  it("positions hover menu above the first bubble when top clearance is available", () => {
+    expect(BUBBLE_MENU_CLEARANCE).toBe(44);
+    // Top clearance of 52px gives relTop = 52px >= 44px
+    const wrapRect = { top: 60, left: 200 };
+    const firstRect = { top: 112, bottom: 144, left: 224 }; // relTop = 52, height = 32 (e.g. # Header)
+    const lastRect = { top: 144, bottom: 172, left: 224 };  // multi-line bubble
+
+    const pos = computeBubbleMenuPosition(firstRect, lastRect, wrapRect, 1);
+    expect(pos.below).toBe(false);
+    expect(pos.top).toBe(52 - BUBBLE_MENU_GAP); // 46px: completely above firstRect.top (52px)
+    expect(pos.left).toBe(24);
+  });
+
+  it("positions hover menu below the entire bubble (after last line) when scrolled and clearance is insufficient", () => {
+    // Scrolled state: first line is partially off-screen at top (relTop < BUBBLE_MENU_CLEARANCE)
+    const wrapRect = { top: 60, left: 200 };
+    const firstRect = { top: 70, bottom: 98, left: 224 };  // relTop = 10 < 44
+    const lastRect = { top: 120, bottom: 150, left: 224 }; // relBottom = 90
+
+    const pos = computeBubbleMenuPosition(firstRect, lastRect, wrapRect, 1);
+    expect(pos.below).toBe(true);
+    expect(pos.top).toBe(90 + BUBBLE_MENU_GAP); // 96px: placed cleanly below the entire bubble
+    expect(pos.left).toBe(24);
+  });
+
+  it("scales positioning properly across different UI zoom levels", () => {
+    const wrapRect = { top: 80, left: 100 };
+    const firstRect = { top: 144, bottom: 176, left: 130 }; // visual delta: top +64, left +30
+    const lastRect = { top: 144, bottom: 176, left: 130 };
+
+    const zoom = 1.25;
+    const pos = computeBubbleMenuPosition(firstRect, lastRect, wrapRect, zoom);
+    // relTop = 64 / 1.25 = 51.2 >= BUBBLE_MENU_CLEARANCE (44) -> below = false
+    expect(pos.below).toBe(false);
+    expect(pos.top).toBeCloseTo(51.2 - BUBBLE_MENU_GAP, 2);
+    expect(pos.left).toBeCloseTo(30 / 1.25, 2);
+  });
+});
+
+describe("Editor component bubble hover menu layout", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders bubble-hover-menu and bubble-model-menu classes when hovering an idea bubble", async () => {
+    useStore.setState({
+      active: {
+        id: "note-idea-1",
+        title: "Test Note",
+        body: "# Header Title\nFirst bubble description line 1\nFirst bubble description line 2\n\nSecond bubble content",
+        type: "idea",
+        tags: ["feature"],
+        models: {},
+        bubbleTags: {},
+        created: "2026-08-01T00:00:00Z",
+        updated: "2026-08-01T00:00:00Z",
+        path: "Test Note.md",
+        summary: null,
+        icon: null,
+        collection: null,
+        position: null,
+        model: null,
+        project: null,
+        mark: "off",
+        bubbleIssues: {},
+        issueStates: {},
+        remote: null,
+      },
+    });
+
+    await act(async () => {
+      root.render(<Editor />);
+    });
+
+    // Find the first line element in the editor
+    const firstPara = container.querySelector(".cm-para.first");
+    expect(firstPara).not.toBeNull();
+
+    // Trigger mouse move over the first bubble line
+    const editorWrap = container.querySelector(".editor-wrap");
+    expect(editorWrap).not.toBeNull();
+
+    await act(async () => {
+      firstPara?.dispatchEvent(
+        new MouseEvent("mousemove", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 50,
+          clientY: 80,
+        }),
+      );
+    });
+
+    // Check if hover menu is displayed with both classes
+    const hoverMenu = container.querySelector(".bubble-hover-menu");
+    expect(hoverMenu).not.toBeNull();
+    expect(hoverMenu?.classList.contains("bubble-model-menu")).toBe(true);
   });
 });
 
@@ -759,5 +913,231 @@ describe("deleting a bubble does not hand its metadata to a neighbour", () => {
     const active = useStore.getState().active;
     expect(active?.bubbleIssues?.["Kept bubble renamed"]).toBe("o/r#9");
     expect(active?.bubbleIssues?.["Other bubble"]).toBeUndefined();
+  });
+});
+
+describe("visual divider lines (___ and ---)", () => {
+  it("detects when a selection overlaps a line range", () => {
+    const state = EditorState.create({
+      doc: "Line 1\nLine 2\nLine 3",
+      selection: { anchor: 8, head: 8 },
+    });
+    expect(isLineSelected(state, 7, 13)).toBe(true);
+    expect(isLineSelected(state, 0, 6)).toBe(false);
+    expect(isLineSelected(state, 14, 20)).toBe(false);
+  });
+
+  it("classifies divider types correctly", () => {
+    expect(getDividerType("___")).toBe("bold");
+    expect(getDividerType("____")).toBe("bold");
+    expect(getDividerType("_ _ _")).toBe("bold");
+    expect(getDividerType("   ___   ")).toBe("bold");
+
+    expect(getDividerType("---")).toBe("subtle");
+    expect(getDividerType("----")).toBe("subtle");
+    expect(getDividerType("- - -")).toBe("subtle");
+    expect(getDividerType("   ---   ")).toBe("subtle");
+    expect(getDividerType("***")).toBe("subtle");
+
+    expect(getDividerType("__")).toBeNull();
+    expect(getDividerType("--")).toBeNull();
+    expect(getDividerType("regular text")).toBeNull();
+    expect(getDividerType("## Heading")).toBeNull();
+    expect(getDividerType("--- title: idea")).toBeNull();
+  });
+
+  it("detects frontmatter end line and ignores non-frontmatter documents", () => {
+    const fmDoc = EditorState.create({
+      doc: "---\nid: 123\ntitle: Test\n---\nFirst paragraph\n---\nSecond paragraph",
+    }).doc;
+    expect(getFrontmatterEndLine(fmDoc)).toBe(4);
+
+    const plainDoc = EditorState.create({
+      doc: "First paragraph\n---\nSecond paragraph",
+    }).doc;
+    expect(getFrontmatterEndLine(plainDoc)).toBe(0);
+
+    const unterminatedDoc = EditorState.create({
+      doc: "---\nid: 123\ntitle: Test\nFirst paragraph",
+    }).doc;
+    expect(getFrontmatterEndLine(unterminatedDoc)).toBe(0);
+  });
+
+  it("builds bold widget decoration for ___ and subtle widget decoration for --- when cursor is away", () => {
+    const doc = "Paragraph 1\n\n___\n\nParagraph 2\n\n---\n\nParagraph 3";
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown(), visualDividers],
+        selection: { anchor: 0 },
+      }),
+    });
+
+    const decos = buildDividerDecorations(view);
+    let boldLineFound = false;
+    let boldWidgetFound = false;
+    let subtleLineFound = false;
+    let subtleWidgetFound = false;
+
+    decos.between(0, doc.length, (_from, _to, value) => {
+      const spec = (value as unknown as { spec: Record<string, unknown> }).spec;
+      if (spec.class === "cm-divider-line cm-divider-line-bold") {
+        boldLineFound = true;
+      }
+      if (spec.class === "cm-divider-line cm-divider-line-subtle") {
+        subtleLineFound = true;
+      }
+      if (spec.widget && (spec.widget as { kind?: string }).kind === "bold") {
+        boldWidgetFound = true;
+      }
+      if (spec.widget && (spec.widget as { kind?: string }).kind === "subtle") {
+        subtleWidgetFound = true;
+      }
+    });
+
+    expect(boldLineFound).toBe(true);
+    expect(boldWidgetFound).toBe(true);
+    expect(subtleLineFound).toBe(true);
+    expect(subtleWidgetFound).toBe(true);
+  });
+
+  it("reveals raw text and does not replace with widget when cursor is on the divider line", () => {
+    const doc = "Paragraph 1\n\n___\n\nParagraph 2";
+    const dividerPos = doc.indexOf("___");
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown(), visualDividers],
+        selection: { anchor: dividerPos + 1 }, // caret inside '___'
+      }),
+    });
+
+    const decos = buildDividerDecorations(view);
+    let activeLineFound = false;
+    let rawMarkFound = false;
+    let widgetFound = false;
+
+    decos.between(0, doc.length, (_from, _to, value) => {
+      const spec = (value as unknown as { spec: Record<string, unknown> }).spec;
+      if (spec.class === "cm-divider-line cm-divider-line-bold cm-divider-active") {
+        activeLineFound = true;
+      }
+      if (spec.class === "cm-divider-raw cm-divider-raw-bold") {
+        rawMarkFound = true;
+      }
+      if (spec.widget) {
+        widgetFound = true;
+      }
+    });
+
+    expect(activeLineFound).toBe(true);
+    expect(rawMarkFound).toBe(true);
+    expect(widgetFound).toBe(false); // Widget replacement must not be present while active
+  });
+
+  it("does not decorate frontmatter delimiters as visual dividers", () => {
+    const doc = "---\nid: test\ntitle: Note\n---\n\nBody paragraph\n\n---\n\nSecond paragraph";
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown(), visualDividers],
+        selection: { anchor: 0 },
+      }),
+    });
+
+    const decos = buildDividerDecorations(view);
+    const decoratedOffsets: number[] = [];
+
+    decos.between(0, doc.length, (from) => {
+      decoratedOffsets.push(from);
+    });
+
+    // Line 1 (pos 0) and Line 4 (closing frontmatter) must NOT be decorated.
+    // Only the standalone --- inside the body (after line 4) should be decorated.
+    const bodyDividerPos = doc.lastIndexOf("---");
+    expect(decoratedOffsets).not.toContain(0);
+    expect(decoratedOffsets).toContain(bodyDividerPos);
+  });
+
+  it("ensures divider lines do not break bubble counting and outline navigation", () => {
+    const doc = "Bubble 1\n\n___\n\nBubble 2\n\n---\n\nBubble 3";
+    const state = EditorState.create({ doc, extensions: [markdown()] });
+    const bubbles = computeBubbles(state);
+
+    expect(bubbles).toHaveLength(3);
+    expect(state.doc.sliceString(bubbles[0].from, bubbles[0].to)).toBe("Bubble 1");
+    expect(state.doc.sliceString(bubbles[1].from, bubbles[1].to)).toBe("Bubble 2");
+    expect(state.doc.sliceString(bubbles[2].from, bubbles[2].to)).toBe("Bubble 3");
+
+    // Caret on divider line returns null for bubble selection, allowing immediate fall-through to select-all
+    const dividerPos = doc.indexOf("___");
+    expect(bubbleForModA(dividerPos, dividerPos, dividerPos, bubbles)).toBeNull();
+  });
+});
+
+describe("typing a divider finishes it immediately", () => {
+  function makeDividerEditor(doc: string, anchor: number): EditorView {
+    return new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        selection: { anchor },
+        extensions: [markdown(), visualDividers, dividerAutoBreak],
+      }),
+    });
+  }
+
+  /** The divider only renders while the caret is elsewhere, so completing one
+   *  has to move the caret off it — otherwise the raw characters sit on screen
+   *  until the user happens to click away. */
+  it("moves the caret to a fresh line once the divider is complete", async () => {
+    const doc = "Above\n\n--";
+    const view = makeDividerEditor(doc, doc.length);
+
+    view.dispatch({
+      changes: { from: doc.length, insert: "-" },
+      selection: { anchor: doc.length + 1 },
+      userEvent: "input.type",
+    });
+    await Promise.resolve();
+
+    expect(view.state.doc.toString()).toBe("Above\n\n---\n");
+    const caret = view.state.selection.main.head;
+    expect(view.state.doc.lineAt(caret).number).toBe(4);
+    expect(view.state.doc.lineAt(caret).text).toBe("");
+    view.destroy();
+  });
+
+  it("leaves an existing divider alone when it is extended", async () => {
+    const doc = "Above\n\n---";
+    const view = makeDividerEditor(doc, doc.length);
+
+    view.dispatch({
+      changes: { from: doc.length, insert: "-" },
+      selection: { anchor: doc.length + 1 },
+      userEvent: "input.type",
+    });
+    await Promise.resolve();
+
+    expect(view.state.doc.toString()).toBe("Above\n\n----");
+    view.destroy();
+  });
+
+  it("does not fire on a paste", async () => {
+    const doc = "Above\n\n";
+    const view = makeDividerEditor(doc, doc.length);
+
+    view.dispatch({
+      changes: { from: doc.length, insert: "---" },
+      selection: { anchor: doc.length + 3 },
+      userEvent: "input.paste",
+    });
+    await Promise.resolve();
+
+    expect(view.state.doc.toString()).toBe("Above\n\n---");
+    view.destroy();
   });
 });

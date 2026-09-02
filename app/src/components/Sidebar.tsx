@@ -51,8 +51,14 @@ function bubbleCountHeatStyle(
   };
 }
 
+function isDividerLine(line: string): boolean {
+  const t = line.trim();
+  return /^(_\s*){3,}$/.test(t) || /^(-\s*){3,}$/.test(t) || /^(\*\s*){3,}$/.test(t);
+}
+
 /** The bubbles of an idea note: each paragraph (and the list that follows it)
- *  with the body position its first line starts at. */
+ *  with the body position its first line starts at. Visual divider lines are treated
+ *  as separators so they do not produce empty or broken outline entries. */
 function paragraphOutline(body: string): { start: number; label: string }[] {
   const out: { start: number; label: string }[] = [];
   const lines = body.split("\n");
@@ -60,7 +66,8 @@ function paragraphOutline(body: string): { start: number; label: string }[] {
   let buffer: string[] = [];
   let groupStart = 0;
   for (const line of lines) {
-    if (line.trim() === "") {
+    const trimmed = line.trim();
+    if (trimmed === "" || isDividerLine(trimmed)) {
       if (buffer.length > 0) {
         out.push({ start: groupStart, label: buffer[0].trim() });
         buffer = [];
