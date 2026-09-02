@@ -1,3 +1,8 @@
+import {
+  loadPromptHeights,
+  removePromptHeight,
+  savePromptHeight,
+} from "./promptHeightStorage";
 import { create } from "zustand";
 
 import {
@@ -13,6 +18,15 @@ import {
   type NoteMeta,
   type NoteType,
 } from "./api";
+import { editorStateCache } from "./editorStateCache";
+import { deleteHistory } from "./historyStorage";
+
+export interface EditorBridge {
+  deleteBubbleAt?: (start: number) => boolean;
+  moveBubble?: (fromIndex: number, toIndex: number) => boolean;
+}
+
+export const editorBridge: EditorBridge = {};
 
 const SAVE_DEBOUNCE_MS = 500;
 
@@ -337,6 +351,12 @@ interface AppState {
   setGithubAuth: (auth: GithubAuth) => void;
   saveAiSettings: (enabled: boolean) => Promise<void>;
   saveBubbleMetadataVisible: (visible: boolean) => Promise<void>;
+  /** Customized vertical heights for prompt collection cards keyed by prompt ID. */
+  promptHeights: Record<string, number>;
+  /** Save customized vertical height for a prompt collection card. */
+  setPromptHeight: (id: string, height: number) => void;
+  /** Reset customized vertical height for a prompt collection card to default. */
+  resetPromptHeight: (id: string) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -362,6 +382,24 @@ export const useStore = create<AppState>((set, get) => ({
   hoverBubble: null,
   cursorBubble: null,
   hoverPrompt: null,
+  promptHeights: loadPromptHeights(),
+  setPromptHeight: (id, height) => {
+    const clamped = savePromptHeight(id, height);
+    set((s) => ({
+      promptHeights: {
+        ...s.promptHeights,
+        [id]: clamped,
+      },
+    }));
+  },
+  resetPromptHeight: (id) => {
+    removePromptHeight(id);
+    set((s) => {
+      const next = { ...s.promptHeights };
+      delete next[id];
+      return { promptHeights: next };
+    });
+  },
   dirty: false,
   error: null,
   notice: null,
@@ -477,6 +515,9 @@ export const useStore = create<AppState>((set, get) => ({
   deleteBubbleAt: (start) => {
     const active = get().active;
     if (!active || active.type !== "idea") return;
+    if (editorBridge.deleteBubbleAt?.(start)) {
+      return;
+    }
     const body = active.body ?? "";
     if (start < 0 || start >= body.length) return;
 
@@ -616,6 +657,7 @@ export const useStore = create<AppState>((set, get) => ({
       // Tagging history is keyed by note id, which only means anything within
       // one vault, and AI settings are stored per vault.
       tagged.clear();
+      editorStateCache.clear();
       set({ vaultPath: resolved, active: null, backlinks: [], analysis: null, error: null });
       await get().refresh();
       await get().loadAiSettings();
@@ -727,6 +769,9 @@ export const useStore = create<AppState>((set, get) => ({
   moveBubble: (fromIndex, toIndex) => {
     const active = get().active;
     if (!active || active.type !== "idea") return;
+    if (editorBridge.moveBubble?.(fromIndex, toIndex)) {
+      return;
+    }
     const body = active.body ?? "";
     const blocks = bubbleRanges(body);
     const n = blocks.length;
@@ -990,6 +1035,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   remove: async (id) => {
     try {
+      editorStateCache.delete(id);
+      void deleteHistory(get().vaultPath ?? "", id);
       await api.deleteNote(id);
       if (get().active?.id === id) set({ active: null, backlinks: [] });
       await get().refresh();

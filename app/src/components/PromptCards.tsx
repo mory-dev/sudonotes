@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, type ChildPrompt } from "../api";
 import { useStore } from "../store";
+import { clampPromptHeight, DEFAULT_PROMPT_HEIGHT } from "../promptHeightStorage";
 import { useListDrag, reordered, type NoteDragHandlers } from "../useListDrag";
 import { ModelPicker } from "./ModelPicker";
 import { ProviderIcon, providerOf, shortModelName } from "./ProviderMarks";
@@ -130,6 +131,65 @@ function Card({
   const allNotes = useStore((s) => s.notes);
 
   const [editing, setEditing] = useState(false);
+  const customHeight = useStore((s) => s.promptHeights[prompt.id]);
+  const setPromptHeight = useStore((s) => s.setPromptHeight);
+  const resetPromptHeight = useStore((s) => s.resetPromptHeight);
+
+  const [liveHeight, setLiveHeight] = useState<number | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const bodyPreRef = useRef<HTMLPreElement>(null);
+  const activeHeight = liveHeight ?? customHeight;
+
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const handleEl = event.currentTarget;
+    try {
+      handleEl.setPointerCapture(event.pointerId);
+    } catch {}
+
+    setIsResizing(true);
+    const startY = event.clientY;
+    const startHeight = bodyPreRef.current
+      ? bodyPreRef.current.getBoundingClientRect().height
+      : (activeHeight ?? DEFAULT_PROMPT_HEIGHT);
+
+    let currentClamped = clampPromptHeight(startHeight);
+
+    const handlePointerMove = (e: PointerEvent) => {
+      e.preventDefault();
+      const deltaY = e.clientY - startY;
+      currentClamped = clampPromptHeight(startHeight + deltaY);
+      setLiveHeight(currentClamped);
+    };
+
+    const handlePointerUp = (e: PointerEvent) => {
+      e.preventDefault();
+      try {
+        handleEl.releasePointerCapture(e.pointerId);
+      } catch {}
+
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+
+      setIsResizing(false);
+      setLiveHeight(null);
+      setPromptHeight(prompt.id, currentClamped);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
+  const handleResizeDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    resetPromptHeight(prompt.id);
+    setLiveHeight(null);
+  };
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState(prompt.title);
   const [body, setBody] = useState(prompt.body);
@@ -235,7 +295,11 @@ function Card({
           <CopyButton text={prompt.body} />
         </header>
 
-        <pre className="card-body">
+        <pre
+          ref={bodyPreRef}
+          className="card-body"
+          style={activeHeight ? { height: activeHeight + "px", maxHeight: activeHeight + "px" } : undefined}
+        >
           <Wikilinks text={prompt.body} query={query} />
         </pre>
 
@@ -254,6 +318,18 @@ function Card({
             ))}
           </ul>
         )}
+
+        <div
+          className={"card-resize-handle" + (isResizing ? " active" : "")}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize prompt vertically"
+          data-tooltip="Drag to resize vertically · Double-click to reset"
+          onPointerDown={handleResizePointerDown}
+          onDoubleClick={handleResizeDoubleClick}
+        >
+          <span className="card-resize-pill" />
+        </div>
       </li>
     );
   }
