@@ -107,9 +107,13 @@ function VariableRow({
     if (auto) {
       setQuery(auto.query);
       setOpen(true);
-    } else {
-      setOpen(false);
+      return;
     }
+    // A variable row is filled with a plain value, not a `{{placeholder}}`, so
+    // what has been typed is itself the query. Requiring `{{` here made the
+    // suggestions unreachable in this panel.
+    setQuery(text);
+    setOpen(bubbles.length > 0);
   };
 
   const handleSelect = (bubble: IdeaBubble) => {
@@ -148,7 +152,17 @@ function VariableRow({
           className="variable-input"
           value={value}
           placeholder={placeholderText}
+          // The browser offers its own saved-value dropdown over this field
+          // otherwise, which covers the bubble suggestions underneath it.
+          autoComplete="off"
+          spellCheck={false}
           onChange={handleInputChange}
+          onFocus={() => {
+            if (bubbles.length > 0) {
+              setQuery(value);
+              setOpen(true);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}

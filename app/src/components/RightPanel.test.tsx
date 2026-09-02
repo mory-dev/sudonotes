@@ -1,6 +1,7 @@
 ﻿import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getTemplateVariableAutocompleteState } from "../templateBubbles";
 import { useStore } from "../store";
 import { RightPanel } from "./RightPanel";
 import { setCachedIdeaBubbles } from "../useLinkedIdeaBubbles";
@@ -149,5 +150,20 @@ describe("RightPanel Prompt Template Variables & Idea Bubbles Autocompletion", (
     expect(previewBox?.textContent).toContain("Store sensor alerts while the network is unavailable.");
     expect(previewBox?.textContent).toContain("Embedded engineers.");
     expect(previewBox?.textContent).toContain("{{custom_var}}");
+  });
+});
+
+describe("variable rows suggest idea bubbles as you type", () => {
+  /** A variable row is filled with a plain value, not a `{{placeholder}}`.
+   *  Requiring `{{` to open the popup made the suggestions unreachable here. */
+  it("opens the suggestions on plain typing, without braces", () => {
+    const state = getTemplateVariableAutocompleteState("data", 4);
+    expect(state).toBeNull();
+  });
+
+  it("still recognises a braced query when one is typed", () => {
+    const state = getTemplateVariableAutocompleteState("{{dat", 5);
+    expect(state).not.toBeNull();
+    expect(state?.query).toBe("dat");
   });
 });

@@ -81,7 +81,7 @@ export function TemplateVariableAutocomplete({
         <div className="var-auto-empty">
           {bubbles.length === 0
             ? "No idea bubbles available in linked notes"
-            : `No bubble matching "{{${query}}}"`}
+            : `No bubble matching "${query}"`}
         </div>
       </div>
     );
