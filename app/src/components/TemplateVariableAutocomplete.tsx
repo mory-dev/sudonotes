@@ -80,7 +80,7 @@ export function TemplateVariableAutocomplete({
       <div className={`variable-autocomplete-popup empty ${className}`}>
         <div className="var-auto-empty">
           {bubbles.length === 0
-            ? "No idea bubbles available in linked notes"
+            ? "No ideas available in linked notes"
             : `No bubble matching "${query}"`}
         </div>
       </div>
@@ -92,7 +92,7 @@ export function TemplateVariableAutocomplete({
       ref={listRef}
       className={`variable-autocomplete-popup ${className}`}
       role="listbox"
-      aria-label="Idea bubble autocomplete"
+      aria-label="Ideas autocomplete"
     >
       <li className="var-auto-header">
         <span>Idea Bubbles ({filtered.length})</span>

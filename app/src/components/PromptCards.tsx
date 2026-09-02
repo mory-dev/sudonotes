@@ -476,7 +476,7 @@ function Card({
               void save();
             }
           }}
-          placeholder="Prompt text (type {{ for idea bubbles autocomplete)"
+          placeholder="Prompt text (type {{ for ideas autocomplete)"
         />
         {autoOpen && (
           <TemplateVariableAutocomplete
