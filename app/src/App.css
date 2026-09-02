@@ -2191,6 +2191,49 @@ mark.cm-find-match {
   word-break: break-word;
 }
 
+/* Card vertical resize handle */
+.card-resize-handle {
+  position: relative;
+  height: 10px;
+  margin: 6px -13px -12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  user-select: none;
+  touch-action: none;
+  border-bottom-left-radius: 9px;
+  border-bottom-right-radius: 9px;
+  transition: background-color 150ms ease;
+  z-index: 1;
+}
+
+.card-resize-handle:hover,
+.card-resize-handle.active {
+  background: var(--type-soft, rgba(255, 255, 255, 0.04));
+}
+
+.card-resize-pill {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background-color: var(--border);
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 150ms ease, background-color 150ms ease, width 150ms ease;
+}
+
+.card:hover .card-resize-pill {
+  opacity: 0.8;
+}
+
+.card-resize-handle:hover .card-resize-pill,
+.card-resize-handle.active .card-resize-pill {
+  opacity: 1;
+  width: 44px;
+  background-color: var(--type-color, var(--accent));
+}
+
 .add-prompt-bottom {
   margin-top: 12px;
   padding: 7px 14px;
