@@ -50,6 +50,8 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { siGithub } from "simple-icons";
 
 import { BUBBLE_END, BUBBLE_START, editorBridge, useStore } from "../store";
 import { getUiZoom, viewportToLayout } from "../uiScale";
@@ -704,11 +706,113 @@ export function computeBubbles(
 
 /** Read only the tags explicitly assigned to this bubble. Note-level tags are
  * deliberately not a fallback, because they describe the whole idea. */
+/** Strip leading markdown heading tokens, bullet/number prefixes, and trim. */
+export function normalizeBubbleKey(key: string): string {
+  return key
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^[-*+]\s+/, "")
+    .replace(/^\d+[.)]\s+/, "")
+    .trim();
+}
+
+/**
+ * Resiliently resolve the model assigned to a bubble given its current label.
+ * Checks exact match first, then normalized (stripped markdown) match,
+ * then prefix/inclusion match, ensuring that editing or reformatting the
+ * first line does not drop the assigned model badge.
+ */
+export function resolveBubbleModel(
+  models: Record<string, string> | undefined | null,
+  label: string,
+): string | null {
+  if (!models || !label) return null;
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+
+  // 1. Exact match
+  if (Object.prototype.hasOwnProperty.call(models, trimmed) && models[trimmed]) {
+    return models[trimmed];
+  }
+  if (Object.prototype.hasOwnProperty.call(models, label) && models[label]) {
+    return models[label];
+  }
+
+  // 2. Normalized match (ignoring markdown headings / list markers / case)
+  const normLabel = normalizeBubbleKey(trimmed).toLowerCase();
+  if (normLabel) {
+    for (const [key, model] of Object.entries(models)) {
+      if (!model) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (normKey && normKey === normLabel) {
+        return model;
+      }
+    }
+
+    // 3. Prefix / Substring match (for in-progress live typing or truncation)
+    for (const [key, model] of Object.entries(models)) {
+      if (!model) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (!normKey) continue;
+      if (
+        (normKey.length >= 3 && normLabel.startsWith(normKey)) ||
+        (normLabel.length >= 3 && normKey.startsWith(normLabel))
+      ) {
+        return model;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function resolveBubbleTags(
+  bubbleTags: Record<string, string[]> | undefined | null,
+  label: string,
+): string[] {
+  if (!bubbleTags || !label) return [];
+  const trimmed = label.trim();
+  if (!trimmed) return [];
+
+  if (Object.prototype.hasOwnProperty.call(bubbleTags, trimmed)) {
+    return bubbleTags[trimmed] ?? [];
+  }
+  if (Object.prototype.hasOwnProperty.call(bubbleTags, label)) {
+    return bubbleTags[label] ?? [];
+  }
+
+  const normLabel = normalizeBubbleKey(trimmed).toLowerCase();
+  if (normLabel) {
+    for (const [key, tags] of Object.entries(bubbleTags)) {
+      if (!tags || tags.length === 0) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (normKey && normKey === normLabel) {
+        return tags;
+      }
+    }
+
+    for (const [key, tags] of Object.entries(bubbleTags)) {
+      if (!tags || tags.length === 0) continue;
+      const normKey = normalizeBubbleKey(key).toLowerCase();
+      if (!normKey) continue;
+      if (
+        (normKey.length >= 3 && normLabel.startsWith(normKey)) ||
+        (normLabel.length >= 3 && normKey.startsWith(normLabel))
+      ) {
+        return tags;
+      }
+    }
+  }
+
+  return [];
+}
+
+/** Read only the tags explicitly assigned to this bubble. Note-level tags are
+ * deliberately not a fallback, because they describe the whole idea. */
 export function bubbleTagsForLabel(
   bubbleTags: Record<string, string[]>,
   label: string,
 ): string[] {
-  return Object.prototype.hasOwnProperty.call(bubbleTags, label) ? bubbleTags[label] : [];
+  return resolveBubbleTags(bubbleTags, label);
 }
 
 /** Small, deterministic aliases for deriving a display-only tag from an
@@ -1058,6 +1162,12 @@ class BubbleMetadataWidget extends WidgetType {
   }
 }
 
+/** The GitHub address of an `owner/repo#123` issue key. */
+function issueUrl(key: string): string {
+  const [slug, number] = key.split("#");
+  return `https://github.com/${slug}/issues/${number}`;
+}
+
 /** Wrap each idea in the note in a subtle box: a paragraph together with any
  *  list or quote that follows it directly forms one bubble. Only applied to
  *  idea notes; prompt children keep the bare editor. */
@@ -1069,10 +1179,14 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const doc = view.state.doc;
   const runs = computeBubbles(view.state);
+  const issueStates = useStore.getState().active?.issueStates ?? {};
 
   for (const block of runs) {
     const firstLine = doc.lineAt(block.from);
     const lastLine = doc.lineAt(block.to);
+    // A bubble whose issue has been closed is dimmed rather than removed —
+    // deleting it is opt-in, in settings.
+    const closed = issueStates[bubbleFirstText(doc, block.from)]?.state === "closed";
     // A marker bubble's box hugs its content: the first/last classes land on
     // the first/last content lines, never the collapsed marker lines.
     let boxFirst = firstLine;
@@ -1102,6 +1216,7 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
         n === boxFirst.number ? "first" : "",
         n === boxLast.number ? "last" : "",
         n === boxFirst.number && block.heading ? "cm-bubble-header" : "",
+        closed ? "cm-para-closed" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -1116,7 +1231,7 @@ function buildParagraphDecorations(view: EditorView): DecorationSet {
 /** The priority heat bars, in their own plugin: a widget sharing its position
  *  with a line decoration is not rendered, so the bars live apart from the
  *  bubble boxes. */
-function buildHeatDecorations(state: EditorState): DecorationSet {
+export function buildHeatDecorations(state: EditorState): DecorationSet {
   if (useStore.getState().active?.type !== "idea") {
     return Decoration.none;
   }
@@ -1146,10 +1261,10 @@ function buildHeatDecorations(state: EditorState): DecorationSet {
     // Metadata is keyed by the bubble's first line and lives in a block widget
     // after its last visible line, visually outside the bubble border.
     const label = bubbleFirstText(doc, block.from);
-    const model = models[label];
+    const model = resolveBubbleModel(models, label);
     // Tags are intentionally per-bubble. Note-level tags are not copied here:
     // doing so makes unrelated bubbles look identically classified.
-    const explicitTags = bubbleTagsForLabel(bubbleTags, label);
+    const explicitTags = resolveBubbleTags(bubbleTags, label);
     const tags =
       explicitTags.length > 0
         ? explicitTags
@@ -1186,7 +1301,75 @@ const bubbleMetadataEffect = StateEffect.define<null>();
 /** Block widgets must be provided through a state field, not indirectly from a
  *  ViewPlugin. Keeping the decoration set here prevents CodeMirror's layout
  *  engine from throwing when an idea note is opened. */
-const bubbleMetadataDecorations = StateField.define<DecorationSet>({
+/** CodeMirror extension that tracks bubble key changes and automatically migrates
+ *  assigned models and tags when a bubble's first line is edited. */
+export const bubbleModelPersistence = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return;
+  const store = useStore.getState();
+  if (store.active?.type !== "idea") return;
+
+  const prevDoc = update.startState.doc;
+  const nextDoc = update.state.doc;
+  const prevBubbles = computeBubbles(update.startState);
+  const nextBubbles = computeBubbles(update.state);
+  const currentModels = store.active?.models ?? {};
+  const currentTags = store.active?.bubbleTags ?? {};
+  const currentIssues = store.active?.bubbleIssues ?? {};
+
+  const migrations: Array<{ oldKey: string; newKey: string }> = [];
+  // Labels that still belong to a bubble of their own after the edit. A bubble
+  // that kept its first line has not been renamed, and nothing may be moved
+  // onto it — that is how a delete used to hand its issue to its neighbour.
+  const survivingLabels = new Set(
+    nextBubbles.map((nb) => bubbleFirstText(nextDoc, nb.from)).filter(Boolean),
+  );
+  const claimed = new Set<number>();
+
+  for (const prevB of prevBubbles) {
+    const oldLabel = bubbleFirstText(prevDoc, prevB.from);
+    if (!oldLabel) continue;
+    const hasModel = !!resolveBubbleModel(currentModels, oldLabel);
+    const hasTags = resolveBubbleTags(currentTags, oldLabel).length > 0;
+    // A bubble carrying only an issue link is still worth following, or
+    // renaming it would detach the issue it became.
+    const hasIssue = !!currentIssues[oldLabel];
+    if (!hasModel && !hasTags && !hasIssue) continue;
+
+    const mappedFrom = update.changes.mapPos(prevB.from, 1);
+    const mappedTo = update.changes.mapPos(prevB.to, -1);
+
+    // Deleting a bubble collapses its range onto the deletion point, which sits
+    // inside whatever moved up to fill the gap. That is a removal, not a
+    // rename: the metadata belongs to nothing now, so it must not follow.
+    if (mappedTo <= mappedFrom) continue;
+
+    const matchingIndex = nextBubbles.findIndex(
+      (nb, index) =>
+        !claimed.has(index) &&
+        ((mappedFrom >= nb.from && mappedFrom <= nb.to) ||
+          (mappedTo >= nb.from && mappedTo <= nb.to) ||
+          (nb.from >= mappedFrom && nb.to <= Math.max(mappedFrom, mappedTo))),
+    );
+
+    if (matchingIndex >= 0) {
+      const matchingNextB = nextBubbles[matchingIndex];
+      const newLabel = bubbleFirstText(nextDoc, matchingNextB.from);
+      // A target that still carries its own first line is a different bubble
+      // that merely shifted position; taking it over would overwrite its
+      // metadata with the neighbour's.
+      if (newLabel && newLabel !== oldLabel && !survivingLabels.has(oldLabel)) {
+        claimed.add(matchingIndex);
+        migrations.push({ oldKey: oldLabel, newKey: newLabel });
+      }
+    }
+  }
+
+  if (migrations.length > 0) {
+    store.migrateBubbleKeys(migrations);
+  }
+});
+
+export const bubbleMetadataDecorations = StateField.define<DecorationSet>({
   create: buildHeatDecorations,
   update(decorations, transaction) {
     if (
@@ -1212,6 +1395,7 @@ const heatBars = ViewPlugin.fromClass(
           this.alive &&
           (state.active?.models !== previous.active?.models ||
             state.active?.bubbleTags !== previous.active?.bubbleTags ||
+            state.active?.issueStates !== previous.active?.issueStates ||
             state.active?.tags !== previous.active?.tags ||
             state.aiSettings.showBubbleMetadata !== previous.aiSettings.showBubbleMetadata)
         ) {
@@ -1244,7 +1428,15 @@ const paragraphBoxes = ViewPlugin.fromClass(
       this.decorations = buildParagraphDecorations(view);
     }
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      // The metadata effect also carries "an issue changed state", which has to
+      // re-run the boxes so a newly closed bubble dims without a doc edit.
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.transactions.some((transaction) =>
+          transaction.effects.some((effect) => effect.is(bubbleMetadataEffect)),
+        )
+      ) {
         this.decorations = buildParagraphDecorations(update.view);
       }
     }
@@ -1603,6 +1795,11 @@ const theme = EditorView.theme(
     },
     ".cm-para-hover.first": { borderTopColor: "rgba(255,255,255,0.18)" },
     ".cm-para-hover.last": { borderBottomColor: "rgba(255,255,255,0.18)" },
+    // A bubble whose issue closed. Dimmed, not hidden: the text stays readable
+    // and editable, it just stops competing with live ideas.
+    ".cm-para-closed": { opacity: "0.45" },
+    // Hovering restores it, so a closed bubble can still be read comfortably.
+    ".cm-para-closed.cm-para-hover": { opacity: "1" },
     // Marker lines are structural: hidden and collapsed to zero height so they
     // never take space inside the bubble.
     ".cm-line.cm-bubble-marker": {
@@ -1774,6 +1971,7 @@ const theme = EditorView.theme(
 
 export function Editor() {
   const active = useStore((s) => s.active);
+  const githubAuth = useStore((s) => s.githubAuth);
   const docVersion = useStore((s) => s.docVersion);
   const insertLink = useStore((s) => s.insertLink);
   const mergeSelection = useStore((s) => s.mergeSelection);
@@ -1879,6 +2077,29 @@ export function Editor() {
     void navigator.clipboard.writeText(bubbleMenu.text);
     setCopiedBubble(true);
     setTimeout(() => setCopiedBubble(false), 1200);
+  };
+
+  /** The GitHub issue this bubble became, if any, and what the button should do
+   *  about it. Only ever offered for an idea whose project has a GitHub remote;
+   *  without one there is nothing to file against. */
+  const issueKey = bubbleMenu ? (active?.bubbleIssues?.[bubbleMenu.label] ?? null) : null;
+  const issue = bubbleMenu ? (active?.issueStates?.[bubbleMenu.label] ?? null) : null;
+
+  const issueAction = () => {
+    if (!bubbleMenu) return;
+    if (issueKey) {
+      // The cached URL is authoritative; before the first sync it is derived
+      // from the key, which is the same address.
+      void openUrl(issue?.url ?? issueUrl(issueKey));
+      return;
+    }
+    if (!githubAuth?.connected) {
+      setBubbleMenu(null);
+      useStore.getState().setSettings(true);
+      return;
+    }
+    setBubbleMenu(null);
+    useStore.getState().openIssueDraft(bubbleMenu.label);
   };
 
   /** Remove the `<!-- bubble -->` markers around the hovered bubble, turning
@@ -2206,6 +2427,10 @@ export function Editor() {
     });
     setBubbleMenu(null);
     useStore.getState().setHoverBubble(null);
+    // The bubble is gone, so its model, tags and issue link have nothing left
+    // to belong to. Dropping them stops a later bubble that happens to start
+    // with the same line from inheriting them.
+    useStore.getState().forgetBubbleKey(bubbleMenu.label);
     editor.focus();
   };
 
@@ -2314,6 +2539,8 @@ export function Editor() {
         return touches ? [] : tr;
       }),
       drawSelection(),
+      // Typing a bracket over a selection wraps it instead of replacing it,
+      // so `[` twice on a word gives [[word]].
       closeBrackets(),
       autocompletion({
         override: [wikiLinkCompletionSource, pageLinkCompletionSource],
@@ -2330,18 +2557,24 @@ export function Editor() {
       headings,
       paragraphBoxes,
       bubbleMetadataDecorations,
+      bubbleModelPersistence,
       heatBars,
       placeholders,
       bubbleHover,
       findPlugin,
       theme,
+      // Take precedence over CodeMirror's own Mod-f search binding.
       Prec.highest(
         keymap.of([
           {
+            // closeBrackets does the wrapping, one pair per press; this
+            // only stops it once the word is five deep.
             key: "[",
             run: limitBracketWrap,
           },
           {
+            // Ahead of the default binding, which would take the whole
+            // wrapped word rather than one level of it.
             key: "Backspace",
             run: peelBrackets,
           },
@@ -2795,7 +3028,7 @@ export function Editor() {
         >
           <div className="bubble-model-row">
             <ModelPicker
-              value={active.models?.[bubbleMenu.label] ?? ""}
+              value={resolveBubbleModel(active.models, bubbleMenu.label) ?? ""}
               onChange={(value) =>
                 void useStore.getState().setBubbleModel(bubbleMenu.label, value || null)
               }
@@ -2817,6 +3050,28 @@ export function Editor() {
                 <path d="M5.3 5.7a1.6 1.6 0 0 1 1.7-1.1" />
               </svg>
             </button>
+            {active.remote && (
+              <button
+                className={
+                  issue?.state === "closed"
+                    ? "bubble-model-copy bubble-issue closed"
+                    : "bubble-model-copy bubble-issue"
+                }
+                data-tooltip={
+                  issueKey
+                    ? `${issueKey} · ${issue?.state ?? "not synced yet"}`
+                    : githubAuth?.connected
+                      ? `Create an issue on ${active.remote.owner}/${active.remote.repo}`
+                      : "Connect GitHub"
+                }
+                onClick={issueAction}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={siGithub.path} />
+                </svg>
+              </button>
+            )}
             <button
               className="bubble-model-copy"
               data-tooltip="Copy bubble"

@@ -317,6 +317,131 @@ pub async fn suggest_title(app: &AppHandle, content: &str) -> Result<String, Str
     Ok(title)
 }
 
+/// A drafted GitHub issue, ready for the user to edit before it is filed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDraft {
+    pub title: String,
+    pub body: String,
+}
+
+/// Draft an issue from one idea bubble.
+///
+/// The model writes a readable title and a short piece of framing; the bubble's
+/// own words then follow, intact. Only the first half is left to the prompt —
+/// `assemble_draft` checks the result and restores the original if it drifted.
+pub async fn draft_issue(
+    app: &AppHandle,
+    bubble: &str,
+    note_title: &str,
+    model: Option<&str>,
+    tags: &[String],
+) -> Result<IssueDraft, String> {
+    let system = r#"You turn one note from an idea notebook into a GitHub issue. Return ONLY JSON {"title": "...", "body": "..."}.
+
+The title: at most 10 words, imperative, no trailing punctuation. Fix the author's typos and expand their shorthand — it is a heading other people will read.
+
+The body: open with one short paragraph (1-3 sentences) explaining what is being asked for and why, in clear prose. Then a line containing exactly `## Notes`, then the author's note reproduced VERBATIM — every line, unedited, original spelling and wording preserved.
+
+Never invent requirements, acceptance criteria, reproduction steps, environments or scope the author did not write. If the note is a single clear sentence, the opening paragraph may simply restate it. Do not add headings other than `## Notes`."#;
+    let tag_context = if tags.is_empty() {
+        String::new()
+    } else {
+        format!("\nTopic tags: {}", tags.join(", "))
+    };
+    let prompt = format!("Note title: {note_title}{tag_context}\nBubble:\n{bubble}");
+    let value = complete(app, system, &prompt).await?;
+
+    Ok(assemble_draft(
+        value.get("title").and_then(Value::as_str).unwrap_or(""),
+        value.get("body").and_then(Value::as_str).unwrap_or(""),
+        bubble,
+        note_title,
+        model,
+    ))
+}
+
+/// The draft used when AI is switched off or the model call fails: the bubble,
+/// unchanged, with its first line as the title.
+pub fn local_draft(bubble: &str, note_title: &str, model: Option<&str>) -> IssueDraft {
+    assemble_draft("", "", bubble, note_title, model)
+}
+
+/// Build the final draft from whatever the model returned.
+///
+/// Two things are enforced here rather than asked for: the bubble text is
+/// present in the body, and the provenance footer is written by us. A prompt can
+/// drift; this cannot.
+fn assemble_draft(
+    title: &str,
+    body: &str,
+    bubble: &str,
+    note_title: &str,
+    model: Option<&str>,
+) -> IssueDraft {
+    let bubble = bubble.trim();
+    let title = title.trim().trim_matches(['"', '\'']).trim();
+    let title = if title.is_empty() {
+        first_line_title(bubble)
+    } else {
+        title.to_string()
+    };
+
+    let body = body.trim();
+    let mut out = if body.is_empty() {
+        bubble.to_string()
+    } else if contains_verbatim(body, bubble) {
+        body.to_string()
+    } else {
+        // The model paraphrased instead of quoting. Keep its framing — that is
+        // the part worth having — but put the author's actual words back under
+        // the heading it was asked to use.
+        format!("{body}\n\n## Notes\n\n{bubble}")
+    };
+
+    // Tags are deliberately absent here: they are applied as GitHub labels, so
+    // repeating them as prose would be noise.
+    out.push_str("\n\n---\nFrom [sudonotes](https://sudonotes.com) · idea: ");
+    out.push_str(note_title);
+    if let Some(model) = model.filter(|m| !m.is_empty()) {
+        out.push_str(" · model: ");
+        out.push_str(model);
+    }
+    out.push('\n');
+
+    IssueDraft { title, body: out }
+}
+
+/// Whether every line of the bubble survived into the drafted body.
+///
+/// Compared line by line and whitespace-insensitively: a model that only
+/// reflowed or re-indented has still kept the author's words, while one that
+/// summarised has not.
+fn contains_verbatim(body: &str, bubble: &str) -> bool {
+    let haystack: Vec<&str> = body.lines().map(str::trim).collect();
+    bubble
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .all(|line| haystack.contains(&line))
+}
+
+/// A title from the bubble's own first line, for the no-AI path.
+fn first_line_title(bubble: &str) -> String {
+    let first = bubble
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("Idea")
+        .trim_start_matches('#')
+        .trim();
+    if first.chars().count() <= 70 {
+        return first.to_string();
+    }
+    let short: String = first.chars().take(67).collect();
+    format!("{}…", short.trim_end())
+}
+
 pub fn local_tags(note: &NoteInput) -> Vec<String> {    let haystack = format!("{} {}", note.title, note.body).to_lowercase();
     let mut tags = Vec::new();
     let terms: &[(&str, &str)] = &[
@@ -370,6 +495,69 @@ mod tests {
         let disabled = save_settings(dir.path(), false).unwrap();
         assert!(!disabled.enabled);
         assert!(!disabled.show_bubble_metadata);
+    }
+
+    #[test]
+    fn a_faithful_draft_is_left_alone() {
+        let bubble = "Mute closed bubbles.\nThey should dim, not vanish.";
+        let draft = assemble_draft(
+            "Mute closed bubbles",
+            "Closed issues should stay visible.\n\nMute closed bubbles.\nThey should dim, not vanish.",
+            bubble,
+            "GitHub integration",
+            None,
+        );
+
+        assert_eq!(draft.title, "Mute closed bubbles");
+        assert!(!draft.body.contains("## Notes"));
+        assert!(draft.body.contains("They should dim, not vanish."));
+    }
+
+    #[test]
+    fn a_paraphrased_draft_gets_the_original_back() {
+        // The guarantee: a model that summarises cannot silently replace the
+        // author's words.
+        let bubble = "Mute closed bubbles.\nThey should dim, not vanish.";
+        let draft = assemble_draft(
+            "Handle closed issues",
+            "We should probably do something about issues once they are done.",
+            bubble,
+            "GitHub integration",
+            None,
+        );
+
+        assert!(draft.body.contains("## Notes"));
+        assert!(draft.body.contains("They should dim, not vanish."));
+    }
+
+    #[test]
+    fn reindenting_still_counts_as_verbatim() {
+        assert!(contains_verbatim("  Mute closed bubbles.  ", "Mute closed bubbles."));
+        assert!(!contains_verbatim("Mute the bubbles.", "Mute closed bubbles."));
+    }
+
+    #[test]
+    fn falls_back_to_the_bubble_when_there_is_no_model() {
+        let draft = local_draft(
+            "# Mute closed bubbles\n\nThey should dim.",
+            "GitHub integration",
+            Some("deepseek/deepseek-chat"),
+        );
+
+        assert_eq!(draft.title, "Mute closed bubbles");
+        assert!(draft.body.starts_with("# Mute closed bubbles"));
+        assert!(draft.body.contains("idea: GitHub integration"));
+        assert!(draft.body.contains("model: deepseek/deepseek-chat"));
+        // Tags belong on the issue as labels, not restated in the body.
+        assert!(!draft.body.contains("tags:"));
+    }
+
+    #[test]
+    fn shortens_an_overlong_fallback_title() {
+        let long = "a ".repeat(60);
+        let draft = local_draft(&long, "Ideas", None);
+        assert!(draft.title.chars().count() <= 70);
+        assert!(draft.title.ends_with('…'));
     }
 
     #[test]

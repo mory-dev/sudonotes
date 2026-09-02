@@ -39,6 +39,15 @@ const features = [
     title: "Project linking",
     body: "Mirror an idea into a repository's IDEAS.md and keep it gitignored. It detects the project's icon and name, and lets you import an existing IDEAS.md instead of overwriting it.",
     href: "/docs/project-linking",
+    linkText: "Read the project-linking guide",
+  },
+  {
+    cue: "issue",
+    kicker: "Ideas that ship",
+    title: "GitHub issues",
+    body: "Send an idea bubble to a linked repository as an issue, keeping your own wording and carrying its tags across as labels. When the issue closes, the bubble dims — or retires itself, if you ask it to.",
+    href: "/docs/github-issues",
+    linkText: "Read the GitHub issues guide",
   },
 ];
 ---
@@ -76,6 +85,7 @@ const features = [
                 {feature.cue === "search" && <span class="search-mark"></span>}
                 {feature.cue === "keyboard" && <span class="cue-symbol keyboard-mark">⌘</span>}
                 {feature.cue === "files" && <span class="cue-symbol file-mark">.md</span>}
+                {feature.cue === "issue" && <span class="cue-symbol issue-mark">#</span>}
                 {feature.cue === "project" && (
                   <span class="project-mark">
                     <span class="note-mark idea"><NoteMark type="idea" /></span>
@@ -87,7 +97,7 @@ const features = [
             </div>
             <h2>{feature.title}</h2>
             <p>{feature.body}</p>
-            {feature.href && <a class="feature-link" href={feature.href}>Read the project-linking guide →</a>}
+            {feature.href && <a class="feature-link" href={feature.href}>{feature.linkText} →</a>}
           </article>
         ))
       }
@@ -263,6 +273,11 @@ const features = [
     font-size: 14px;
     font-weight: 650;
     letter-spacing: -0.04em;
+  }
+
+  .issue-mark {
+    font-size: 25px;
+    font-weight: 650;
   }
 
   .project-mark {
