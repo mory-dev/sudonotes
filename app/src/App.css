@@ -3984,6 +3984,7 @@ button.status-item:hover {
 
 .cm-divider-raw-subtle {
   color: var(--muted);
+}
 
 /* ---------- prompt template variable autocompletion & preview ---------- */
 
