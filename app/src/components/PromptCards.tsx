@@ -1,13 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, type ChildPrompt } from "../api";
 import { useStore } from "../store";
 import { clampPromptHeight, DEFAULT_PROMPT_HEIGHT } from "../promptHeightStorage";
+import {
+  getTemplateVariableAutocompleteState,
+  insertTemplateVariable,
+  placeholdersIn,
+  substituteTemplateVariables,
+  type IdeaBubble,
+} from "../templateBubbles";
+import { useLinkedIdeaBubbles } from "../useLinkedIdeaBubbles";
 import { useListDrag, reordered, type NoteDragHandlers } from "../useListDrag";
 import { ModelPicker } from "./ModelPicker";
 import { ProviderIcon, providerOf, shortModelName } from "./ProviderMarks";
 import { TagChip } from "./TagChip";
 import { TagInput } from "./TagInput";
+import { TemplateVariableAutocomplete } from "./TemplateVariableAutocomplete";
 
 function HighlightMatches({ text, query }: { text: string; query: string }) {
   if (!query || !query.trim()) return <>{text}</>;
@@ -130,7 +139,10 @@ function Card({
   const aiEnabled = useStore((s) => s.aiSettings.enabled);
   const allNotes = useStore((s) => s.notes);
 
+  const { bubbles } = useLinkedIdeaBubbles(prompt);
+
   const [editing, setEditing] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const customHeight = useStore((s) => s.promptHeights[prompt.id]);
   const setPromptHeight = useStore((s) => s.setPromptHeight);
   const resetPromptHeight = useStore((s) => s.resetPromptHeight);
@@ -190,11 +202,15 @@ function Card({
     resetPromptHeight(prompt.id);
     setLiveHeight(null);
   };
+
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState(prompt.title);
   const [body, setBody] = useState(prompt.body);
   const [tags, setTags] = useState<string[]>(prompt.tags);
   const [model, setModel] = useState(prompt.model ?? "");
+
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [autoQuery, setAutoQuery] = useState("");
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const recentWrapPosition = useRef<{ position: number; until: number } | null>(null);
@@ -216,6 +232,7 @@ function Card({
     setBody(prompt.body);
     setTags(prompt.tags);
     setModel(prompt.model ?? "");
+    setAutoOpen(false);
   }, [prompt.id, prompt.title, prompt.body, prompt.model, prompt.tags]);
 
   // Grow the textarea to fit instead of scrolling inside itself.
@@ -231,6 +248,7 @@ function Card({
     setBody(prompt.body);
     setTags(prompt.tags);
     setModel(prompt.model ?? "");
+    setAutoOpen(false);
     setEditing(false);
   };
 
@@ -239,6 +257,7 @@ function Card({
     try {
       await api.updateNote(prompt.id, title, body, tags, model.trim() || null);
       setEditing(false);
+      setAutoOpen(false);
       await refresh();
       if (aiEnabled) {
         void api.autoTagNote(prompt.id).then(() => refresh()).catch(() => {});
@@ -250,6 +269,23 @@ function Card({
     }
   };
 
+  const handleSelectBubble = (bubble: IdeaBubble) => {
+    const el = bodyRef.current;
+    const pos = el?.selectionStart ?? body.length;
+    const res = insertTemplateVariable(body, pos, bubble.sanitized, true);
+    setBody(res.newText);
+    setAutoOpen(false);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(res.newCursorPos, res.newCursorPos);
+    });
+  };
+
+  const hasVariables = useMemo(() => placeholdersIn(prompt.body).length > 0, [prompt.body]);
+  const substitutedBody = useMemo(() => {
+    return substituteTemplateVariables(prompt.body, bubbles);
+  }, [prompt.body, bubbles]);
+
   if (!editing) {
     const classes = [
       "card",
@@ -259,6 +295,8 @@ function Card({
     ]
       .filter(Boolean)
       .join(" ");
+
+    const displayBody = showPreview ? substitutedBody : prompt.body;
 
     return (
       <li
@@ -292,7 +330,20 @@ function Card({
           >
             <HighlightMatches text={prompt.title} query={query ?? ""} />
           </button>
-          <CopyButton text={prompt.body} />
+          {hasVariables && (
+            <button
+              type="button"
+              className={`variable-preview-toggle ${showPreview ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPreview((prev) => !prev);
+              }}
+              title={showPreview ? "Show template syntax" : "Preview variable substitution"}
+            >
+              {showPreview ? "Template" : "Preview"}
+            </button>
+          )}
+          <CopyButton text={displayBody} />
         </header>
 
         <pre
@@ -300,7 +351,7 @@ function Card({
           className="card-body"
           style={activeHeight ? { height: activeHeight + "px", maxHeight: activeHeight + "px" } : undefined}
         >
-          <Wikilinks text={prompt.body} query={query} />
+          <Wikilinks text={displayBody} query={query} />
         </pre>
 
         {(prompt.tags.length > 0 || prompt.model) && (
@@ -356,43 +407,86 @@ function Card({
         />
       </header>
 
-      <textarea
-        ref={bodyRef}
-        className="card-body-input"
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "[" && e.currentTarget.selectionStart === e.currentTarget.selectionEnd) {
-            if (
-              recentWrapPosition.current?.position === e.currentTarget.selectionStart &&
-              recentWrapPosition.current.until > Date.now()
-            ) {
-              recentWrapPosition.current = null;
+      <div className="card-editing-body-wrap">
+        <textarea
+          ref={bodyRef}
+          className="card-body-input"
+          value={body}
+          onInput={(e) => {
+            const next = (e.target as HTMLTextAreaElement).value;
+            setBody(next);
+            const pos = (e.target as HTMLTextAreaElement).selectionStart;
+            const auto = getTemplateVariableAutocompleteState(next, pos);
+            if (auto) {
+              setAutoQuery(auto.query);
+              setAutoOpen(true);
+            } else {
+              setAutoOpen(false);
+            }
+          }}
+          onChange={(e) => {
+            const next = e.target.value;
+            setBody(next);
+            const pos = e.target.selectionStart;
+            const auto = getTemplateVariableAutocompleteState(next, pos);
+            if (auto) {
+              setAutoQuery(auto.query);
+              setAutoOpen(true);
+            } else {
+              setAutoOpen(false);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "[" && e.currentTarget.selectionStart === e.currentTarget.selectionEnd) {
+              if (
+                recentWrapPosition.current?.position === e.currentTarget.selectionStart &&
+                recentWrapPosition.current.until > Date.now()
+              ) {
+                recentWrapPosition.current = null;
+                e.preventDefault();
+                return;
+              }
+            }
+            if (e.key === "[" && e.currentTarget.selectionStart !== e.currentTarget.selectionEnd) {
               e.preventDefault();
+              const start = e.currentTarget.selectionStart;
+              const end = e.currentTarget.selectionEnd;
+              const selected = body.slice(start, end);
+              const inserted = `[[${selected}]]`;
+              setBody(`${body.slice(0, start)}${inserted}${body.slice(end)}`);
+              recentWrapPosition.current = {
+                position: start + inserted.length,
+                until: Date.now() + 350,
+              };
+              requestAnimationFrame(() => {
+                bodyRef.current?.setSelectionRange(start + inserted.length, start + inserted.length);
+              });
               return;
             }
-          }
-          if (e.key === "[" && e.currentTarget.selectionStart !== e.currentTarget.selectionEnd) {
-            e.preventDefault();
-            const start = e.currentTarget.selectionStart;
-            const end = e.currentTarget.selectionEnd;
-            const selected = body.slice(start, end);
-            const inserted = `[[${selected}]]`;
-            setBody(`${body.slice(0, start)}${inserted}${body.slice(end)}`);
-            recentWrapPosition.current = {
-              position: start + inserted.length,
-              until: Date.now() + 350,
-            };
-            requestAnimationFrame(() => {
-              bodyRef.current?.setSelectionRange(start + inserted.length, start + inserted.length);
-            });
-            return;
-          }
-          if (e.key === "Escape") cancel();
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void save();
-        }}
-        placeholder="Prompt text"
-      />
+            if (e.key === "Escape") {
+              if (autoOpen) {
+                e.preventDefault();
+                setAutoOpen(false);
+                return;
+              }
+              cancel();
+            }
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              setAutoOpen(false);
+              void save();
+            }
+          }}
+          placeholder="Prompt text (type {{ for idea bubbles autocomplete)"
+        />
+        {autoOpen && (
+          <TemplateVariableAutocomplete
+            bubbles={bubbles}
+            query={autoQuery}
+            onSelect={handleSelectBubble}
+            onClose={() => setAutoOpen(false)}
+          />
+        )}
+      </div>
 
       <div className="card-fields">
         <label>
@@ -406,7 +500,7 @@ function Card({
       </div>
 
       <div className="card-actions">
-        <span className="card-hint">Ctrl+Enter saves · Esc cancels</span>
+        <span className="card-hint">Ctrl+Enter saves · Esc cancels · {"{{"} autocompletes</span>
         <button className="secondary" onClick={cancel} disabled={saving}>
           Cancel
         </button>

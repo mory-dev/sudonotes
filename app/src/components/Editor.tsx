@@ -38,6 +38,13 @@ import {
 import { tags } from "@lezer/highlight";
 
 import { BUBBLE_END, BUBBLE_START, useStore } from "../store";
+import { type NoteMeta } from "../api";
+import {
+  extractIdeaBubbles,
+  getLinkedIdeaTitles,
+  type IdeaBubble,
+} from "../templateBubbles";
+import { getCachedIdeaBubbles } from "../useLinkedIdeaBubbles";
 import { getUiZoom, viewportToLayout } from "../uiScale";
 import { tagHoverColor, tagPalette } from "../tagColors";
 import { ModelPicker } from "./ModelPicker";
@@ -131,6 +138,102 @@ function wikiLinkCompletionSource(context: CompletionContext): CompletionResult 
         },
       };
     }),
+    filter: false,
+  };
+}
+
+/** Autocomplete dropdown when typing `{{` to insert idea bubbles as template variables. */
+export function promptVariableCompletionSource(context: CompletionContext): CompletionResult | null {
+  const match = context.matchBefore(/\{\{([^}\n]*)/);
+  if (!match) return null;
+
+  const query = match.text.slice(2).trim().toLowerCase();
+  const state = useStore.getState();
+  const active = state.active;
+  const notes = state.notes;
+  const backlinks = state.backlinks;
+
+  const docText = context.state.doc.toString();
+  const linkedTitles = getLinkedIdeaTitles(docText, backlinks);
+  const lowerLinked = new Set(linkedTitles.map((t) => t.toLowerCase()));
+
+  const ideaNotes: NoteMeta[] = [];
+  for (const n of notes) {
+    if (n.type === "idea" && lowerLinked.has(n.title.toLowerCase())) {
+      ideaNotes.push(n);
+    }
+  }
+  if (active && active.type === "idea" && !ideaNotes.some((m) => m.id === active.id)) {
+    ideaNotes.push(active);
+  }
+  if (ideaNotes.length === 0) {
+    for (const n of notes) {
+      if (n.type === "idea") ideaNotes.push(n);
+    }
+  }
+
+  const allBubbles: IdeaBubble[] = [];
+  const seen = new Set<string>();
+
+  for (const meta of ideaNotes) {
+    const cached = getCachedIdeaBubbles(meta.id);
+    const bubbles =
+      cached ??
+      (active?.id === meta.id && active.type === "idea"
+        ? extractIdeaBubbles(active.body, active.title, active.id)
+        : []);
+
+    for (const b of bubbles) {
+      if (!seen.has(b.sanitized)) {
+        seen.add(b.sanitized);
+        allBubbles.push(b);
+      }
+    }
+  }
+
+  const hits = allBubbles
+    .filter(
+      (b) =>
+        !query ||
+        b.sanitized.toLowerCase().includes(query) ||
+        b.label.toLowerCase().includes(query) ||
+        b.content.toLowerCase().includes(query),
+    )
+    .slice(0, 50);
+
+  if (hits.length === 0) return null;
+
+  return {
+    from: match.from + 2,
+    to: context.pos,
+    options: hits.map((b) => ({
+      label: b.sanitized,
+      displayLabel: `{{${b.sanitized}}}`,
+      detail: b.noteTitle ? `${b.noteTitle} · ${b.label}` : b.label,
+      info: b.content,
+      type: "variable",
+      apply: (view: EditorView, completion: { label: string }, from: number, to: number) => {
+        const doc = view.state.doc;
+        const after = doc.sliceString(to, to + 2);
+        let insert = completion.label;
+        let targetPos = from + insert.length;
+
+        if (after === "}}") {
+          targetPos += 2;
+        } else if (after.startsWith("}")) {
+          insert += "}";
+          targetPos += 2;
+        } else {
+          insert += "}}";
+          targetPos += 2;
+        }
+
+        view.dispatch({
+          changes: { from, to, insert },
+          selection: { anchor: targetPos },
+        });
+      },
+    })),
     filter: false,
   };
 }
@@ -2304,7 +2407,7 @@ export function Editor() {
           // so `[` twice on a word gives [[word]].
           closeBrackets(),
           autocompletion({
-            override: [wikiLinkCompletionSource, pageLinkCompletionSource],
+            override: [wikiLinkCompletionSource, pageLinkCompletionSource, promptVariableCompletionSource],
             defaultKeymap: true,
             icons: false,
           }),

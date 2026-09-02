@@ -3585,3 +3585,179 @@ button.status-item:hover {
 .backup-number span {
   color: var(--muted);
 }
+
+/* ---------- prompt template variable autocompletion & preview ---------- */
+
+.variable-autocomplete-popup {
+  position: absolute;
+  z-index: 60;
+  width: 100%;
+  max-width: 380px;
+  min-width: 260px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 4px 0 0 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5);
+}
+
+.variable-autocomplete-popup.empty {
+  padding: 10px 12px;
+}
+
+.var-auto-empty {
+  font-size: 11.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.var-auto-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.var-auto-hint {
+  font-size: 9.5px;
+  font-weight: 400;
+  text-transform: none;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.var-auto-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.var-auto-item.active,
+.var-auto-item:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.var-auto-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.var-auto-tag {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.var-auto-note {
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.var-auto-label {
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.var-auto-snippet {
+  font-size: 10.5px;
+  color: var(--muted);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.variable-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.variable-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--idea);
+  background: var(--idea-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.variable-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.variable-preview-toggle.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.variables-preview-box {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.card-editing-body-wrap {
+  position: relative;
+  width: 100%;
+}

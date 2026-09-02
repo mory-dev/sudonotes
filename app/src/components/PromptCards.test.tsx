@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { useStore } from "../store";
 import { PromptCards } from "./PromptCards";
+import { setCachedIdeaBubbles } from "../useLinkedIdeaBubbles";
 import {
   clampPromptHeight,
   loadPromptHeights,
@@ -253,5 +254,143 @@ describe("PromptCards vertical resizing & persistence", () => {
 
     expect(useStore.getState().promptHeights["prompt-1"]).toBeUndefined();
     expect(bodyEl.style.height).toBe("");
+  });
+});
+
+describe("PromptCards prompt template variable autocomplete & preview substitution", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    localStorage.clear();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    setCachedIdeaBubbles("idea-10", "2026-08-01T00:00:00Z", [
+      {
+        id: "idea-10-b0",
+        noteId: "idea-10",
+        noteTitle: "Alerts Idea",
+        label: "Offline alert queue",
+        sanitized: "offline_alert_queue",
+        content: "Store sensor alerts while network is down.",
+        rawText: "## Offline alert queue\nStore sensor alerts while network is down.",
+      },
+    ]);
+
+    useStore.setState({
+      active: {
+        id: "col-1",
+        title: "Test Collection",
+        body: "",
+        tags: [],
+        type: "prompt",
+        created: "2026-08-01T00:00:00Z",
+        updated: "2026-08-01T00:00:00Z",
+        path: "Test Collection.md",
+        summary: null,
+        icon: null,
+        collection: null,
+        position: null,
+        models: {},
+        model: null,
+        bubbleTags: {},
+        project: null,
+        onHold: false,
+      },
+      children: [
+        {
+          id: "prompt-10",
+          title: "Template Card",
+          body: "Context: {{offline_alert_queue}} in action.",
+          tags: ["test"],
+          model: null,
+          position: 1,
+        },
+      ],
+      notes: [
+        {
+          id: "idea-10",
+          title: "Alerts Idea",
+          type: "idea",
+          tags: [],
+          collection: null,
+          summary: null,
+          updated: "2026-08-01T00:00:00Z",
+          onHold: false,
+        },
+      ],
+      promptHeights: {},
+    });
+  });
+
+  afterEach(() => {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+    localStorage.clear();
+  });
+
+  it("toggles preview substitution in prompt card view", async () => {
+    await act(async () => {
+      root.render(<PromptCards />);
+    });
+
+    const card = container.querySelector("#prompt-card-prompt-10");
+    expect(card).not.toBeNull();
+
+    const bodyEl = card?.querySelector(".card-body");
+    expect(bodyEl?.textContent).toContain("{{offline_alert_queue}}");
+
+    const previewToggle = card?.querySelector<HTMLButtonElement>(".variable-preview-toggle");
+    expect(previewToggle).not.toBeNull();
+
+    await act(async () => {
+      previewToggle!.click();
+    });
+
+    expect(bodyEl?.textContent).toContain("Store sensor alerts while network is down.");
+  });
+
+  it("shows autocomplete popup in card editing mode when typing {{", async () => {
+    await act(async () => {
+      root.render(<PromptCards />);
+    });
+
+    const card = container.querySelector("#prompt-card-prompt-10");
+    // Double-click to enter editing mode
+    await act(async () => {
+      card?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(".card-body-input");
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      nativeSetter?.call(textarea, "Use {{off");
+      textarea!.selectionStart = 9;
+      textarea!.dispatchEvent(new Event("input", { bubbles: true }));
+      textarea!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const popup = container.querySelector(".variable-autocomplete-popup");
+    expect(popup).not.toBeNull();
+    expect(popup?.textContent).toContain("offline_alert_queue");
+
+    // Clicking autocomplete item inserts variable tag
+    const itemBtn = popup?.querySelector<HTMLButtonElement>(".var-auto-item");
+    expect(itemBtn).not.toBeNull();
+
+    act(() => {
+      itemBtn!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    });
+
+    expect(textarea?.value).toBe("Use {{offline_alert_queue}}");
   });
 });

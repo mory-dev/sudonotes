@@ -1,13 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api";
 import { useStore } from "../store";
+import {
+  findMatchingBubble,
+  getTemplateVariableAutocompleteState,
+  insertTemplateVariable,
+  placeholdersIn,
+  substituteTemplateVariables,
+  type IdeaBubble,
+} from "../templateBubbles";
+import { useLinkedIdeaBubbles } from "../useLinkedIdeaBubbles";
 import { AiReview } from "./AiReview";
 import { ModelPicker } from "./ModelPicker";
 import { IdeaMark, PromptMark, TypeBadge } from "./NoteMarks";
 import { ProjectLink } from "./ProjectLink";
 import { TagChip } from "./TagChip";
 import { TagInput } from "./TagInput";
+import { TemplateVariableAutocomplete } from "./TemplateVariableAutocomplete";
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -64,20 +74,102 @@ function Backlinks() {
   );
 }
 
-/** Every distinct `{{name}}` in a prompt, in the order it first appears. */
-function placeholdersIn(body: string): string[] {
-  const found: string[] = [];
-  for (const match of body.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)) {
-    const name = match[1].trim();
-    if (name && !found.includes(name)) found.push(name);
-  }
-  return found;
+function VariableRow({
+  name,
+  value,
+  onChange,
+  bubbles,
+}: {
+  name: string;
+  value: string;
+  onChange: (val: string) => void;
+  bubbles: IdeaBubble[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const matchedBubble = useMemo(() => findMatchingBubble(name, bubbles), [name, bubbles]);
+
+  const placeholderText = matchedBubble
+    ? matchedBubble.content.length > 35
+      ? `${matchedBubble.content.slice(0, 35)}…`
+      : matchedBubble.content
+    : "value";
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const text = e.target.value;
+    onChange(text);
+
+    const pos = e.target.selectionStart ?? text.length;
+    const auto = getTemplateVariableAutocompleteState(text, pos);
+    if (auto) {
+      setQuery(auto.query);
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
+  };
+
+  const handleSelect = (bubble: IdeaBubble) => {
+    const el = inputRef.current;
+    const pos = el?.selectionStart ?? value.length;
+    const auto = getTemplateVariableAutocompleteState(value, pos);
+    if (auto) {
+      const res = insertTemplateVariable(value, pos, bubble.sanitized, false);
+      onChange(res.newText);
+    } else {
+      onChange(bubble.content || bubble.label);
+    }
+    setOpen(false);
+    inputRef.current?.focus();
+  };
+
+  return (
+    <li>
+      <div className="variable-name-row">
+        <label className="variable-name" htmlFor={`var-${name}`}>
+          {name}
+        </label>
+        {matchedBubble && (
+          <span
+            className="variable-preview-badge"
+            title={`Auto-substitutes from "${matchedBubble.label}" in ${matchedBubble.noteTitle ?? "idea"}`}
+          >
+            💡 {matchedBubble.noteTitle ? `${matchedBubble.noteTitle}: ` : ""}{matchedBubble.label}
+          </span>
+        )}
+      </div>
+      <div className="variable-input-wrap">
+        <input
+          ref={inputRef}
+          id={`var-${name}`}
+          className="variable-input"
+          value={value}
+          placeholder={placeholderText}
+          onChange={handleInputChange}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+          }}
+          onBlur={() => {
+            setTimeout(() => setOpen(false), 200);
+          }}
+        />
+        {open && (
+          <TemplateVariableAutocomplete
+            bubbles={bubbles}
+            query={query}
+            onSelect={handleSelect}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </div>
+    </li>
+  );
 }
 
-/** Fill in a prompt's `{{placeholders}}` and copy the result.
- *
- *  Values live for the session only and are never written back: the note stays
- *  a reusable template, and what goes on the clipboard is the filled copy. */
+/** Fill in a prompt's `{{placeholders}}` with ideas bubbles or user values,
+ *  providing smooth preview substitution and copying the result. */
 function Variables() {
   const active = useStore((s) => s.active);
   const hoverPrompt = useStore((s) => s.hoverPrompt);
@@ -87,6 +179,9 @@ function Variables() {
   const names = useMemo(() => (isPrompt ? placeholdersIn(body) : []), [isPrompt, body]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const { bubbles } = useLinkedIdeaBubbles(target);
 
   useEffect(() => {
     setValues({});
@@ -94,14 +189,13 @@ function Variables() {
 
   if (names.length === 0) return null;
 
-  const filled = body.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (whole, name: string) => {
-    const value = values[name.trim()];
-    // An unfilled placeholder is left standing rather than blanked, so a
-    // half-filled copy still shows what is missing.
-    return value ? value : whole;
-  });
+  const filled = substituteTemplateVariables(body, bubbles, values);
 
-  const remaining = names.filter((name) => !values[name]).length;
+  const remaining = names.filter((name) => {
+    if (values[name]) return false;
+    const match = findMatchingBubble(name, bubbles);
+    return !match;
+  }).length;
 
   const copy = () => {
     void navigator.clipboard.writeText(filled);
@@ -115,24 +209,31 @@ function Variables() {
         <span>
           Variables <span className="count">{names.length}</span>
         </span>
+        <button
+          type="button"
+          className={`variable-preview-toggle ${showPreview ? "active" : ""}`}
+          onClick={() => setShowPreview((prev) => !prev)}
+          title="Toggle preview substitution"
+        >
+          {showPreview ? "Hide preview" : "Preview"}
+        </button>
       </header>
+
+      {showPreview && (
+        <div className="variables-preview-box" title="Substituted preview text">
+          {filled}
+        </div>
+      )}
 
       <ul className="variable-list">
         {names.map((name) => (
-          <li key={name}>
-            <label className="variable-name" htmlFor={`var-${name}`}>
-              {name}
-            </label>
-            <input
-              id={`var-${name}`}
-              className="variable-input"
-              value={values[name] ?? ""}
-              placeholder="value"
-              onChange={(event) =>
-                setValues((current) => ({ ...current, [name]: event.target.value }))
-              }
-            />
-          </li>
+          <VariableRow
+            key={name}
+            name={name}
+            value={values[name] ?? ""}
+            bubbles={bubbles}
+            onChange={(val) => setValues((current) => ({ ...current, [name]: val }))}
+          />
         ))}
       </ul>
 
