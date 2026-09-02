@@ -741,6 +741,54 @@ export function buildDividerDecorations(view: EditorView): DecorationSet {
   return builder.finish();
 }
 
+/** Finish a divider the moment it is typed.
+ *
+ *  A divider only renders while the caret is elsewhere, so typing `___` left the
+ *  raw underscores on screen until the cursor happened to move away. Completing
+ *  the line drops the caret onto a fresh line below, which renders the divider
+ *  straight away and is where the next thought was going anyway. */
+export const dividerAutoBreak = ViewPlugin.fromClass(
+  class {
+    constructor(readonly view: EditorView) {}
+
+    update(update: ViewUpdate) {
+      if (!update.docChanged) return;
+      // Only typing. Pasting a document full of `---` must not rewrite it.
+      if (!update.transactions.some((tr) => tr.isUserEvent("input.type"))) return;
+
+      const head = update.state.selection.main.head;
+      const line = update.state.doc.lineAt(head);
+      // The caret has to be finishing the line, not editing inside one.
+      if (head !== line.to) return;
+      if (!getDividerType(line.text)) return;
+      if (line.number <= getFrontmatterEndLine(update.state.doc)) return;
+
+      // Adding a fourth dash to an existing divider is not a new one.
+      let wasDivider = false;
+      update.changes.iterChanges((fromA) => {
+        const old = update.startState.doc.lineAt(
+          Math.min(fromA, update.startState.doc.length),
+        );
+        if (getDividerType(old.text)) wasDivider = true;
+      });
+      if (wasDivider) return;
+
+      // A transaction cannot be dispatched from inside update().
+      queueMicrotask(() => {
+        const doc = this.view.state.doc;
+        if (line.to > doc.length) return;
+        const current = doc.lineAt(line.to);
+        if (!getDividerType(current.text)) return;
+        this.view.dispatch({
+          changes: { from: current.to, insert: "\n" },
+          selection: { anchor: current.to + 1 },
+          userEvent: "input.divider",
+        });
+      });
+    }
+  },
+);
+
 export const visualDividers = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -2725,6 +2773,7 @@ export function Editor() {
       jumpHighlight,
       headings,
       visualDividers,
+      dividerAutoBreak,
       paragraphBoxes,
       bubbleMetadataDecorations,
       bubbleModelPersistence,

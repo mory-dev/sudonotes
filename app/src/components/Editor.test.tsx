@@ -39,6 +39,7 @@ import {
   reorderBubbles,
   resolveBubbleModel,
   resolveBubbleTags,
+  dividerAutoBreak,
   visualDividers,
 } from "./Editor";
 
@@ -926,5 +927,69 @@ describe("visual divider lines (___ and ---)", () => {
     // Caret on divider line returns null for bubble selection, allowing immediate fall-through to select-all
     const dividerPos = doc.indexOf("___");
     expect(bubbleForModA(dividerPos, dividerPos, dividerPos, bubbles)).toBeNull();
+  });
+});
+
+describe("typing a divider finishes it immediately", () => {
+  function makeDividerEditor(doc: string, anchor: number): EditorView {
+    return new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        selection: { anchor },
+        extensions: [markdown(), visualDividers, dividerAutoBreak],
+      }),
+    });
+  }
+
+  /** The divider only renders while the caret is elsewhere, so completing one
+   *  has to move the caret off it — otherwise the raw characters sit on screen
+   *  until the user happens to click away. */
+  it("moves the caret to a fresh line once the divider is complete", async () => {
+    const doc = "Above\n\n--";
+    const view = makeDividerEditor(doc, doc.length);
+
+    view.dispatch({
+      changes: { from: doc.length, insert: "-" },
+      selection: { anchor: doc.length + 1 },
+      userEvent: "input.type",
+    });
+    await Promise.resolve();
+
+    expect(view.state.doc.toString()).toBe("Above\n\n---\n");
+    const caret = view.state.selection.main.head;
+    expect(view.state.doc.lineAt(caret).number).toBe(4);
+    expect(view.state.doc.lineAt(caret).text).toBe("");
+    view.destroy();
+  });
+
+  it("leaves an existing divider alone when it is extended", async () => {
+    const doc = "Above\n\n---";
+    const view = makeDividerEditor(doc, doc.length);
+
+    view.dispatch({
+      changes: { from: doc.length, insert: "-" },
+      selection: { anchor: doc.length + 1 },
+      userEvent: "input.type",
+    });
+    await Promise.resolve();
+
+    expect(view.state.doc.toString()).toBe("Above\n\n----");
+    view.destroy();
+  });
+
+  it("does not fire on a paste", async () => {
+    const doc = "Above\n\n";
+    const view = makeDividerEditor(doc, doc.length);
+
+    view.dispatch({
+      changes: { from: doc.length, insert: "---" },
+      selection: { anchor: doc.length + 3 },
+      userEvent: "input.paste",
+    });
+    await Promise.resolve();
+
+    expect(view.state.doc.toString()).toBe("Above\n\n---");
+    view.destroy();
   });
 });
