@@ -143,6 +143,14 @@ export function ProjectLink() {
                 {linked}
               </span>
             </div>
+            {info?.remote && (
+              <span
+                className="project-remote"
+                data-tooltip={`github.com/${info.remote.owner}/${info.remote.repo}`}
+              >
+                {info.remote.owner}/{info.remote.repo}
+              </span>
+            )}
           </div>
 
           {info?.exists === false ? (

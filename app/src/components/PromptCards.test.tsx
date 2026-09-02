@@ -43,8 +43,11 @@ describe("PromptCards vertical resizing & persistence", () => {
         models: {},
         model: null,
         bubbleTags: {},
+        bubbleIssues: {},
+        issueStates: {},
+        remote: null,
         project: null,
-        onHold: false,
+        mark: "off",
       },
       children: [
         {

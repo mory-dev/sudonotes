@@ -42,6 +42,21 @@ tauri-plugin-global-shortcut = "2"
 base64 = "0.23.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 zip = { version = "^7", default-features = false, features = ["deflate"] }
+# The GitHub token is the only credential this app holds, so it goes to the OS
+# store rather than a file in the config directory. Native backends on Windows
+# and macOS; the Secret Service over D-Bus on Linux, in its synchronous form so
+# it can be called from a command without a runtime. `crypto-rust` is what
+# encrypts the token in transit over the bus — without it the secret crosses in
+# the clear — and it is the pure-Rust implementation, so no OpenSSL.
+keyring = { version = "3", features = [
+  "apple-native",
+  "windows-native",
+  "sync-secret-service",
+  "crypto-rust",
+] }
+# Already in the tree via reqwest; named directly so the device-flow poll can
+# sleep without blocking the command thread.
+tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
