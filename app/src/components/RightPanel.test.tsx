@@ -55,7 +55,10 @@ describe("RightPanel Prompt Template Variables & Idea Bubbles Autocompletion", (
         model: null,
         bubbleTags: {},
         project: null,
-        onHold: false,
+        mark: "off",
+        bubbleIssues: {},
+        issueStates: {},
+        remote: null,
       },
       notes: [
         {
@@ -66,7 +69,7 @@ describe("RightPanel Prompt Template Variables & Idea Bubbles Autocompletion", (
           collection: null,
           summary: null,
           updated: "2026-08-01T00:00:00Z",
-          onHold: false,
+          mark: "off",
         },
       ],
       backlinks: [],

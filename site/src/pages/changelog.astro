@@ -4,6 +4,17 @@ import Base from "../layouts/Base.astro";
 /** Releases, newest first. Dates are the actual tag dates — nothing backdated. */
 const releases = [
   {
+    version: "0.4.0",
+    date: "2026-09-02",
+    changes: [
+      "Turn an idea bubble into a GitHub issue without retyping it. Your wording is reproduced verbatim — a model only adds a title and a line of context — and the bubble's tags become labels on the issue.",
+      "Linked issues are tracked: a bubble whose issue has closed dims itself, and can delete itself instead if you turn that on in Settings. An Undo is offered either way.",
+      "Sign in with GitHub's device flow. Issues are created by your own account, the app asks only for Issues and Metadata access on repositories you pick, and the token is kept in your operating system's credential store rather than the vault.",
+      "Ideas now carry a three-state marker in the sidebar — unmarked, orange for in progress, green for complete — stored as `mark` in the note.",
+      "A bubble's model, tags and issue link now follow it when you edit its first line, and are dropped when the bubble is deleted.",
+    ],
+  },
+  {
     version: "0.3.4",
     date: "2026-08-27",
     changes: [

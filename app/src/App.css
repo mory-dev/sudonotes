@@ -886,6 +886,24 @@ code {
   text-align: left;
 }
 
+/* The GitHub repo the project pushes to. It sits at the end of the card rather
+   than under the path so a long path cannot squeeze it out. */
+.project-remote {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 6px;
+  max-width: 40%;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1117,7 +1135,7 @@ kbd {
 }
 
 /* Idea status orb: it stays quiet until the row is hovered, then offers a
-   small muted target. An on-hold idea keeps its amber orb visible at rest. */
+   small muted target. A marked idea keeps its colored orb visible at rest. */
 .idea-note-row {
   position: relative;
 }
@@ -1147,13 +1165,15 @@ kbd {
   background: transparent;
   opacity: 0;
   transform: translateY(-50%);
-  transition: opacity 120ms ease, background 120ms ease;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 .idea-note-row:hover .idea-hold-toggle,
 .idea-collection-head:hover .idea-hold-toggle,
 .idea-hold-toggle:focus-visible,
-.idea-hold-toggle.on {
+.idea-hold-toggle.on,
+.idea-hold-toggle.state-orange,
+.idea-hold-toggle.state-green {
   opacity: 1;
 }
 
@@ -1164,19 +1184,35 @@ kbd {
   border-radius: 50%;
   background: currentColor;
   opacity: 0.55;
+  transition: opacity 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 
 .idea-hold-toggle:hover {
   background: var(--panel-2);
 }
 
-.idea-hold-toggle.on {
+.idea-hold-toggle.on,
+.idea-hold-toggle.state-orange,
+.idea-hold-toggle.orange {
   color: var(--warning);
 }
 
-.idea-hold-toggle.on .idea-hold-orb {
+.idea-hold-toggle.on .idea-hold-orb,
+.idea-hold-toggle.state-orange .idea-hold-orb,
+.idea-hold-toggle.orange .idea-hold-orb {
   opacity: 1;
-  box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.16);
+  box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.22), 0 0 6px rgba(224, 175, 104, 0.35);
+}
+
+.idea-hold-toggle.state-green,
+.idea-hold-toggle.green {
+  color: var(--idea);
+}
+
+.idea-hold-toggle.state-green .idea-hold-orb,
+.idea-hold-toggle.green .idea-hold-orb {
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(158, 206, 106, 0.22), 0 0 6px rgba(158, 206, 106, 0.35);
 }
 
 /* The reorder drag runs on pointer events, so the cursor and text selection are
@@ -2648,11 +2684,13 @@ mark.cm-find-match {
 
 /* Hover menu above an idea bubble: pick the model that bubble's prompt targets.
    Absolute within .editor-wrap so it tracks the bubble at any UI zoom level. */
-.bubble-model-menu {
+.bubble-model-menu,
+.bubble-hover-menu {
   position: absolute;
   z-index: 30;
-  /* Wider than the picker alone needs: copy, cut and delete sit beside it. */
-  width: 288px;
+  /* Wider than the picker alone needs: the issue, copy, cut and delete buttons
+     sit beside it. */
+  width: 320px;
   padding: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -2663,12 +2701,14 @@ mark.cm-find-match {
 }
 
 /* The last 200ms of the menu's 1.5s life. */
-.bubble-model-menu.fading {
+.bubble-model-menu.fading,
+.bubble-hover-menu.fading {
   opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bubble-model-menu {
+  .bubble-model-menu,
+  .bubble-hover-menu {
     transition: none;
   }
 }
@@ -2747,6 +2787,17 @@ body.bubble-dragging * {
   stroke-width: 1.3;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The GitHub mark is a filled brand glyph, unlike the stroked icons beside it. */
+.bubble-model-copy.bubble-issue svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* A bubble whose issue is closed: the button recedes with the bubble it acts on. */
+.bubble-model-copy.bubble-issue.closed {
+  opacity: 0.5;
 }
 
 /* The delete bubble button is a small icon button, not a full `.danger`
@@ -3324,6 +3375,20 @@ button.status-item:hover {
   color: var(--muted);
 }
 
+/* A section headed by a service's own mark rather than words alone. The glyph
+   is a filled brand path, so it takes the heading's colour rather than a stroke. */
+.settings-section h3.settings-heading-mark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-heading-mark svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
 .settings-meta {
   margin: 8px 0 0;
 }
@@ -3506,42 +3571,210 @@ button.status-item:hover {
   border-color: #9ece6a;
 }
 
-/* ---------- update banner ---------- */
+/* ---------- update toast notification ---------- */
 
+.update-toast,
 .update-banner {
   position: fixed;
-  left: 50%;
+  right: 20px;
   bottom: 20px;
-  transform: translateX(-50%);
-  z-index: 30;
+  left: auto;
+  transform: none;
+  z-index: 40;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
-  max-width: 70vw;
-  padding: 10px 8px 10px 14px;
+  width: 320px;
+  max-width: calc(100vw - 40px);
+  padding: 13px 15px;
   font-size: 12.5px;
   color: var(--text);
   background: var(--panel);
-  border: 1px solid var(--accent);
-  border-radius: 9px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(122, 162, 247, 0.35);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(122, 162, 247, 0.14);
+  animation: update-toast-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.update-banner span {
+@keyframes update-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.update-toast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.update-toast-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.update-toast-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(122, 162, 247, 0.25);
+  border-radius: 4px;
+}
+
+.update-toast-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.update-banner strong {
-  color: var(--accent);
-}
-
-.update-banner-action {
-  flex: none;
-}
-
+.update-toast-close,
 .update-banner-close {
   flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.update-toast-close:hover,
+.update-banner-close:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.update-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-toast-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.update-toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.update-toast-action,
+.update-banner-action {
+  flex: 1;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #12131a;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: filter 120ms ease;
+}
+
+.update-toast-action:hover:not(:disabled),
+.update-banner-action:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.update-toast-action:disabled,
+.update-banner-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.update-toast-secondary {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.update-toast-secondary:hover {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.update-toast-progress-track {
+  width: 100%;
+  height: 4px;
+  background: var(--panel-2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.update-toast-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 200ms ease;
+}
+
+.update-toast-progress-fill.indeterminate {
+  width: 45%;
+  animation: update-toast-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes update-toast-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-toast,
+  .update-banner {
+    animation: none;
+  }
+  .update-toast-progress-fill.indeterminate {
+    animation: none;
+    width: 100%;
+  }
 }
 
 /* Back up / restore sit side by side under the backup settings. */
@@ -3556,6 +3789,72 @@ button.status-item:hover {
 }
 
 /* The retention number fields (keep-count and interval) in the backup row. */
+/* The one thing a toast can offer to do, e.g. undoing an auto-delete. */
+.toast-action {
+  flex: none;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  border-color: var(--accent);
+}
+
+/* The issue draft reuses the settings dialog shell, but its body needs room to
+   read as prose rather than as a preference. */
+.issue-draft {
+  max-width: 640px;
+}
+
+.issue-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.issue-field input,
+.issue-field textarea {
+  width: 100%;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.issue-field textarea {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.issue-field input:focus,
+.issue-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The device-flow code. It is read off the screen and typed into a browser, so
+   it is spaced out and monospaced rather than styled to blend in. */
+.github-code {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+
 .backup-number {
   display: flex;
   align-items: center;
@@ -3585,6 +3884,106 @@ button.status-item:hover {
 .backup-number span {
   color: var(--muted);
 }
+/* Visual Divider Lines: ___ (bold) and --- (subtle hairline) */
+.cm-divider-line {
+  position: relative;
+  padding-top: 0.85em;
+  padding-bottom: 0.85em;
+}
+
+.cm-divider-line.cm-divider-active {
+  padding-top: 0.35em;
+  padding-bottom: 0.35em;
+}
+
+.cm-divider {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  cursor: text;
+}
+
+.cm-divider-graphic {
+  width: 100%;
+  transition: all 150ms ease;
+}
+
+/* `___` is meant to read as the panel being cut in two, not as a heavier rule.
+   It breaks out to the scroller's padding edges, takes real vertical space, and
+   shades the surface either side so the halves look like separate sheets. */
+.cm-divider-line.cm-divider-line-bold {
+  padding-top: 2.4em;
+  padding-bottom: 2.4em;
+}
+
+.cm-divider-line.cm-divider-line-bold.cm-divider-active {
+  padding-top: 0.9em;
+  padding-bottom: 0.9em;
+}
+
+.cm-divider-bold {
+  position: relative;
+}
+
+.cm-divider-bold .cm-divider-graphic {
+  height: 3px;
+  border-radius: 0;
+  /* The scroller pads 24px each side; cancelling it reaches the panel edge. */
+  margin-left: -24px;
+  margin-right: -24px;
+  width: calc(100% + 48px);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent, #f59e0b) 6%,
+    var(--accent, #f59e0b) 94%,
+    transparent 100%
+  );
+  box-shadow: 0 0 20px var(--accent-soft, rgba(245, 158, 11, 0.45)),
+    0 0 4px var(--accent, #f59e0b);
+}
+
+/* The seam: a darkened band above and below the bar, so the eye reads an edge
+   rather than a line drawn on a continuous page. */
+.cm-divider-bold::before,
+.cm-divider-bold::after {
+  content: "";
+  position: absolute;
+  left: -24px;
+  right: -24px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.cm-divider-bold::before {
+  bottom: 50%;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.3), transparent);
+}
+
+.cm-divider-bold::after {
+  top: 50%;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.3), transparent);
+}
+
+.cm-divider-subtle .cm-divider-graphic {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.cm-divider-raw {
+  font-family: var(--font-mono);
+  letter-spacing: 2px;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.cm-divider-raw-bold {
+  color: var(--accent, #f59e0b);
+  font-weight: 600;
+}
+
+.cm-divider-raw-subtle {
+  color: var(--muted);
 
 /* ---------- prompt template variable autocompletion & preview ---------- */
 

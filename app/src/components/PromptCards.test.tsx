@@ -44,8 +44,11 @@ describe("PromptCards vertical resizing & persistence", () => {
         models: {},
         model: null,
         bubbleTags: {},
+        bubbleIssues: {},
+        issueStates: {},
+        remote: null,
         project: null,
-        onHold: false,
+        mark: "off",
       },
       children: [
         {
@@ -297,7 +300,10 @@ describe("PromptCards prompt template variable autocomplete & preview substituti
         model: null,
         bubbleTags: {},
         project: null,
-        onHold: false,
+        mark: "off",
+        bubbleIssues: {},
+        issueStates: {},
+        remote: null,
       },
       children: [
         {
@@ -318,7 +324,7 @@ describe("PromptCards prompt template variable autocomplete & preview substituti
           collection: null,
           summary: null,
           updated: "2026-08-01T00:00:00Z",
-          onHold: false,
+          mark: "off",
         },
       ],
       promptHeights: {},

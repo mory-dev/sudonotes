@@ -17,6 +17,7 @@ import { IdeaMark, PromptMark, TypeBadge } from "./NoteMarks";
 import { ProjectLink } from "./ProjectLink";
 import { TagChip } from "./TagChip";
 import { TagInput } from "./TagInput";
+import { resolveBubbleModel, resolveBubbleTags } from "./Editor";
 import { TemplateVariableAutocomplete } from "./TemplateVariableAutocomplete";
 
 function formatDate(value: string) {
@@ -372,7 +373,7 @@ function Metadata() {
           <Row label="Bubble tags">
             <TagInput
               key={bubble!}
-              value={note.bubbleTags?.[bubble!] ?? []}
+              value={resolveBubbleTags(note.bubbleTags, bubble!)}
               suggestions={tagSuggestions}
               onChange={(tags) => void setBubbleTags(bubble!, tags)}
             />
@@ -384,7 +385,7 @@ function Metadata() {
             {onBubble ? (
               <ModelPicker
                 key={bubble!}
-                value={note.models?.[bubble!] ?? ""}
+                value={resolveBubbleModel(note.models, bubble!) ?? ""}
                 onChange={(value) => void setBubbleModel(bubble!, value || null)}
               />
             ) : (

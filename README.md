@@ -55,6 +55,7 @@ LLM prompts end up scattered across chat histories, scratch files, and half-aban
 - **Lightweight.** Built with Tauri — the installer is ~20MB and it uses your system's webview instead of shipping a browser.
 - **Fast search.** SQLite FTS5 over every note. `Ctrl+K` from anywhere.
 - **Linked.** Wiki-style `[[links]]` with backlinks, so prompts and the ideas behind them stay connected.
+- **Shippable.** Turn an idea bubble into a GitHub issue, and watch it retire itself when the issue closes.
 - **Open source.** MIT.
 
 AI assistance can analyze prompt/model fit, suggest refinements, and add tags. It is on by default and needs no API key of your own — requests go through the sudonotes API, which holds the provider key. Enabling it sends the note's content to that service; turn it off per vault to keep note content local. Note bodies are never logged by the sudonotes proxy, and a failed automatic-tag request can fall back to a local keyword pass.
@@ -73,6 +74,24 @@ it instead of silently overwriting it.
 [Read the project-linking and IDEAS.md guide](https://sudonotes.com/docs/project-linking/).
 [Learn how to structure IDEAS.md for a local LLM or coding agent](https://sudonotes.com/docs/ideas-md-for-llms/).
 
+## GitHub issues from idea bubbles
+
+When a linked project is a GitHub repository, any idea bubble can become an issue
+without being retyped. The bubble keeps a reference to the issue it became, and
+once that issue closes the bubble dims — optionally deleting itself, off by
+default.
+
+The draft is written from your own words: a model may add a title and a sentence
+of context, but the bubble's text is reproduced verbatim, and the app restores it
+if the model paraphrases. The bubble's tags become labels on the issue.
+
+Issues are created **by your own account** using GitHub's device flow. The
+sudonotes GitHub App asks only for **Issues** (read & write) and **Metadata**
+(read) on the repositories you pick — it cannot read your code. The token is kept
+in your operating system's credential store, never in the vault.
+
+[Read the GitHub issues guide](https://sudonotes.com/docs/github-issues/).
+
 ## Vault layout
 
 A vault is just a directory:
@@ -83,6 +102,7 @@ A vault is just a directory:
   ideas/**.md
   .sudonotes/index.db        # search index — a cache, rebuilt on launch
   .sudonotes/settings.json   # whether AI is on for this vault
+  .sudonotes/github.json     # whether closed issues delete their bubble
 ```
 
 Deleting `.sudonotes/` costs you nothing but the index and that one preference,

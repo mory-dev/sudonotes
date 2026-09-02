@@ -37,6 +37,45 @@ impl NoteType {
     }
 }
 
+/// The sidebar marker on an idea, cycled off → orange → green.
+///
+/// Orange is what the old boolean `onHold` meant, so a note written before this
+/// existed reads back as orange rather than losing its mark.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MarkState {
+    #[default]
+    Off,
+    Orange,
+    Green,
+}
+
+impl MarkState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MarkState::Off => "off",
+            MarkState::Orange => "orange",
+            MarkState::Green => "green",
+        }
+    }
+
+    /// Read a mark from frontmatter or from the frontend.
+    ///
+    /// Also accepts the booleans the `onHold` key used to hold, which is what
+    /// keeps existing vaults from silently losing their marks.
+    pub fn parse(value: &str) -> MarkState {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "green" => MarkState::Green,
+            "orange" | "true" | "yes" | "1" => MarkState::Orange,
+            _ => MarkState::Off,
+        }
+    }
+
+    pub fn is_off(self) -> bool {
+        matches!(self, MarkState::Off)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Frontmatter {
     pub id: String,
@@ -53,14 +92,18 @@ pub struct Frontmatter {
     /// Absolute path of a software project this idea is linked to. The note is
     /// mirrored into that project's root so it can be worked on in place.
     pub project: Option<String>,
-    /// Whether this idea is currently paused/on hold in the sidebar.
-    pub on_hold: bool,
+    /// How this idea is marked in the sidebar.
+    pub mark: MarkState,
     /// Per-bubble model assignment for idea notes: the first line of a bubble
     /// maps to the model that bubble's prompt targets.
     pub models: BTreeMap<String, String>,
     /// Per-bubble tags for idea notes: the first line of a bubble maps to the
     /// small set of tags attached to that bubble.
     pub bubble_tags: BTreeMap<String, Vec<String>>,
+    /// Per-bubble GitHub issue: the first line of a bubble maps to the issue it
+    /// became, as `owner/repo#123`. Only which issue is durable — whether it is
+    /// open or closed is cached in the index and re-fetched, never written here.
+    pub bubble_issues: BTreeMap<String, String>,
     pub created: String,
     pub updated: String,
 }
@@ -95,9 +138,10 @@ impl Note {
                 source: None,
                 position: None,
                 project: None,
-                on_hold: false,
+                mark: MarkState::Off,
                 models: BTreeMap::new(),
                 bubble_tags: BTreeMap::new(),
+                bubble_issues: BTreeMap::new(),
                 created: now.clone(),
                 updated: now,
             },
@@ -164,15 +208,19 @@ impl Note {
             .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, Vec<String>>>(v).ok())
             .unwrap_or_default();
 
-        let on_hold = optional("onHold")
+        let bubble_issues = fields
+            .iter()
+            .find(|(k, _)| k == "bubbleIssues")
+            .and_then(|(_, v)| serde_json::from_str::<BTreeMap<String, String>>(v).ok())
+            .unwrap_or_default();
+
+        // `onHold` is the boolean this replaced; reading it keeps notes written
+        // before the third state from losing their mark.
+        let mark = optional("mark")
+            .or_else(|| optional("onHold"))
             .or_else(|| optional("on_hold"))
-            .map(|value| {
-                matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "true" | "yes" | "1"
-                )
-            })
-            .unwrap_or(false);
+            .map(|value| MarkState::parse(&value))
+            .unwrap_or_default();
 
         Note {
             frontmatter: Frontmatter {
@@ -184,9 +232,10 @@ impl Note {
                 source: optional("source"),
                 position: optional("position").and_then(|v| v.parse().ok()),
                 project: optional("project"),
-                on_hold,
+                mark,
                 models,
                 bubble_tags,
+                bubble_issues,
                 created,
                 updated,
             },
@@ -220,8 +269,8 @@ impl Note {
         if let Some(project) = &fm.project {
             extras.push_str(&format!("project: {}\n", quote(project)));
         }
-        if fm.on_hold {
-            extras.push_str("onHold: true\n");
+        if !fm.mark.is_off() {
+            extras.push_str(&format!("mark: {}\n", fm.mark.as_str()));
         }
         if !fm.models.is_empty() {
             if let Ok(json) = serde_json::to_string(&fm.models) {
@@ -231,6 +280,11 @@ impl Note {
         if !fm.bubble_tags.is_empty() {
             if let Ok(json) = serde_json::to_string(&fm.bubble_tags) {
                 extras.push_str(&format!("bubbleTags: {json}\n"));
+            }
+        }
+        if !fm.bubble_issues.is_empty() {
+            if let Ok(json) = serde_json::to_string(&fm.bubble_issues) {
+                extras.push_str(&format!("bubbleIssues: {json}\n"));
             }
         }
 
@@ -635,15 +689,48 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_on_hold_status() {
-        let mut note = Note::new("Paused idea", "A project to revisit later.".into());
-        note.frontmatter.on_hold = true;
+    fn round_trips_bubble_issues() {
+        let mut note = Note::new("Brainstorm", "First bubble.\n\nSecond bubble.\n".into());
+        note.frontmatter
+            .bubble_issues
+            .insert("First bubble.".into(), "mory-dev/sudonotes#42".into());
         let markdown = note.to_markdown();
-        assert!(markdown.contains("onHold: true"));
-        assert!(Note::parse(&markdown, "fallback").frontmatter.on_hold);
+        let reparsed = Note::parse(&markdown, "fallback");
+        assert_eq!(
+            reparsed.frontmatter.bubble_issues.get("First bubble."),
+            Some(&"mory-dev/sudonotes#42".to_string())
+        );
+        assert!(markdown.contains("bubbleIssues:"));
 
+        // A note with no linked issues never emits the key.
+        let plain = Note::new("x", "y".into());
+        assert!(!plain.to_markdown().contains("bubbleIssues:"));
+    }
+
+    #[test]
+    fn round_trips_each_mark_state() {
+        for mark in [MarkState::Orange, MarkState::Green] {
+            let mut note = Note::new("Marked idea", "A project to revisit later.".into());
+            note.frontmatter.mark = mark;
+            let markdown = note.to_markdown();
+            assert!(markdown.contains(&format!("mark: {}", mark.as_str())));
+            assert_eq!(Note::parse(&markdown, "fallback").frontmatter.mark, mark);
+        }
+
+        // An unmarked idea keeps its five-line frontmatter.
         let plain = Note::new("Active idea", "Keep moving.".into());
-        assert!(!plain.to_markdown().contains("onHold:"));
+        assert!(!plain.to_markdown().contains("mark:"));
+        assert!(plain.frontmatter.mark.is_off());
+    }
+
+    #[test]
+    fn reads_the_boolean_on_hold_this_replaced() {
+        // Vaults written before the third state existed must not lose a mark.
+        let legacy = "---\nid: 01J\ntitle: \"Paused\"\ntags: []\nonHold: true\ncreated: x\nupdated: y\n---\nBody\n";
+        assert_eq!(Note::parse(legacy, "fallback").frontmatter.mark, MarkState::Orange);
+
+        let off = "---\nid: 01J\ntitle: \"Active\"\ntags: []\nonHold: false\ncreated: x\nupdated: y\n---\nBody\n";
+        assert!(Note::parse(off, "fallback").frontmatter.mark.is_off());
     }
 
     #[test]
