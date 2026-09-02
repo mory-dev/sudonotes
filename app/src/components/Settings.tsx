@@ -4,7 +4,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
-import { api, type BackupSettings } from "../api";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { siGithub } from "simple-icons";
+
+import { api, type BackupSettings, type DeviceCode, type GithubSettings } from "../api";
 import { useStore } from "../store";
 
 function formatBytes(bytes: number): string {
@@ -235,6 +238,165 @@ function BackupSection() {
   );
 }
 
+/** Connecting the app to GitHub, so bubbles can become issues.
+ *
+ *  Sign-in is the OAuth device flow: GitHub hands out a short code, the user
+ *  approves it in a browser, and the resulting token goes to the OS keychain.
+ *  Which repositories are reachable is decided on GitHub when installing the
+ *  sudonotes App, not here. */
+function GithubSection() {
+  const setError = useStore((s) => s.setError);
+  const setNotice = useStore((s) => s.setNotice);
+  // Shared, not local: the bubble menu decides what to offer from the same state.
+  const auth = useStore((s) => s.githubAuth);
+  const setAuth = useStore((s) => s.setGithubAuth);
+  const loadAuth = useStore((s) => s.loadGithubAuth);
+
+  const [code, setCode] = useState<DeviceCode | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [prefs, setPrefs] = useState<GithubSettings | null>(null);
+
+  useEffect(() => {
+    void loadAuth();
+    api
+      .getGithubSettings()
+      .then(setPrefs)
+      .catch(() => setPrefs(null));
+  }, [loadAuth]);
+
+  const setAutoDelete = async (enabled: boolean) => {
+    try {
+      setPrefs(await api.setGithubAutoDelete(enabled));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+
+  const connect = async () => {
+    setBusy(true);
+    try {
+      const device = await api.githubDeviceCode();
+      setCode(device);
+      // The code is pre-copied because it has to be typed into a page that is
+      // about to take focus.
+      await navigator.clipboard.writeText(device.userCode).catch(() => {});
+      await openUrl(device.verificationUri);
+      // Resolves only once the user approves, denies, or the code expires.
+      const next = await api.githubAwaitLogin();
+      setAuth(next);
+
+      // Signing in grants nothing by itself. An account with no installation
+      // anywhere cannot file an issue on any repository, so carry straight on
+      // to picking them rather than letting the next attempt fail with a 403.
+      if (next.connected && !(await api.githubHasInstallation().catch(() => true))) {
+        setNotice("Now choose which repositories sudonotes may open issues on.");
+        await openUrl(await api.githubInstallUrl());
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCode(null);
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    try {
+      setAuth(await api.githubLogout());
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  if (!auth) return null;
+
+  return (
+    <section className="settings-section">
+      <h3 className="settings-heading-mark">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d={siGithub.path} />
+        </svg>
+        GitHub
+      </h3>
+
+      {auth.error ? (
+        <p className="ai-tip">
+          GitHub sign-in is unavailable on this machine: {auth.error} sudonotes stores its GitHub
+          token in the operating system&apos;s credential store, and cannot reach one here.
+          Everything else works as normal.
+        </p>
+      ) : auth.connected ? (
+        <>
+          <dl className="settings-meta">
+            <div className="meta-row">
+              <dt>Account</dt>
+              <dd>{auth.login ? `@${auth.login}` : "Connected"}</dd>
+            </div>
+          </dl>
+          <p className="ai-tip">
+            Issues are created by your own account. Signing in does not by itself grant access to
+            any repository — that is chosen separately, per account, with the button below. Linked
+            issues refresh themselves whenever you come back to the app.
+          </p>
+          {prefs && (
+            <>
+              <label className="ai-toggle">
+                <input
+                  type="checkbox"
+                  checked={prefs.autoDeleteClosed}
+                  onChange={(event) => void setAutoDelete(event.target.checked)}
+                />
+                <span>Delete a bubble when its issue closes</span>
+              </label>
+              <p className="ai-tip">
+                Off by default, because it removes text you wrote. A closed issue always mutes its
+                bubble; this deletes it as well. Undo is offered on the toast that follows, for as
+                long as the app stays open.
+              </p>
+            </>
+          )}
+
+          <div className="settings-actions">
+            <button
+              className="ai-analyze"
+              onClick={() => void api.githubInstallUrl().then((url) => openUrl(url))}
+            >
+              Choose repositories…
+            </button>
+            <button className="ai-analyze" onClick={() => void disconnect()} disabled={busy}>
+              Disconnect
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="ai-tip">
+            Connect an account to turn idea bubbles into GitHub issues and see when those issues
+            close. The token is kept in your operating system&apos;s credential store.
+          </p>
+          {code ? (
+            <dl className="settings-meta">
+              <div className="meta-row">
+                <dt>Code</dt>
+                <dd>
+                  <strong className="github-code">{code.userCode}</strong> — copied, and waiting for
+                  you to approve it on GitHub.
+                </dd>
+              </div>
+            </dl>
+          ) : null}
+          <div className="settings-actions">
+            <button className="ai-analyze" onClick={() => void connect()} disabled={busy}>
+              {busy ? "Waiting for GitHub…" : "Connect GitHub"}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Application settings, opened from the status bar's cog.
  *
  *  The AI switch used to be a permanent section of the right panel, where it
@@ -405,6 +567,8 @@ export function Settings() {
             default and can be hidden without removing the metadata.
           </p>
         </section>
+
+        <GithubSection />
 
         <BackupSection />
 

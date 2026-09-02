@@ -41,6 +41,11 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "linux": {
+      "deb": {
+        "depends": ["libdbus-1-3"]
+      }
+    },
     "windows": {
       "signCommand": {
         "cmd": "cmd",

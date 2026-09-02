@@ -886,6 +886,24 @@ code {
   text-align: left;
 }
 
+/* The GitHub repo the project pushes to. It sits at the end of the card rather
+   than under the path so a long path cannot squeeze it out. */
+.project-remote {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 6px;
+  max-width: 40%;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1117,7 +1135,7 @@ kbd {
 }
 
 /* Idea status orb: it stays quiet until the row is hovered, then offers a
-   small muted target. An on-hold idea keeps its amber orb visible at rest. */
+   small muted target. A marked idea keeps its colored orb visible at rest. */
 .idea-note-row {
   position: relative;
 }
@@ -1147,13 +1165,15 @@ kbd {
   background: transparent;
   opacity: 0;
   transform: translateY(-50%);
-  transition: opacity 120ms ease, background 120ms ease;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 .idea-note-row:hover .idea-hold-toggle,
 .idea-collection-head:hover .idea-hold-toggle,
 .idea-hold-toggle:focus-visible,
-.idea-hold-toggle.on {
+.idea-hold-toggle.on,
+.idea-hold-toggle.state-orange,
+.idea-hold-toggle.state-green {
   opacity: 1;
 }
 
@@ -1164,19 +1184,35 @@ kbd {
   border-radius: 50%;
   background: currentColor;
   opacity: 0.55;
+  transition: opacity 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 
 .idea-hold-toggle:hover {
   background: var(--panel-2);
 }
 
-.idea-hold-toggle.on {
+.idea-hold-toggle.on,
+.idea-hold-toggle.state-orange,
+.idea-hold-toggle.orange {
   color: var(--warning);
 }
 
-.idea-hold-toggle.on .idea-hold-orb {
+.idea-hold-toggle.on .idea-hold-orb,
+.idea-hold-toggle.state-orange .idea-hold-orb,
+.idea-hold-toggle.orange .idea-hold-orb {
   opacity: 1;
-  box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.16);
+  box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.22), 0 0 6px rgba(224, 175, 104, 0.35);
+}
+
+.idea-hold-toggle.state-green,
+.idea-hold-toggle.green {
+  color: var(--idea);
+}
+
+.idea-hold-toggle.state-green .idea-hold-orb,
+.idea-hold-toggle.green .idea-hold-orb {
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(158, 206, 106, 0.22), 0 0 6px rgba(158, 206, 106, 0.35);
 }
 
 /* The reorder drag runs on pointer events, so the cursor and text selection are
@@ -2651,8 +2687,9 @@ mark.cm-find-match {
 .bubble-model-menu {
   position: absolute;
   z-index: 30;
-  /* Wider than the picker alone needs: copy, cut and delete sit beside it. */
-  width: 288px;
+  /* Wider than the picker alone needs: the issue, copy, cut and delete buttons
+     sit beside it. */
+  width: 320px;
   padding: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -2747,6 +2784,17 @@ body.bubble-dragging * {
   stroke-width: 1.3;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The GitHub mark is a filled brand glyph, unlike the stroked icons beside it. */
+.bubble-model-copy.bubble-issue svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* A bubble whose issue is closed: the button recedes with the bubble it acts on. */
+.bubble-model-copy.bubble-issue.closed {
+  opacity: 0.5;
 }
 
 /* The delete bubble button is a small icon button, not a full `.danger`
@@ -3324,6 +3372,20 @@ button.status-item:hover {
   color: var(--muted);
 }
 
+/* A section headed by a service's own mark rather than words alone. The glyph
+   is a filled brand path, so it takes the heading's colour rather than a stroke. */
+.settings-section h3.settings-heading-mark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-heading-mark svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
 .settings-meta {
   margin: 8px 0 0;
 }
@@ -3556,6 +3618,72 @@ button.status-item:hover {
 }
 
 /* The retention number fields (keep-count and interval) in the backup row. */
+/* The one thing a toast can offer to do, e.g. undoing an auto-delete. */
+.toast-action {
+  flex: none;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  border-color: var(--accent);
+}
+
+/* The issue draft reuses the settings dialog shell, but its body needs room to
+   read as prose rather than as a preference. */
+.issue-draft {
+  max-width: 640px;
+}
+
+.issue-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.issue-field input,
+.issue-field textarea {
+  width: 100%;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.issue-field textarea {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.issue-field input:focus,
+.issue-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The device-flow code. It is read off the screen and typed into a browser, so
+   it is spaced out and monospaced rather than styled to blend in. */
+.github-code {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+
 .backup-number {
   display: flex;
   align-items: center;

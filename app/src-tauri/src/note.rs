@@ -8,7 +8,8 @@ use std::fs;
 use std::path::Path;
 
 pub use sudonotes_core::note::{
-    extract_links, filename_for, now_rfc3339, replace_links, slugify, Note, NoteType,
+    extract_links, filename_for, now_rfc3339, replace_links, slugify, Frontmatter, MarkState, Note,
+    NoteType,
 };
 
 /// Writing a note to a real path. An extension trait rather than an inherent

@@ -1,6 +1,9 @@
-// jsdom cannot lay out text, so CodeMirror's text-size measurement (which
+﻿// jsdom cannot lay out text, so CodeMirror's text-size measurement (which
 // reads client rects of hidden tile elements) would see zero-sized ranges and
 // throw. Give it a fixed fake rect so the editor measures cleanly in tests.
+
+// @ts-expect-error React act environment flag
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 function fakeRect() {
   return {
