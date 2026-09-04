@@ -1093,9 +1093,18 @@ export const useStore = create<AppState>((set, get) => ({
 
     const active = get().active;
     if (!active) return;
+    const id = active.id;
 
     try {
-      const fresh = await api.readNote(active.id);
+      const fresh = await api.readNote(id);
+
+      // The read is a round trip, and the user can pick another note while it
+      // is in flight. Writing the note captured above back into `active` would
+      // then reopen a note they have already left — and, worse, leave the
+      // editor holding one note's text under another's id. Anything stale is
+      // simply dropped; the note that is open now has its own refresh.
+      const current = get().active;
+      if (!current || current.id !== id) return;
 
       // Mid-edit, the text on disk is older than what is on screen, so it must
       // not be taken. The issue states are not the user's to edit and change
@@ -1103,7 +1112,7 @@ export const useStore = create<AppState>((set, get) => ({
       // lands between two keystrokes is simply lost, and a bubble keeps showing
       // a state its issue left minutes ago.
       if (get().dirty) {
-        set({ active: { ...active, issueStates: fresh.issueStates } });
+        set({ active: { ...current, issueStates: fresh.issueStates } });
         return;
       }
 
@@ -1112,11 +1121,13 @@ export const useStore = create<AppState>((set, get) => ({
       // note on a text change left the editor showing a stale issue state
       // forever. Only the doc version is gated, because bumping it reloads
       // CodeMirror and moves the cursor.
-      const textChanged = fresh.body !== active.body || fresh.title !== active.title;
+      const textChanged = fresh.body !== current.body || fresh.title !== current.title;
       set(textChanged ? { active: fresh, docVersion: get().docVersion + 1 } : { active: fresh });
     } catch {
-      // The note was deleted or moved while it was open.
-      set({ active: null, backlinks: [] });
+      // The note was deleted or moved while it was open — unless the user has
+      // already moved on, in which case this says nothing about what is open.
+      const current = get().active;
+      if (current?.id === id) set({ active: null, backlinks: [] });
     }
   },
 

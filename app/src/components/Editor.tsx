@@ -3071,24 +3071,39 @@ export function Editor() {
         }
         if (!update.docChanged || applying.current) return;
         const id = activeId.current;
-        if (id) {
-          const docStr = update.state.doc.toString();
-          const scrollTop = update.view.scrollDOM.scrollTop;
-          const vaultPath = useStore.getState().vaultPath ?? "";
-
-          editorStateCache.set(id, {
-            state: update.state,
-            scrollTop,
-            updatedAt: Date.now(),
-          });
-
-          saveHistoryDebounced(vaultPath, id, update.state, scrollTop);
-          useStore.getState().queueSave(id, docStr);
-
-          const active = useStore.getState().active;
-          if (active && active.id === id && active.body !== docStr) {
-            useStore.setState({ active: { ...active, body: docStr } });
+        const active = useStore.getState().active;
+        // The ref and the store are updated by separate paths, so they can fall
+        // out of step for a tick. Persisting the document under a mismatched id
+        // writes one note's text over another's, so nothing is filed under `id`
+        // until the store agrees it is the note on screen. The reload effect
+        // resyncs the document, and the keystroke is re-saved from there.
+        if (!id || !active || active.id !== id) {
+          if (id && active) {
+            console.warn(
+              "sudonotes: dropped a save for",
+              id,
+              "while the open note was",
+              active.id,
+            );
           }
+          return;
+        }
+
+        const docStr = update.state.doc.toString();
+        const scrollTop = update.view.scrollDOM.scrollTop;
+        const vaultPath = useStore.getState().vaultPath ?? "";
+
+        editorStateCache.set(id, {
+          state: update.state,
+          scrollTop,
+          updatedAt: Date.now(),
+        });
+
+        saveHistoryDebounced(vaultPath, id, update.state, scrollTop);
+        useStore.getState().queueSave(id, docStr);
+
+        if (active.body !== docStr) {
+          useStore.setState({ active: { ...active, body: docStr } });
         }
       }),
     ];
