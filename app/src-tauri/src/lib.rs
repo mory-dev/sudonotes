@@ -7,6 +7,7 @@ mod note;
 mod project;
 mod split;
 mod vault;
+mod versions;
 mod watcher;
 
 use std::collections::{BTreeMap, HashSet};
@@ -707,8 +708,12 @@ fn update_note(
             .filter(|t| !t.is_empty())
             .collect();
         note.frontmatter.model = model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
-        note.body = format!("\n{}\n", body.trim());
+        let before = std::mem::replace(&mut note.body, format!("\n{}\n", body.trim()));
         note.frontmatter.updated = note::now_rfc3339();
+
+        if versions::is_destructive(&before, &note.body) {
+            versions::snapshot(&open.vault.root, &id, &content);
+        }
 
         note.write_to(&path)
             .map_err(|e| err("could not write note", e))?;
@@ -1694,8 +1699,15 @@ fn save(state: &State<AppState>, id: &str, edit: impl FnOnce(&mut Note)) -> Resu
         let content = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
 
         let mut note = Note::parse(&content, &title_from_path(&path));
+        let before = note.body.clone();
         edit(&mut note);
         note.frontmatter.updated = note::now_rfc3339();
+
+        // A save that drops most of a note is a rewrite or a bug, and the note
+        // is the only copy either way. Keep the old text before overwriting it.
+        if versions::is_destructive(&before, &note.body) {
+            versions::snapshot(&open.vault.root, id, &content);
+        }
 
         note.write_to(&path)
             .map_err(|e| err("could not write note", e))?;
