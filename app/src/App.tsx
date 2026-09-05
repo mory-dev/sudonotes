@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { ContextMenu } from "./components/ContextMenu";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -22,6 +23,7 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { Welcome } from "./components/Welcome";
 import { WindowChrome } from "./components/WindowChrome";
 import { api } from "./api";
+import { flushPendingHistory } from "./historyStorage";
 import { useStore } from "./store";
 
 import "./App.css";
@@ -300,11 +302,51 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [notice, noticeAction, setNotice]);
 
-  // Never lose an in-flight edit when the window goes away.
+  // Never lose an in-flight edit when the window goes away. `beforeunload`
+  // cannot wait for anything: the flush is asynchronous and the process was
+  // free to exit before the write landed, so the last half-second of typing
+  // could simply be gone. Tauri's close request can be held open, so the save
+  // is allowed to finish and the window is then closed explicitly.
   useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let closing = false;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        const stop = await appWindow.onCloseRequested(async (event) => {
+          if (closing) return;
+          event.preventDefault();
+          closing = true;
+          try {
+            await useStore.getState().flushSave();
+            await flushPendingHistory();
+          } catch {
+            // A failed flush must not trap the user in a window that will not
+            // close; the error has already been surfaced by the store.
+          }
+          await appWindow.destroy();
+        });
+        // Unmounted while the listener was being registered, so detach it now
+        // rather than leave it behind.
+        if (cancelled) stop();
+        else unlisten = stop;
+      } catch {
+        // No Tauri window — a browser build or a test. The `beforeunload`
+        // listener below is all that is available there.
+      }
+    })();
+
+    // Kept as a backstop for the browser-hosted build and for a reload, where
+    // no Tauri close request is raised at all.
     const flush = () => void useStore.getState().flushSave();
     window.addEventListener("beforeunload", flush);
-    return () => window.removeEventListener("beforeunload", flush);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("beforeunload", flush);
+      unlisten?.();
+    };
   }, []);
 
   const content = booting ? (
