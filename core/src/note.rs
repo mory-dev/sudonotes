@@ -124,6 +124,30 @@ pub fn new_id() -> String {
     ulid::Ulid::generate().to_string()
 }
 
+/// A fingerprint of a note body, used as the precondition for a write.
+///
+/// A client that wants to replace a body says which body it believes it is
+/// replacing, and the write is refused if the file says otherwise. That turns
+/// "save this text over whatever is there" — which let a stale or misattributed
+/// document silently overwrite an unrelated note — into a check the caller
+/// cannot skip. It only has to detect *difference*, so a 128-bit FNV-1a keeps
+/// the crate dependency-free and stays identical on every platform.
+pub fn body_hash(body: &str) -> String {
+    const OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
+    const PRIME: u128 = 0x0000000001000000000000000000013b;
+
+    let mut hash = OFFSET;
+    for byte in body.as_bytes() {
+        hash ^= *byte as u128;
+        hash = hash.wrapping_mul(PRIME);
+    }
+    // The length is mixed in separately so that two bodies cannot collide by
+    // being permutations that happen to fold to the same value.
+    hash ^= body.len() as u128;
+    hash = hash.wrapping_mul(PRIME);
+    format!("{hash:032x}")
+}
+
 impl Note {
     /// Build a new note with freshly generated id and timestamps.
     pub fn new(title: &str, body: String) -> Self {

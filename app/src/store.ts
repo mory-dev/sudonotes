@@ -58,10 +58,111 @@ function shouldAutoTag(id: string, body: string): boolean {
 /** Debounced-save bookkeeping. The note id travels with the pending body so a
  *  save can never land on the wrong note after the user switches away. */
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let pending: { id: string; body: string } | null = null;
+/** Unsaved bodies by note id. Keyed per note rather than held in a single slot
+ *  so queueing an edit for one note cannot discard another's. */
+const pending = new Map<string, string>();
 let pendingMigrations: Array<{ id: string; oldKey: string; newKey: string }> = [];
 
+/** The fingerprint of the body each note was last known to have on disk, keyed
+ *  by note id. Sent with a save as its precondition: if the file no longer
+ *  matches, the write is refused rather than overwriting whatever is there. */
+const baseHashes = new Map<string, string>();
+
+/** Marker the backend puts on a refused write. */
+const CONFLICT_PREFIX = "note-conflict:";
+
 const message = (e: unknown) => (typeof e === "string" ? e : String(e));
+
+const isConflict = (e: unknown) => message(e).includes(CONFLICT_PREFIX);
+
+/** Forget every cached trace of a note's text, so nothing stale can be restored
+ *  or saved as that note afterwards. */
+function forgetCachedDocument(id: string, vaultPath: string | null) {
+  baseHashes.delete(id);
+  editorStateCache.delete(id);
+  void deleteHistory(vaultPath, id);
+}
+
+/** Persist one note's pending body, then follow up with the bookkeeping a save
+ *  implies: refreshing the list, naming a still-unnamed note after its first
+ *  line, and auto-tagging. Split out of `flushSave` so several notes can be
+ *  written in one flush. */
+async function writeOne(
+  write: { id: string; body: string },
+  get: () => AppState,
+  set: (partial: Partial<AppState>) => void,
+) {
+  try {
+    // The precondition: the body this save was built on. A write that is not
+    // based on what the file actually holds is refused, so a document that has
+    // drifted out of step cannot silently replace a note's contents.
+    const nextHash = await api.writeNote(
+      write.id,
+      write.body,
+      baseHashes.get(write.id),
+    );
+    baseHashes.set(write.id, nextHash);
+    // Keep the in-memory copy in step so re-selecting the note is a no-op.
+    const active = get().active;
+    if (active?.id === write.id) {
+      set({ active: { ...active, body: write.body } });
+    }
+    await get().refresh();
+
+    // A fresh note takes its title from the first line it grows, until the
+    // user renames it by hand.
+    const current = get().active;
+    const title = titleFromFirstLine(write.body);
+    if (
+      current?.id === write.id &&
+      isPlaceholderTitle(current.title) &&
+      title &&
+      !isPlaceholderTitle(title)
+    ) {
+      await get().rename(title);
+    }
+    if (get().aiSettings.enabled && shouldAutoTag(write.id, write.body)) {
+      // Recorded before the call, so a burst of saves cannot fire twice.
+      tagged.set(write.id, { at: Date.now(), length: write.body.trim().length });
+      void api
+        .autoTagNote(write.id)
+        .then((tags) => {
+          get().noteAiResult(true);
+          const latest = get().active;
+          if (latest?.id === write.id) {
+            set({ active: { ...latest, tags } });
+          }
+          return get().refresh();
+        })
+        .catch(() => get().noteAiResult(false));
+    }
+  } catch (e) {
+    if (isConflict(e)) {
+      // The write was refused because the file is not what this text was built
+      // on. Nothing has been overwritten, which is the point; what is left is
+      // to throw away the document that went out of step and show the note as
+      // it actually stands on disk.
+      forgetCachedDocument(write.id, get().vaultPath ?? "");
+      if (get().active?.id === write.id) {
+        try {
+          const fresh = await api.readNote(write.id);
+          baseHashes.set(fresh.id, fresh.baseHash);
+          set({
+            active: fresh,
+            docVersion: get().docVersion + 1,
+            notice:
+              "This note changed outside the editor, so your last edit was not " +
+              "saved over it. The version on disk is now shown.",
+          });
+        } catch {
+          set({ active: null, backlinks: [] });
+        }
+      }
+      return;
+    }
+    set({ error: message(e) });
+  }
+}
 
 /** The old placeholder a fresh note used to be created with. */
 const DEFAULT_TITLE = "Untitled";
@@ -728,6 +829,8 @@ export const useStore = create<AppState>((set, get) => ({
         api.backlinks(id),
         api.collectionChildren(id),
       ]);
+      // The body just read is what the next save is allowed to replace.
+      baseHashes.set(active.id, active.baseHash);
       set({
         active,
         backlinks,
@@ -864,14 +967,14 @@ export const useStore = create<AppState>((set, get) => ({
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    pending = null;
+    pending.clear();
     // Queued renames describe the text being discarded, so they go with it.
     pendingMigrations = [];
     set({ dirty: false });
   },
 
   queueSave: (id, body) => {
-    pending = { id, body };
+    pending.set(id, body);
     set({ dirty: true });
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => void get().flushSave(), SAVE_DEBOUNCE_MS);
@@ -1003,50 +1106,17 @@ export const useStore = create<AppState>((set, get) => ({
       }
     }
 
-    const write = pending;
-    pending = null;
-    if (!write) return;
+    // Every note with unsaved text is written, not just the last one touched.
+    // A single pending slot meant queueing an edit for a second note silently
+    // discarded the first note's, which is one of the ways typing went missing.
+    const writes = [...pending.entries()].map(([id, body]) => ({ id, body }));
+    pending.clear();
+    if (writes.length === 0) return;
 
-    try {
-      await api.writeNote(write.id, write.body);
-      // Keep the in-memory copy in step so re-selecting the note is a no-op.
-      const active = get().active;
-      if (active?.id === write.id) {
-        set({ active: { ...active, body: write.body } });
-      }
-      set({ dirty: false });
-      await get().refresh();
-
-      // A fresh note takes its title from the first line it grows, until the
-      // user renames it by hand.
-      const current = get().active;
-      const title = titleFromFirstLine(write.body);
-      if (
-        current?.id === write.id &&
-        isPlaceholderTitle(current.title) &&
-        title &&
-        !isPlaceholderTitle(title)
-      ) {
-        await get().rename(title);
-      }
-      if (get().aiSettings.enabled && shouldAutoTag(write.id, write.body)) {
-        // Recorded before the call, so a burst of saves cannot fire twice.
-        tagged.set(write.id, { at: Date.now(), length: write.body.trim().length });
-        void api
-          .autoTagNote(write.id)
-          .then((tags) => {
-            get().noteAiResult(true);
-            const current = get().active;
-            if (current?.id === write.id) {
-              set({ active: { ...current, tags } });
-            }
-            return get().refresh();
-          })
-          .catch(() => get().noteAiResult(false));
-      }
-    } catch (e) {
-      set({ error: message(e) });
+    for (const write of writes) {
+      await writeOne(write, get, set);
     }
+    if (pending.size === 0) set({ dirty: false });
   },
 
   rename: async (title) => {
@@ -1115,6 +1185,16 @@ export const useStore = create<AppState>((set, get) => ({
         set({ active: { ...current, issueStates: fresh.issueStates } });
         return;
       }
+
+      // Not mid-edit, so the file is authoritative. If its text moved, any
+      // cached document and undo history for this note describe a body that no
+      // longer exists, and restoring one would write it back.
+      if (fresh.body !== current.body) {
+        forgetCachedDocument(fresh.id, get().vaultPath ?? "");
+      }
+      // Adopt the file's fingerprint as the base for the next save; leaving the
+      // precondition pointing at a body that is gone would refuse every write.
+      baseHashes.set(fresh.id, fresh.baseHash);
 
       // Always take the fresh copy: metadata can change with the text
       // untouched — an issue closing is exactly that, and gating the whole

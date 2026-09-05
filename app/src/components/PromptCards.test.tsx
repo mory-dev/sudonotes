@@ -29,6 +29,7 @@ describe("PromptCards vertical resizing & persistence", () => {
 
     useStore.setState({
       active: {
+        baseHash: "",
         id: "col-1",
         title: "Test Collection",
         body: "",
@@ -284,6 +285,7 @@ describe("PromptCards prompt template variable autocomplete & preview substituti
 
     useStore.setState({
       active: {
+        baseHash: "",
         id: "col-1",
         title: "Test Collection",
         body: "",

@@ -68,6 +68,9 @@ struct NoteDetail {
     created: String,
     updated: String,
     body: String,
+    /// Fingerprint of `body` as read. Sent back with a save so the write can be
+    /// refused if the file moved on in the meantime.
+    base_hash: String,
     path: String,
 }
 
@@ -882,6 +885,7 @@ fn read_note(id: String, state: State<AppState>) -> Result<NoteDetail> {
             remote,
             created: fm.created,
             updated: fm.updated,
+            base_hash: note::body_hash(&note.body),
             body: note.body,
             path: path.to_string_lossy().to_string(),
         })
@@ -1167,9 +1171,40 @@ fn restore_backup(
     )?)
 }
 
+/// Replace a note's body.
+///
+/// `base` is the fingerprint of the body the caller believes is on disk. It is
+/// optional only so that callers with no prior read (an import, a scripted
+/// write) still work; the editor always sends one, which is what stops a stale
+/// document from overwriting a note it does not belong to.
+/// Returns the fingerprint of the body just written, so the caller can use it as
+/// the precondition for its next save without reading the file again.
 #[tauri::command]
-fn write_note(id: String, body: String, state: State<AppState>) -> Result<()> {
-    save(&state, &id, |note| note.body = body)
+fn write_note(
+    id: String,
+    body: String,
+    base: Option<String>,
+    state: State<AppState>,
+) -> Result<String> {
+    let next = note::body_hash(&body);
+    save_checked(&state, &id, base.as_deref(), |note| note.body = body)?;
+    Ok(next)
+}
+
+/// The fingerprint of a note's body as it currently stands on disk, so a client
+/// can re-establish a precondition after a conflict without a full read.
+#[tauri::command]
+fn note_body_hash(id: String, state: State<AppState>) -> Result<String> {
+    with_vault(&state, |open| {
+        let path = open
+            .index
+            .path_of(&id)
+            .map_err(|e| err("lookup failed", e))?
+            .ok_or("note not found")?;
+        let content = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
+        let note = Note::parse(&content, &title_from_path(&path));
+        Ok(note::body_hash(&note.body))
+    })
 }
 
 #[tauri::command]
@@ -1687,35 +1722,76 @@ fn undo_issue_cleanup(state: State<AppState>) -> Result<u32> {
     Ok(restored)
 }
 
+/// Prefix on the error returned when a write's precondition does not hold, so
+/// the frontend can recognise a conflict rather than parsing prose.
+pub const CONFLICT_PREFIX: &str = "note-conflict:";
+
 /// Read a note, apply an edit, bump `updated`, write it back, and reindex.
 fn save(state: &State<AppState>, id: &str, edit: impl FnOnce(&mut Note)) -> Result<()> {
-    with_vault(state, |open| {
-        let path = open
-            .index
-            .path_of(id)
-            .map_err(|e| err("lookup failed", e))?
-            .ok_or("note not found")?;
-        let note_type = open.vault.type_of(&path).ok_or("note is outside the vault")?;
-        let content = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
+    save_checked(state, id, None, edit)
+}
 
-        let mut note = Note::parse(&content, &title_from_path(&path));
-        let before = note.body.clone();
-        edit(&mut note);
-        note.frontmatter.updated = note::now_rfc3339();
+/// `save`, but refusing to write unless the body on disk is the one the caller
+/// expected to be replacing.
+///
+/// Without this the body was replaced with whatever arrived: a client that had
+/// gone out of step — holding one note's text while believing it was another's,
+/// or holding text from before an external change — overwrote the file and the
+/// old contents were gone. `base` is the fingerprint of the body the caller
+/// last saw, so a save built on anything else is rejected instead of applied.
+fn save_checked(
+    state: &State<AppState>,
+    id: &str,
+    base: Option<&str>,
+    edit: impl FnOnce(&mut Note),
+) -> Result<()> {
+    with_vault(state, |open| save_in_vault(open, id, base, edit))
+}
 
-        // A save that drops most of a note is a rewrite or a bug, and the note
-        // is the only copy either way. Keep the old text before overwriting it.
-        if versions::is_destructive(&before, &note.body) {
-            versions::snapshot(&open.vault.root, id, &content);
+/// The body of `save_checked`, against an open vault rather than Tauri state so
+/// the precondition can be exercised directly in tests.
+fn save_in_vault(
+    open: &mut OpenVault,
+    id: &str,
+    base: Option<&str>,
+    edit: impl FnOnce(&mut Note),
+) -> Result<()> {
+    let path = open
+        .index
+        .path_of(id)
+        .map_err(|e| err("lookup failed", e))?
+        .ok_or("note not found")?;
+    let note_type = open.vault.type_of(&path).ok_or("note is outside the vault")?;
+    let content = std::fs::read_to_string(&path).map_err(|e| err("could not read note", e))?;
+
+    let mut note = Note::parse(&content, &title_from_path(&path));
+    let before = note.body.clone();
+
+    if let Some(expected) = base {
+        if note::body_hash(&before) != expected {
+            return Err(format!(
+                "{CONFLICT_PREFIX} this note changed since it was opened, so the save \
+                 was not applied"
+            ));
         }
+    }
 
-        note.write_to(&path)
-            .map_err(|e| err("could not write note", e))?;
-        sync_mirror(&note);
-        open.index
-            .upsert(note_type, &path, &note, file_mtime(&path))
-            .map_err(|e| err("could not index note", e))
-    })
+    edit(&mut note);
+    note.frontmatter.updated = note::now_rfc3339();
+
+    // A save that replaces the note rather than extending it is a rewrite or a
+    // bug, and the note is the only copy either way. Keep the old text before
+    // overwriting it.
+    if versions::is_destructive(&before, &note.body) {
+        versions::snapshot(&open.vault.root, id, &content);
+    }
+
+    note.write_to(&path)
+        .map_err(|e| err("could not write note", e))?;
+    sync_mirror(&note);
+    open.index
+        .upsert(note_type, &path, &note, file_mtime(&path))
+        .map_err(|e| err("could not index note", e))
 }
 
 #[tauri::command]
@@ -2443,11 +2519,135 @@ fn resolve_link(title: String, state: State<AppState>) -> Result<Option<String>>
 mod tests {
     use super::{
         bubble_blocks, bubble_entries, metadata_matches, move_bubble_key, parse_search_spec,
-        remove_bubble_named,
-        search_vault, strip_paste, Index,
-        Note, OpenVault, Vault,
+        remove_bubble_named, save_in_vault, search_vault, strip_paste, Index, Note, OpenVault,
+        Vault, CONFLICT_PREFIX,
     };
+    use crate::note::body_hash;
     use std::collections::BTreeMap;
+
+    /// A vault holding one idea note, plus the note's id and path.
+    fn vault_with_note(body: &str) -> (tempfile::TempDir, OpenVault, String, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::open(dir.path().to_path_buf()).unwrap();
+
+        let note = Note::new("Target", body.to_string());
+        let id = note.frontmatter.id.clone();
+        let path = vault.root.join("ideas/target.md");
+        std::fs::write(&path, note.to_markdown()).unwrap();
+
+        let mut index = Index::open(&vault.index_path()).unwrap();
+        index.sync(&vault).unwrap();
+
+        (
+            dir,
+            OpenVault {
+                vault,
+                index,
+                _watcher: None,
+            },
+            id,
+            path,
+        )
+    }
+
+    fn body_on_disk(path: &std::path::Path) -> String {
+        let raw = std::fs::read_to_string(path).unwrap();
+        Note::parse(&raw, "Target").body
+    }
+
+    #[test]
+    fn a_write_matching_the_body_on_disk_is_applied() {
+        let (_dir, mut open, id, path) = vault_with_note("original text\n");
+        let base = body_hash("original text\n");
+
+        save_in_vault(&mut open, &id, Some(&base), |note| {
+            note.body = "original text\nplus more\n".to_string()
+        })
+        .unwrap();
+
+        assert_eq!(body_on_disk(&path), "original text\nplus more\n");
+    }
+
+    #[test]
+    fn a_write_built_on_a_body_the_file_no_longer_has_is_refused() {
+        // The regression. A client holding a document that had gone out of step
+        // — in the reported case, one note's text under another note's id —
+        // used to overwrite whatever was on disk. The precondition it sends no
+        // longer matches the file, so the write is refused and nothing is lost.
+        let (_dir, mut open, id, path) = vault_with_note("the note's real contents\n");
+        let stale_base = body_hash("something this note never contained\n");
+
+        let err = save_in_vault(&mut open, &id, Some(&stale_base), |note| {
+            note.body = "text belonging to a different note\n".to_string()
+        })
+        .unwrap_err();
+
+        assert!(err.starts_with(CONFLICT_PREFIX), "unexpected error: {err}");
+        assert_eq!(body_on_disk(&path), "the note's real contents\n");
+    }
+
+    #[test]
+    fn a_refused_write_leaves_the_file_byte_for_byte() {
+        let (_dir, mut open, id, path) = vault_with_note("untouched\n");
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let _ = save_in_vault(&mut open, &id, Some("not the current hash"), |note| {
+            note.body = "replacement\n".to_string()
+        });
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn a_write_without_a_precondition_still_works() {
+        // Importers and scripted writes have no prior read to base a hash on.
+        let (_dir, mut open, id, path) = vault_with_note("start\n");
+
+        save_in_vault(&mut open, &id, None, |note| {
+            note.body = "replaced wholesale\n".to_string()
+        })
+        .unwrap();
+
+        assert_eq!(body_on_disk(&path), "replaced wholesale\n");
+    }
+
+    #[test]
+    fn swapping_in_another_notes_body_is_archived_first() {
+        // Same-size substitution: invisible to the old length-only check, so no
+        // snapshot was taken and the replaced text was gone for good.
+        let original = "this note's own material\n".repeat(30);
+        let (_dir, mut open, id, _path) = vault_with_note(&original);
+        let base = body_hash(&original);
+
+        save_in_vault(&mut open, &id, Some(&base), |note| {
+            note.body = "a different note's material\n".repeat(28)
+        })
+        .unwrap();
+
+        let versions = open
+            .vault
+            .root
+            .join(crate::vault::INDEX_DIR)
+            .join("versions")
+            .join(&id);
+        let kept: Vec<_> = std::fs::read_dir(&versions)
+            .expect("a snapshot directory should exist")
+            .flatten()
+            .collect();
+        assert_eq!(kept.len(), 1, "the replaced body should have been archived");
+        let archived = std::fs::read_to_string(kept[0].path()).unwrap();
+        assert!(archived.contains("this note's own material"));
+    }
+
+    #[test]
+    fn the_body_hash_distinguishes_bodies_and_is_stable() {
+        assert_eq!(body_hash("same"), body_hash("same"));
+        assert_ne!(body_hash("one"), body_hash("two"));
+        // Length is mixed in, so padding cannot collide with the original.
+        assert_ne!(body_hash("abc"), body_hash("abc\0"));
+        assert_ne!(body_hash(""), body_hash("\0"));
+        assert_eq!(body_hash("x").len(), 32);
+    }
 
     #[test]
     fn parses_tag_only_queries_without_losing_spaces() {
@@ -2830,6 +3030,7 @@ pub fn run() {
             backup_now,
             restore_backup,
             write_note,
+            note_body_hash,
             update_model,
             set_note_mark,
             set_bubble_model,

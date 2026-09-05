@@ -88,6 +88,9 @@ export interface NoteDetail extends NoteMeta {
   remote: GithubRemote | null;
   created: string;
   body: string;
+  /** Fingerprint of `body` as it was read. Sent back with a save so the backend
+   *  can refuse a write built on a body that is no longer the one on disk. */
+  baseHash: string;
   path: string;
 }
 
@@ -320,7 +323,14 @@ export const api = {
    *  saved to the backup directory first), returning how many notes came back. */
   restoreBackup: (archive: string, destination: string) =>
     invoke<number>("restore_backup", { archive, destination }),
-  writeNote: (id: string, body: string) => invoke<void>("write_note", { id, body }),
+  /** Replace a note's body. `base` is the fingerprint of the body this write is
+   *  meant to replace; the backend rejects the save if the file says otherwise,
+   *  which is what stops one note's text from overwriting another's. Resolves to
+   *  the fingerprint of the body just written, for use as the next `base`. */
+  writeNote: (id: string, body: string, base?: string) =>
+    invoke<string>("write_note", { id, body, base: base ?? null }),
+  /** The fingerprint of a note's body on disk right now. */
+  noteBodyHash: (id: string) => invoke<string>("note_body_hash", { id }),
   updateModel: (id: string, model: string | null) =>
     invoke<void>("update_model", { id, model }),
   /** Set or cycle the marking state shown beside an idea. */

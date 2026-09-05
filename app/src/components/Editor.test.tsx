@@ -257,6 +257,7 @@ describe("Editor component bubble hover menu layout", () => {
         id: "note-idea-1",
         title: "Test Note",
         body: "# Header Title\nFirst bubble description line 1\nFirst bubble description line 2\n\nSecond bubble content",
+        baseHash: "",
         type: "idea",
         tags: ["feature"],
         models: {},

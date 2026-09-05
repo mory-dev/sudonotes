@@ -301,6 +301,7 @@ describe("Store setNoteMark integration", () => {
         },
       ],
       active: {
+        baseHash: "",
         id: "note-1",
         title: "My Idea",
         type: "idea",

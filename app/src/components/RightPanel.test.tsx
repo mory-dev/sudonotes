@@ -40,6 +40,7 @@ describe("RightPanel Prompt Template Variables & Idea Bubbles Autocompletion", (
 
     useStore.setState({
       active: {
+        baseHash: "",
         id: "prompt-1",
         title: "Test Template Prompt",
         body: "Prompt context: {{offline_alert_queue}} for {{target_audience}} and {{custom_var}}.\nSee [[Offline Alert Idea]] for details.",
