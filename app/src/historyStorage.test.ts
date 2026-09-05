@@ -6,9 +6,11 @@ import {
   buildHistoryKey,
   deserializeHistoryState,
   flushPendingHistory,
+  isHistoryUsable,
   saveHistoryDebounced,
   serializeHistoryState,
 } from "./historyStorage";
+import { noteIdField, noteIdOf, setNoteId } from "./noteIdField";
 
 describe("historyStorage unit tests", () => {
   const extensions = [history({ minDepth: 150, newGroupDelay: 500 })];
@@ -64,5 +66,51 @@ describe("historyStorage unit tests", () => {
     const state = EditorState.create({ doc: "Sample", extensions });
     saveHistoryDebounced("vault-test", "note-test", state, 10, 100);
     await flushPendingHistory();
+  });
+
+  it("carries the note id through serialization", () => {
+    // The id has to survive the round trip, because that is what lets a
+    // restored history be checked against the note it is being restored into.
+    const bound = [...extensions, noteIdField];
+    const state = EditorState.create({ doc: "Body", extensions: bound })
+      .update({ effects: setNoteId.of("note-42") })
+      .state;
+
+    expect(noteIdOf(state)).toBe("note-42");
+
+    const restored = deserializeHistoryState(
+      serializeHistoryState(state, 0).historyJSON,
+      bound,
+    );
+    expect(restored).not.toBeNull();
+    expect(noteIdOf(restored!)).toBe("note-42");
+  });
+});
+
+describe("a stored history is only reused for the text it describes", () => {
+  it("accepts a record that names this note and matches the file", () => {
+    expect(
+      isHistoryUsable({ noteId: "note-1", doc: "on disk" }, "note-1", "on disk"),
+    ).toBe(true);
+  });
+
+  it("rejects a record belonging to another note", () => {
+    // The corrupt state behind the reported bug: one note's revisions filed
+    // under another. Layering them on is what let a foreign body be undone
+    // into place and then written to the file.
+    expect(
+      isHistoryUsable({ noteId: "note-other", doc: "on disk" }, "note-1", "on disk"),
+    ).toBe(false);
+  });
+
+  it("rejects a record describing text the file no longer holds", () => {
+    expect(
+      isHistoryUsable({ noteId: "note-1", doc: "old text" }, "note-1", "new text"),
+    ).toBe(false);
+  });
+
+  it("rejects a missing record", () => {
+    expect(isHistoryUsable(null, "note-1", "on disk")).toBe(false);
+    expect(isHistoryUsable(undefined, "note-1", "on disk")).toBe(false);
   });
 });

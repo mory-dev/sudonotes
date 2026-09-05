@@ -1,6 +1,8 @@
 ﻿import { historyField } from "@codemirror/commands";
 import { EditorState, type Extension } from "@codemirror/state";
 
+import { noteIdField, noteIdOf } from "./noteIdField";
+
 export interface HistoryRecord {
   key: string;
   vaultPath: string;
@@ -73,11 +75,16 @@ export function buildHistoryKey(vaultPath: string | null | undefined, noteId: st
   return `sudonotes:history:${vault}:${noteId}`;
 }
 
+/** The fields carried through serialisation. `noteId` rides along so a restored
+ *  document still knows which note it belongs to and can be checked against the
+ *  note it is being restored into. */
+const SERIALISED_FIELDS = { history: historyField, noteId: noteIdField };
+
 export function serializeHistoryState(
   state: EditorState,
   scrollTop = 0,
 ): { historyJSON: Record<string, unknown>; doc: string; scrollTop: number } {
-  const historyJSON = state.toJSON({ history: historyField });
+  const historyJSON = state.toJSON(SERIALISED_FIELDS);
   return {
     historyJSON,
     doc: state.doc.toString(),
@@ -90,11 +97,7 @@ export function deserializeHistoryState(
   extensions: Extension[],
 ): EditorState | null {
   try {
-    return EditorState.fromJSON(
-      historyJSON,
-      { extensions },
-      { history: historyField },
-    );
+    return EditorState.fromJSON(historyJSON, { extensions }, SERIALISED_FIELDS);
   } catch {
     return null;
   }
@@ -109,6 +112,20 @@ export async function saveHistoryImmediate(
   state: EditorState,
   scrollTop = 0,
 ): Promise<void> {
+  // The document says which note it is. Writing it under a different one would
+  // persist a history that can later be restored onto the wrong note, so the
+  // mismatch is refused here rather than discovered on the way back out.
+  const stateNoteId = noteIdOf(state);
+  if (stateNoteId !== null && stateNoteId !== noteId) {
+    console.warn(
+      "sudonotes: refusing to store history for",
+      stateNoteId,
+      "under",
+      noteId,
+    );
+    return;
+  }
+
   const db = await openHistoryDB();
   if (!db) return;
 
@@ -217,10 +234,33 @@ export async function loadHistory(
   });
 }
 
+/** Whether a stored history may be restored into `noteId`, whose body on disk
+ *  is `currentDoc`.
+ *
+ *  Both conditions matter. The record must name this note, and the document it
+ *  describes must be the one on disk — a history is a list of edits relative to
+ *  a specific text, so against any other text its entries are meaningless at
+ *  best and another note's content at worst. */
+export function isHistoryUsable(
+  record: { noteId?: string; doc?: string } | null | undefined,
+  noteId: string,
+  currentDoc: string,
+): boolean {
+  if (!record) return false;
+  if (record.noteId !== undefined && record.noteId !== noteId) return false;
+  return record.doc === currentDoc;
+}
+
 /**
  * On cold launch or cache miss, rehydrate EditorState from IndexedDB.
- * If the document matches, returns the deserialized state with preserved history.
- * If the document changed externally, applies changes over the restored state to retain undo history.
+ *
+ * The restored history is only offered when it describes exactly the text that
+ * is on disk for this note. Previously a record whose document had moved on was
+ * rebased — the current body was inserted over the stored one so undo still
+ * worked — which meant a record holding a *different note's* revisions kept
+ * them in the stack, one Ctrl+Z away from being restored and autosaved over
+ * this note. There is no safe way to reuse a history that does not belong to
+ * the text, so it is dropped and the caller starts a fresh document.
  */
 export async function loadHistoryState(
   vaultPath: string | null | undefined,
@@ -231,22 +271,26 @@ export async function loadHistoryState(
   const record = await loadHistory(vaultPath, noteId);
   if (!record || !record.historyJSON) return null;
 
+  if (!isHistoryUsable(record, noteId, currentDoc)) {
+    // Stale or foreign. Discarded rather than adapted, so it cannot be undone
+    // back into the file.
+    await deleteHistory(vaultPath, noteId);
+    return null;
+  }
+
   const restored = deserializeHistoryState(record.historyJSON, extensions);
   if (!restored) return null;
 
-  if (restored.doc.toString() === currentDoc) {
-    return { state: restored, scrollTop: record.scrollTop || 0 };
-  }
-
-  // Document changed externally on disk: update cached state using changes to preserve history
-  try {
-    const updated = restored.update({
-      changes: { from: 0, to: restored.doc.length, insert: currentDoc },
-    }).state;
-    return { state: updated, scrollTop: record.scrollTop || 0 };
-  } catch {
+  // Last check, on the restored document itself rather than on the record's own
+  // summary of it. A history written before the id was serialised has no id to
+  // check, and is dropped for the same reason: there is no way to tell whose
+  // edits it holds.
+  if (restored.doc.toString() !== currentDoc || noteIdOf(restored) !== noteId) {
+    await deleteHistory(vaultPath, noteId);
     return null;
   }
+
+  return { state: restored, scrollTop: record.scrollTop || 0 };
 }
 
 /**

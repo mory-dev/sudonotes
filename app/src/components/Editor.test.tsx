@@ -311,7 +311,7 @@ describe("Tier-1 EditorStateCache", () => {
   it("stores and retrieves EditorState and scroll position", () => {
     const cache = new EditorStateCache(50);
     const state = EditorState.create({ doc: "Note A content" });
-    cache.set("note-a", { state, scrollTop: 120 });
+    cache.set("note-a", { noteId: "note-a", state, scrollTop: 120 });
 
     expect(cache.has("note-a")).toBe(true);
     const cached = cache.get("note-a");
@@ -324,6 +324,7 @@ describe("Tier-1 EditorStateCache", () => {
     const cache = new EditorStateCache(50);
     for (let i = 1; i <= 50; i++) {
       cache.set(`note-${i}`, {
+        noteId: `note-${i}`,
         state: EditorState.create({ doc: `Content ${i}` }),
         scrollTop: i * 10,
       });
@@ -336,6 +337,7 @@ describe("Tier-1 EditorStateCache", () => {
 
     // Add note-51: note-2 (the oldest unaccessed) should be evicted, not note-1
     cache.set("note-51", {
+      noteId: "note-51",
       state: EditorState.create({ doc: "Content 51" }),
       scrollTop: 510,
     });
@@ -356,13 +358,13 @@ describe("Multi-note switching preserves undo/redo stacks", () => {
     let state1 = EditorState.create({ doc: "Hello", extensions });
     state1 = state1.update({ changes: { from: 5, insert: " World" } }).state;
     expect(state1.doc.toString()).toBe("Hello World");
-    cache.set("note-1", { state: state1, scrollTop: 0 });
+    cache.set("note-1", { noteId: "note-1", state: state1, scrollTop: 0 });
 
     // Note 2: start with "Alpha", type " Beta"
     let state2 = EditorState.create({ doc: "Alpha", extensions });
     state2 = state2.update({ changes: { from: 5, insert: " Beta" } }).state;
     expect(state2.doc.toString()).toBe("Alpha Beta");
-    cache.set("note-2", { state: state2, scrollTop: 0 });
+    cache.set("note-2", { noteId: "note-2", state: state2, scrollTop: 0 });
 
     // Switch back to Note 1: restore state and undo
     const restored1 = cache.get("note-1")!.state;

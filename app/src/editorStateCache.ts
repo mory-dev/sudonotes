@@ -1,6 +1,9 @@
 ﻿import type { EditorState } from "@codemirror/state";
 
 export interface CachedEditorState {
+  /** The note this document belongs to, recorded so an entry can be checked
+   *  against the slot it is stored in rather than trusted because of it. */
+  noteId: string;
   state: EditorState;
   scrollTop: number;
   updatedAt: number;
@@ -11,6 +14,11 @@ export interface CachedEditorState {
  * Holds active CodeMirror EditorState instances and scroll positions
  * for up to `maxEntries` (default 50) notes to ensure instant note switching
  * without losing undo/redo stacks or scroll positions.
+ *
+ * Every entry names its own note. A cache keyed by note id but holding states
+ * nobody had checked let one note's text — and its undo history — be restored
+ * as another note and written to that note's file, so both the key and the
+ * entry have to agree before anything comes back out.
  */
 export class EditorStateCache {
   private readonly maxEntries: number;
@@ -23,6 +31,12 @@ export class EditorStateCache {
   get(id: string): CachedEditorState | undefined {
     const entry = this.cache.get(id);
     if (!entry) return undefined;
+    // An entry filed under the wrong note is corrupt, not stale: dropping it
+    // costs an undo history, keeping it costs the note's contents.
+    if (entry.noteId !== id) {
+      this.cache.delete(id);
+      return undefined;
+    }
     // Refresh LRU order (delete & re-insert)
     this.cache.delete(id);
     const refreshed: CachedEditorState = { ...entry, updatedAt: Date.now() };
@@ -31,6 +45,12 @@ export class EditorStateCache {
   }
 
   set(id: string, entry: Omit<CachedEditorState, "updatedAt"> & { updatedAt?: number }): void {
+    // Refuse the write outright rather than store a mislabelled entry.
+    if (entry.noteId !== id) {
+      throw new Error(
+        `editorStateCache: refusing to file note ${entry.noteId} under ${id}`,
+      );
+    }
     if (this.cache.has(id)) {
       this.cache.delete(id);
     } else if (this.cache.size >= this.maxEntries) {
@@ -40,6 +60,7 @@ export class EditorStateCache {
       }
     }
     this.cache.set(id, {
+      noteId: entry.noteId,
       state: entry.state,
       scrollTop: entry.scrollTop,
       updatedAt: entry.updatedAt ?? Date.now(),

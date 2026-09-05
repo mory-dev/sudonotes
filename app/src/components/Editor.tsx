@@ -22,6 +22,7 @@ import {
   loadHistoryState,
   saveHistoryDebounced,
 } from "../historyStorage";
+import { noteIdField, noteIdOf, setNoteId } from "../noteIdField";
 import { markdown } from "@codemirror/lang-markdown";
 import {
   defaultHighlightStyle,
@@ -2351,6 +2352,35 @@ export function Editor() {
   // does not queue a save of content the user did not type.
   const applying = useRef(false);
 
+  /** Build a document bound to `id`, so the text and the note it belongs to are
+   *  established in the same state and can never be paired up wrongly later. */
+  const boundState = (id: string | null, body: string) => {
+    const base = EditorState.create({
+      doc: body,
+      selection: { anchor: 0 },
+      extensions: extensionsRef.current,
+    });
+    return base.update({ effects: setNoteId.of(id) }).state;
+  };
+
+  /** Swap the document in without the change listener treating it as typing.
+   *  The flag is cleared in a `finally`: left stuck on by a throw it silenced
+   *  every later save, and left stuck off it let a replacement be saved as if
+   *  the user had typed it. */
+  const applyDocument = (
+    editor: EditorView,
+    state: EditorState,
+    scrollTop?: number,
+  ) => {
+    applying.current = true;
+    try {
+      editor.setState(state);
+      if (scrollTop !== undefined) editor.scrollDOM.scrollTop = scrollTop;
+    } finally {
+      applying.current = false;
+    }
+  };
+
   // The per-bubble model menu: where it is anchored and which bubble it is for.
   // Coordinates are relative to .editor-wrap so the menu tracks the bubble at
   // any UI zoom level (Ctrl +/-), not just at 100%.
@@ -2864,6 +2894,9 @@ export function Editor() {
     if (!host.current) return;
 
     const extensions: Extension[] = [
+      // First, so every state built from these extensions can be asked which
+      // note its text belongs to before anything is persisted under an id.
+      noteIdField,
       history({ minDepth: 150, newGroupDelay: 500 }),
       // The bubble's content stays editable — typing, paste, and delete
       // inside the pair are fine — but the marker lines themselves (and the
@@ -3070,23 +3103,36 @@ export function Editor() {
           useStore.getState().setHoverBubble(null);
         }
         if (!update.docChanged || applying.current) return;
-        const id = activeId.current;
-        const active = useStore.getState().active;
-        // The ref and the store are updated by separate paths, so they can fall
-        // out of step for a tick. Persisting the document under a mismatched id
-        // writes one note's text over another's, so nothing is filed under `id`
-        // until the store agrees it is the note on screen. The reload effect
-        // resyncs the document, and the keystroke is re-saved from there.
-        if (!id || !active || active.id !== id) {
-          if (id && active) {
-            console.warn(
-              "sudonotes: dropped a save for",
-              id,
-              "while the open note was",
-              active.id,
-            );
-          }
+
+        // The document names the note it belongs to, so the text and the id it
+        // is filed under come from one snapshot and cannot drift apart. This
+        // replaces trusting a ref that the text knew nothing about: the ref
+        // could already point at the next note while the document still held
+        // the previous one's body, and the save then overwrote that note.
+        //
+        // Because the id travels with the text, a disagreement no longer means
+        // the keystroke has to be thrown away. It is written under the id the
+        // document itself carries, which is right whatever the ref and the
+        // store currently believe.
+        const id = noteIdOf(update.state);
+        if (!id) {
+          // Only an unbound document — the empty placeholder before any note is
+          // open — has nothing to be saved under.
           return;
+        }
+
+        const active = useStore.getState().active;
+        if (activeId.current !== id || active?.id !== id) {
+          // Not fatal any more, but it still means a note switch is only
+          // half-applied, so it is worth seeing in a log while that settles.
+          console.warn(
+            "sudonotes: document for",
+            id,
+            "changed while the ref said",
+            activeId.current,
+            "and the store said",
+            active?.id ?? null,
+          );
         }
 
         const docStr = update.state.doc.toString();
@@ -3094,6 +3140,7 @@ export function Editor() {
         const vaultPath = useStore.getState().vaultPath ?? "";
 
         editorStateCache.set(id, {
+          noteId: id,
           state: update.state,
           scrollTop,
           updatedAt: Date.now(),
@@ -3102,7 +3149,10 @@ export function Editor() {
         saveHistoryDebounced(vaultPath, id, update.state, scrollTop);
         useStore.getState().queueSave(id, docStr);
 
-        if (active.body !== docStr) {
+        // Only the note the store actually has open may have its cached body
+        // refreshed; doing it unconditionally would put this text on another
+        // note's record in memory.
+        if (active?.id === id && active.body !== docStr) {
           useStore.setState({ active: { ...active, body: docStr } });
         }
       }),
@@ -3123,7 +3173,10 @@ export function Editor() {
         !current ||
         !currentActive ||
         currentActive.type !== "idea" ||
-        currentActive.id !== activeId.current
+        currentActive.id !== activeId.current ||
+        // The offsets came from the note the store has open, so they only mean
+        // anything if the document on screen is that same note's text.
+        noteIdOf(current.state) !== currentActive.id
       ) {
         return false;
       }
@@ -3158,7 +3211,8 @@ export function Editor() {
         !current ||
         !currentActive ||
         currentActive.type !== "idea" ||
-        currentActive.id !== activeId.current
+        currentActive.id !== activeId.current ||
+        noteIdOf(current.state) !== currentActive.id
       ) {
         return false;
       }
@@ -3194,10 +3248,14 @@ export function Editor() {
       endBubbleDrag(false);
       if (jumpTimer.current) clearTimeout(jumpTimer.current);
 
-      const curId = activeId.current;
+      // Store the closing document under the note it names, not under whatever
+      // the ref happens to hold, so a teardown mid-switch cannot leave one
+      // note's text sitting in another's cache slot.
+      const curId = editor ? noteIdOf(editor.state) : null;
       if (curId && editor) {
         const curScrollTop = editor.scrollDOM.scrollTop;
         editorStateCache.set(curId, {
+          noteId: curId,
           state: editor.state,
           scrollTop: curScrollTop,
           updatedAt: Date.now(),
@@ -3223,9 +3281,14 @@ export function Editor() {
     const nextId = active?.id ?? null;
     const vaultPath = useStore.getState().vaultPath ?? "";
 
-    if (prevId && prevId !== nextId) {
+    // Only cache the outgoing document under the note it says it belongs to.
+    // Filing it under `prevId` on trust is how a stale document ended up in
+    // another note's slot, ready to be restored — and saved — as that note.
+    const outgoingId = noteIdOf(editor.state);
+    if (prevId && prevId !== nextId && outgoingId === prevId) {
       const prevScrollTop = editor.scrollDOM.scrollTop;
       editorStateCache.set(prevId, {
+        noteId: prevId,
         state: editor.state,
         scrollTop: prevScrollTop,
         updatedAt: Date.now(),
@@ -3242,77 +3305,73 @@ export function Editor() {
     }
 
     if (!nextId || !active) {
-      applying.current = true;
-      editor.setState(
-        EditorState.create({
-          doc: "",
-          selection: { anchor: 0 },
-          extensions: extensionsRef.current,
-        }),
-      );
-      applying.current = false;
+      applyDocument(editor, boundState(null, ""));
       return;
     }
 
     const activeBody = active.body ?? "";
+    // A cached entry is only usable if it agrees, both in its own record and in
+    // its document, that it is this note. Anything else is discarded rather
+    // than adapted: reusing it is what let one note's text and undo history
+    // stand in for another's.
     const cached = editorStateCache.get(nextId);
+    const usable =
+      cached && cached.noteId === nextId && noteIdOf(cached.state) === nextId
+        ? cached
+        : undefined;
+    if (cached && !usable) {
+      editorStateCache.delete(nextId);
+    }
 
-    if (cached) {
-      applying.current = true;
-      if (cached.state.doc.toString() === activeBody) {
-        editor.setState(cached.state);
-        editor.scrollDOM.scrollTop = cached.scrollTop;
-      } else {
-        const updatedState = cached.state.update({
-          changes: { from: 0, to: cached.state.doc.length, insert: activeBody },
-        }).state;
-        editor.setState(updatedState);
-        editor.scrollDOM.scrollTop = cached.scrollTop;
-        editorStateCache.set(nextId, {
-          state: updatedState,
-          scrollTop: cached.scrollTop,
-          updatedAt: Date.now(),
-        });
-      }
-      applying.current = false;
+    if (usable && usable.state.doc.toString() === activeBody) {
+      // Same text, so the cached undo history describes this note's own edits
+      // and is safe to keep.
+      applyDocument(editor, usable.state, usable.scrollTop);
       editor.focus();
     } else {
-      const freshState = EditorState.create({
-        doc: activeBody,
-        selection: { anchor: 0 },
-        extensions: extensionsRef.current,
-      });
-      applying.current = true;
-      editor.setState(freshState);
-      applying.current = false;
+      // Either nothing cached, or what was cached no longer matches the file.
+      // The document is rebuilt from disk *without* the old undo history: the
+      // previous code rebased the new text onto the stale state to preserve
+      // undo, which kept revisions of a different note in the stack, so a
+      // single undo could restore them and the autosave would write them out.
+      const freshState = boundState(nextId, activeBody);
+      applyDocument(editor, freshState, 0);
       editorStateCache.set(nextId, {
+        noteId: nextId,
         state: freshState,
         scrollTop: 0,
         updatedAt: Date.now(),
       });
       editor.focus();
 
-      void loadHistoryState(vaultPath, nextId, activeBody, extensionsRef.current).then(
-        (rehydrated) => {
-          if (!rehydrated) return;
-          const currentEditor = view.current;
-          if (
-            currentEditor &&
-            activeId.current === nextId &&
-            currentEditor.state.doc.toString() === activeBody
-          ) {
-            applying.current = true;
-            currentEditor.setState(rehydrated.state);
-            currentEditor.scrollDOM.scrollTop = rehydrated.scrollTop;
-            applying.current = false;
-            editorStateCache.set(nextId, {
-              state: rehydrated.state,
-              scrollTop: rehydrated.scrollTop,
-              updatedAt: Date.now(),
-            });
-          }
-        },
-      );
+      void loadHistoryState(
+        vaultPath,
+        nextId,
+        activeBody,
+        extensionsRef.current,
+      ).then((rehydrated) => {
+        if (!rehydrated) return;
+        const currentEditor = view.current;
+        // Re-check on arrival: the read is a round trip and the user may have
+        // moved on. Restoring then would put this note's text and history into
+        // whatever note is now open.
+        if (
+          !currentEditor ||
+          activeId.current !== nextId ||
+          noteIdOf(currentEditor.state) !== nextId ||
+          currentEditor.state.doc.toString() !== activeBody ||
+          noteIdOf(rehydrated.state) !== nextId
+        ) {
+          return;
+        }
+        applyDocument(currentEditor, rehydrated.state, rehydrated.scrollTop);
+        editorStateCache.set(nextId, {
+          noteId: nextId,
+          state: rehydrated.state,
+          scrollTop: rehydrated.scrollTop,
+          updatedAt: Date.now(),
+        });
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id, docVersion]);
