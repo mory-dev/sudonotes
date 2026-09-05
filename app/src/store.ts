@@ -61,6 +61,10 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 /** Unsaved bodies by note id. Keyed per note rather than held in a single slot
  *  so queueing an edit for one note cannot discard another's. */
 const pending = new Map<string, string>();
+/** Unsaved blackhole text. Separate from note saves so a dump edit cannot
+ *  land on a note, or the other way around. */
+let pendingBlackhole: string | null = null;
+let blackholeTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingMigrations: Array<{ id: string; oldKey: string; newKey: string }> = [];
 
 /** The fingerprint of the body each note was last known to have on disk, keyed
@@ -312,6 +316,10 @@ interface AppState {
   vaultPath: string | null;
   notes: NoteMeta[];
   active: NoteDetail | null;
+  /** The vault scratch dump is open instead of a note. */
+  blackholeOpen: boolean;
+  /** Body of the open dump. Empty when the dump is closed. */
+  blackholeBody: string;
   backlinks: NoteMeta[];
   /** Prompts filed under the open note, when it heads a collection. */
   children: ChildPrompt[];
@@ -395,6 +403,10 @@ interface AppState {
   restoreVault: () => Promise<void>;
   refresh: () => Promise<void>;
   select: (id: string | null) => Promise<void>;
+  /** Open the vault scratch dump. Flushes the open note first. */
+  openBlackhole: () => Promise<void>;
+  queueBlackholeSave: (body: string) => void;
+  flushBlackhole: () => Promise<void>;
   create: (noteType: NoteType, title: string) => Promise<void>;
   /** Add a prompt to the open collection and open it in the editor. */
   addPrompt: () => Promise<void>;
@@ -492,6 +504,8 @@ export const useStore = create<AppState>((set, get) => ({
   vaultPath: null,
   notes: [],
   active: null,
+  blackholeOpen: false,
+  blackholeBody: "",
   backlinks: [],
   children: [],
   docVersion: 0,
@@ -782,12 +796,21 @@ export const useStore = create<AppState>((set, get) => ({
 
   openVault: async (path) => {
     try {
+      await get().flushSave();
       const resolved = await api.openVault(path);
       // Tagging history is keyed by note id, which only means anything within
       // one vault, and AI settings are stored per vault.
       tagged.clear();
       editorStateCache.clear();
-      set({ vaultPath: resolved, active: null, backlinks: [], analysis: null, error: null });
+      set({
+        vaultPath: resolved,
+        active: null,
+        blackholeOpen: false,
+        blackholeBody: "",
+        backlinks: [],
+        analysis: null,
+        error: null,
+      });
       await get().refresh();
       await get().loadAiSettings();
     } catch (e) {
@@ -818,6 +841,10 @@ export const useStore = create<AppState>((set, get) => ({
       clearTimeout(hoverPromptTimer);
       hoverPromptTimer = null;
     }
+    await get().flushBlackhole();
+    if (get().blackholeOpen) {
+      set({ blackholeOpen: false, blackholeBody: "" });
+    }
     await get().flushSave();
     if (!id) {
       set({ active: null, backlinks: [], children: [], analysis: null, hoverPrompt: null });
@@ -845,6 +872,54 @@ export const useStore = create<AppState>((set, get) => ({
       });
     } catch (e) {
       set({ error: message(e) });
+    }
+  },
+
+  openBlackhole: async () => {
+    if (get().blackholeOpen) return;
+    await get().flushSave();
+    try {
+      const body = await api.readBlackhole();
+      set({
+        blackholeOpen: true,
+        blackholeBody: body,
+        active: null,
+        backlinks: [],
+        children: [],
+        hoverPrompt: null,
+        scrollTo: null,
+        find: null,
+        analysis: null,
+        dirty: false,
+        docVersion: get().docVersion + 1,
+        error: null,
+      });
+    } catch (e) {
+      set({ error: message(e) });
+    }
+  },
+
+  queueBlackholeSave: (body) => {
+    pendingBlackhole = body;
+    set({ blackholeBody: body, dirty: true });
+    if (blackholeTimer) clearTimeout(blackholeTimer);
+    blackholeTimer = setTimeout(() => void get().flushBlackhole(), SAVE_DEBOUNCE_MS);
+  },
+
+  flushBlackhole: async () => {
+    if (blackholeTimer) {
+      clearTimeout(blackholeTimer);
+      blackholeTimer = null;
+    }
+    const body = pendingBlackhole;
+    pendingBlackhole = null;
+    if (body === null) return;
+    try {
+      await api.writeBlackhole(body);
+      if (pending.size === 0 && pendingBlackhole === null) set({ dirty: false });
+    } catch (e) {
+      pendingBlackhole = body;
+      set({ error: message(e), dirty: true });
     }
   },
 
@@ -967,7 +1042,12 @@ export const useStore = create<AppState>((set, get) => ({
       clearTimeout(saveTimer);
       saveTimer = null;
     }
+    if (blackholeTimer) {
+      clearTimeout(blackholeTimer);
+      blackholeTimer = null;
+    }
     pending.clear();
+    pendingBlackhole = null;
     // Queued renames describe the text being discarded, so they go with it.
     pendingMigrations = [];
     set({ dirty: false });
@@ -1111,12 +1191,16 @@ export const useStore = create<AppState>((set, get) => ({
     // discarded the first note's, which is one of the ways typing went missing.
     const writes = [...pending.entries()].map(([id, body]) => ({ id, body }));
     pending.clear();
-    if (writes.length === 0) return;
+    if (writes.length === 0) {
+      await get().flushBlackhole();
+      return;
+    }
 
     for (const write of writes) {
       await writeOne(write, get, set);
     }
-    if (pending.size === 0) set({ dirty: false });
+    await get().flushBlackhole();
+    if (pending.size === 0 && pendingBlackhole === null) set({ dirty: false });
   },
 
   rename: async (title) => {

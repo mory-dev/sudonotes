@@ -299,6 +299,9 @@ export const api = {
   inspectPath: (path: string) => invoke<PathInfo>("inspect_path", { path }),
   listNotes: (noteType?: NoteType) =>
     invoke<NoteMeta[]>("list_notes", { noteType: noteType ?? null }),
+  /** The vault's scratch dump. Missing file reads as an empty string. */
+  readBlackhole: () => invoke<string>("read_blackhole"),
+  writeBlackhole: (body: string) => invoke<void>("write_blackhole", { body }),
   readNote: (id: string) => invoke<NoteDetail>("read_note", { id }),
   createNote: (noteType: NoteType, title: string) =>
     invoke<string>("create_note", { noteType, title }),

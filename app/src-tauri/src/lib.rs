@@ -837,6 +837,24 @@ fn list_notes(note_type: Option<NoteType>, state: State<AppState>) -> Result<Vec
 }
 
 #[tauri::command]
+fn read_blackhole(state: State<AppState>) -> Result<String> {
+    with_vault(&state, |open| {
+        open.vault
+            .read_blackhole()
+            .map_err(|e| err("could not read blackhole", e))
+    })
+}
+
+#[tauri::command]
+fn write_blackhole(body: String, state: State<AppState>) -> Result<()> {
+    with_vault(&state, |open| {
+        open.vault
+            .write_blackhole(&body)
+            .map_err(|e| err("could not write blackhole", e))
+    })
+}
+
+#[tauri::command]
 fn read_note(id: String, state: State<AppState>) -> Result<NoteDetail> {
     with_vault(&state, |open| {
         let path = open
@@ -3019,6 +3037,8 @@ pub fn run() {
             suggest_vault_path,
             inspect_path,
             list_notes,
+            read_blackhole,
+            write_blackhole,
             read_note,
             create_note,
             create_child,

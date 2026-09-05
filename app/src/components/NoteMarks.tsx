@@ -1,5 +1,5 @@
 /** Visual marks for the two note types — a cloud for prompts, a leaf for
- *  ideas. Used wherever a note's type is identified. */
+ *  ideas — and the vault scratch dump. Used wherever a note's type is identified. */
 
 import type { NoteType } from "../api";
 
@@ -16,6 +16,16 @@ export function IdeaMark() {
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <path d="M13.2 2.8c-4.6.1-8 2.6-9.5 5.8-.8 1.7-.6 3.4.1 4.2.9.9 3.6.4 5.5-.9 1.4-.9 2.4-2.6 3.2-4.3.6-1.3.9-2.8.7-4.8Z" />
       <path d="M3.9 13.1c2.7-2.9 5.5-5.7 7.7-8" />
+    </svg>
+  );
+}
+
+/** A ring around a void — the vault scratch dump, not a note type. */
+export function BlackholeMark() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.4" />
+      <circle cx="8" cy="8" r="2.1" />
     </svg>
   );
 }

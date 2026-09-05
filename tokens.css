@@ -26,6 +26,9 @@
   --prompt-soft: rgba(122, 162, 247, 0.14);
   --idea: #9ece6a;
   --idea-soft: rgba(158, 206, 106, 0.14);
+  /* The scratch dump is quiet gray — not a third note-type color. */
+  --blackhole: #8b8d96;
+  --blackhole-soft: rgba(139, 141, 150, 0.16);
 
   /* Default for anything not inside a [data-type] scope. */
   --type-color: var(--accent);

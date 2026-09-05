@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { BlackholeEditor, BlackholeTitleBar } from "./components/BlackholeEditor";
 import { ContextMenu } from "./components/ContextMenu";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Editor } from "./components/Editor";
@@ -90,6 +91,7 @@ function EmptyState() {
 export default function App() {
   const vaultPath = useStore((s) => s.vaultPath);
   const active = useStore((s) => s.active);
+  const blackholeOpen = useStore((s) => s.blackholeOpen);
   const error = useStore((s) => s.error);
   const setError = useStore((s) => s.setError);
   const notice = useStore((s) => s.notice);
@@ -134,12 +136,19 @@ export default function App() {
         useStore.setState({ oneBlockPaste: oneBlock });
       }
       if (!mod) return;
-      const { setPalette, openFind, create, flushSave, active: current } = useStore.getState();
+      const {
+        setPalette,
+        openFind,
+        create,
+        flushSave,
+        active: current,
+        blackholeOpen: dumpOpen,
+      } = useStore.getState();
       const key = event.key.toLowerCase();
 
       if (event.shiftKey && key === "f") {
         event.preventDefault();
-        if (current) {
+        if (current || dumpOpen) {
           openFind();
         }
       } else if (!event.shiftKey && (key === "f" || key === "k")) {
@@ -356,10 +365,15 @@ export default function App() {
   ) : (
     // Without an open note there is no right panel, so the grid drops that
     // column instead of leaving a gap that pushes the content off centre.
-    <div className={active ? "app" : "app no-panel"}>
+    <div className={active && !blackholeOpen ? "app" : "app no-panel"}>
       <Sidebar />
       <main className="main">
-        {active ? (
+        {blackholeOpen ? (
+          <>
+            <BlackholeTitleBar />
+            <BlackholeEditor />
+          </>
+        ) : active ? (
           <>
             <TitleBar />
             {/* Prompts always head a collection; an idea shows its editor until
@@ -374,7 +388,7 @@ export default function App() {
           <EmptyState />
         )}
       </main>
-      {active && <RightPanel />}
+      {active && !blackholeOpen && <RightPanel />}
       <StatusBar />
     </div>
   );

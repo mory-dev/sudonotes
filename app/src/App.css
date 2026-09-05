@@ -55,6 +55,11 @@
   --type-soft: var(--idea-soft);
 }
 
+[data-type="blackhole"] {
+  --type-color: var(--blackhole);
+  --type-soft: var(--blackhole-soft);
+}
+
 /* The cloud (prompt) / leaf (idea) marks, drawn from --type-color. */
 .section-mark,
 .pick-mark {
@@ -1065,6 +1070,38 @@ kbd {
   color: var(--muted);
 }
 
+/* One dump item, styled as a section header — not a list of notes. */
+.blackhole-section {
+  margin-bottom: 14px;
+}
+
+.blackhole-header {
+  --type-color: var(--muted);
+  --type-soft: rgba(139, 141, 150, 0.16);
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-align: left;
+}
+
+.blackhole-header:hover {
+  background: var(--panel-2);
+}
+
+.blackhole-header.active {
+  --type-color: var(--text-2);
+  background: var(--type-soft);
+  color: var(--type-color);
+  box-shadow: inset 2px 0 0 var(--type-color);
+}
+
 .section-actions {
   display: flex;
   align-items: center;
@@ -1743,6 +1780,24 @@ body.row-dragging {
   border-radius: 6px;
 }
 
+.title-static {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.title-static .section-mark svg {
+  width: 16px;
+  height: 16px;
+}
+
 .title-input:hover {
   border-color: var(--border);
 }
@@ -1986,6 +2041,23 @@ body.row-dragging {
 
 .blank-mark.idea svg {
   stroke: var(--idea);
+}
+
+.blank-mark.blackhole svg {
+  stroke: var(--blackhole);
+}
+
+.blackhole-blank {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: var(--bg);
+  cursor: text;
+}
+
+.blank-actions .blank-blackhole {
+  background: var(--blackhole);
+  color: #12131a;
 }
 
 .blank h2 {

@@ -14,6 +14,8 @@ pub use sudonotes_core::naming::{is_markdown, title_from_path};
 
 pub const INDEX_DIR: &str = ".sudonotes";
 pub const INDEX_FILE: &str = "index.db";
+/// Vault-scoped scratch dump. Not a note — never scanned under prompts/ or ideas/.
+pub const BLACKHOLE_FILE: &str = "blackhole.md";
 
 pub struct Vault {
     pub root: PathBuf,
@@ -34,6 +36,29 @@ impl Vault {
 
     pub fn index_path(&self) -> PathBuf {
         self.root.join(INDEX_DIR).join(INDEX_FILE)
+    }
+
+    /// The single scratch file for this vault. Missing means the dump is empty.
+    pub fn blackhole_path(&self) -> PathBuf {
+        self.root.join(INDEX_DIR).join(BLACKHOLE_FILE)
+    }
+
+    /// Read the dump. A missing file is an empty string, not an error.
+    pub fn read_blackhole(&self) -> std::io::Result<String> {
+        match std::fs::read_to_string(self.blackhole_path()) {
+            Ok(body) => Ok(body),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Write the dump, creating `.sudonotes/` if needed. Plain markdown, no frontmatter.
+    pub fn write_blackhole(&self, body: &str) -> std::io::Result<()> {
+        let path = self.blackhole_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, body)
     }
 
     pub fn dir_for(&self, note_type: NoteType) -> PathBuf {
@@ -118,6 +143,24 @@ mod tests {
             Some(NoteType::Idea)
         );
         assert_eq!(vault.type_of(Path::new("/vault/.sudonotes/index.db")), None);
+        assert_eq!(
+            vault.type_of(Path::new("/vault/.sudonotes/blackhole.md")),
+            None
+        );
         assert_eq!(vault.type_of(Path::new("/elsewhere/a.md")), None);
+    }
+
+    #[test]
+    fn scan_ignores_the_blackhole_dump() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::open(dir.path().to_path_buf()).unwrap();
+        std::fs::write(vault.root.join("ideas/one.md"), "an idea").unwrap();
+        vault.write_blackhole("scratch that is not a note").unwrap();
+
+        let scanned = vault.scan();
+        assert_eq!(scanned.len(), 1);
+        assert_eq!(scanned[0].0, NoteType::Idea);
+        assert_eq!(scanned[0].1.file_name().unwrap(), "one.md");
+        assert_eq!(vault.read_blackhole().unwrap(), "scratch that is not a note");
     }
 }

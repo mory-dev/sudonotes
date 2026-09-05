@@ -4,7 +4,7 @@ import { nextIdeaMark, normalizeIdeaMark, type NoteMeta, type NoteType } from ".
 import { useStore } from "../store";
 import { useListDrag, reordered, type NoteDragHandlers } from "../useListDrag";
 import { ModelStack } from "./ModelStack";
-import { IdeaMark, PromptMark, VolumePyramidMark } from "./NoteMarks";
+import { BlackholeMark, IdeaMark, PromptMark, VolumePyramidMark } from "./NoteMarks";
 import { ProviderIcon, providerOf } from "./ProviderMarks";
 
 function byTitle(a: NoteMeta, b: NoteMeta) {
@@ -578,6 +578,31 @@ function Section({
   );
 }
 
+/** The vault scratch dump. One clickable header, no children, not a note type. */
+function Blackhole() {
+  const open = useStore((s) => s.blackholeOpen);
+  const openBlackhole = useStore((s) => s.openBlackhole);
+
+  return (
+    <section className="section blackhole-section" data-type="blackhole">
+      <button
+        type="button"
+        className={`blackhole-header${open ? " active" : ""}`}
+        aria-current={open ? "true" : undefined}
+        data-blackhole=""
+        onClick={() => void openBlackhole()}
+      >
+        <span className="section-name">
+          <span className="section-mark">
+            <BlackholeMark />
+          </span>
+          Blackhole
+        </span>
+      </button>
+    </section>
+  );
+}
+
 export function Sidebar() {
   const notes = useStore((s) => s.notes);
   const active = useStore((s) => s.active);
@@ -621,6 +646,7 @@ export function Sidebar() {
       </button>
 
       <div className="sections">
+        <Blackhole />
         <Section label="Prompts" noteType="prompt" notes={prompts} />
         <Section
           label="Ideas"

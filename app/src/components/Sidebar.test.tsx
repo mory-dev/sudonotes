@@ -209,6 +209,74 @@ describe("IdeaHoldToggle component", () => {
   });
 });
 
+describe("Sidebar blackhole row", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    useStore.setState({
+      notes: [
+        {
+          id: "idea-1",
+          title: "Linked idea",
+          type: "idea",
+          tags: [],
+          collection: null,
+          summary: null,
+          updated: "2026-09-01T00:00:00Z",
+          mark: "off",
+        },
+      ],
+      active: null,
+      blackholeOpen: false,
+      vaultPath: "/vault",
+    });
+  });
+
+  afterEach(() => {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+    useStore.setState({ blackholeOpen: false, blackholeBody: "", notes: [], active: null });
+    vi.restoreAllMocks();
+  });
+
+  it("renders one Blackhole header above Prompts and no extra idea row", () => {
+    act(() => {
+      root.render(<Sidebar />);
+    });
+
+    const dump = container.querySelector("[data-blackhole]");
+    expect(dump).toBeTruthy();
+    expect(dump?.textContent).toMatch(/Blackhole/i);
+    expect(container.querySelectorAll("[data-blackhole]")).toHaveLength(1);
+    expect(container.querySelector('[data-note-id="idea-1"]')?.textContent).toContain("Linked idea");
+    expect(container.querySelectorAll("[data-note-id]")).toHaveLength(1);
+  });
+
+  it("opens the dump when the header is clicked", async () => {
+    vi.spyOn(api, "readBlackhole").mockResolvedValue("");
+
+    act(() => {
+      root.render(<Sidebar />);
+    });
+
+    const dump = container.querySelector("[data-blackhole]") as HTMLButtonElement;
+    await act(async () => {
+      dump.click();
+    });
+
+    expect(api.readBlackhole).toHaveBeenCalledOnce();
+    expect(useStore.getState().blackholeOpen).toBe(true);
+    expect(container.querySelector("[data-blackhole]")?.className).toContain("active");
+    expect(container.querySelectorAll("[data-note-id]")).toHaveLength(1);
+  });
+});
+
 describe("Sidebar integration with 3-state idea marking", () => {
   let container: HTMLDivElement;
   let root: Root;
