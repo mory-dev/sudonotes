@@ -5,7 +5,7 @@ section: start
 order: 10
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - app/src/components/Welcome.tsx
   - app/src/components/Sidebar.tsx
@@ -13,6 +13,7 @@ sources:
 related:
   - core-workflow
   - vault-format
+  - blackhole
   - shortcuts
 searchTerms:
   - install
@@ -46,11 +47,13 @@ Choose **Create vault** or **Open vault**. sudonotes creates this small structur
 ├── ideas/
 └── .sudonotes/
     ├── index.db
-    └── settings.json
+    ├── settings.json
+    └── blackhole.md
 ```
 
-Your notes are the Markdown files. `.sudonotes/` holds a rebuildable search index and a vault
-preference; it is not the content of the vault.
+Your notes are the Markdown files under `prompts/` and `ideas/`. `.sudonotes/` holds a rebuildable
+search index, a vault preference, and the optional [Blackhole](/docs/blackhole) dump. The dump is
+created on first save; it is not a note.
 
 ## 2. Create a prompt
 
@@ -80,7 +83,7 @@ the idea under **Linked from**.
 ## 4. Find the note again
 
 Press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>K</kbd>, type part of the title or body, move with the
-arrow keys, and press <kbd>Enter</kbd>. Search covers both prompts and ideas.
+arrow keys, and press <kbd>Enter</kbd>. Search covers prompts and ideas, not the Blackhole dump.
 
 To find text only inside the note already open, use <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> +
 <kbd>Shift</kbd> + <kbd>F</kbd>. This is intentionally different from vault-wide search.

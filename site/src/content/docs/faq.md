@@ -5,13 +5,14 @@ section: reference
 order: 40
 status: shipped
 appliesTo: all
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - README.md
   - app/src-tauri/src/lib.rs
   - site/src/pages/roadmap.astro
 related:
   - getting-started
+  - blackhole
   - privacy
   - web-vs-desktop
 searchTerms:
@@ -28,7 +29,8 @@ limiting, not a user account.
 
 ## Can I read the notes without sudonotes?
 
-Yes. They are Markdown with a small frontmatter header under `prompts/` and `ideas/`.
+Yes. Notes are Markdown with a small frontmatter header under `prompts/` and `ideas/`. The
+[Blackhole](/docs/blackhole) dump is plain Markdown at `.sudonotes/blackhole.md`, with no frontmatter.
 
 ## Does it save automatically?
 
@@ -60,6 +62,12 @@ note features available.
 No. It records intent and lets review consider model metadata. Copy the prompt into the tool where
 you intend to run it.
 
+## What is Blackhole?
+
+One scratch page at the top of the sidebar — not a third note type. Thoughts that are not a prompt
+or an idea yet go there. Vault search does not include it; find text with in-file find. See
+[Blackhole](/docs/blackhole).
+
 ## What is IDEAS.md?
 
 It is the uppercase project-root mirror created when you link a vault idea to a project. The vault
@@ -77,5 +85,6 @@ marked planned.
 
 ## Can I delete `.sudonotes/`?
 
-Yes, while the app is closed, if you accept that search rebuilds and the vault AI preference resets
-to on. Your note content is elsewhere, but making a backup first is still sensible.
+Yes, while the app is closed, if you accept that search rebuilds, the vault AI preference resets to
+on, and the Blackhole dump (`.sudonotes/blackhole.md`) is deleted. Prompts and ideas live under
+`prompts/` and `ideas/`. Make a backup first, and copy `blackhole.md` if you want to keep the dump.

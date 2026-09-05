@@ -5,13 +5,14 @@ section: write
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - app/src/components/Editor.tsx
   - app/src/components/RightPanel.tsx
   - app/src/components/ProjectLink.tsx
   - app/src/components/Sidebar.tsx
 related:
+  - blackhole
   - project-linking
   - github-issues
   - ideas-md-for-llms
@@ -28,7 +29,8 @@ searchTerms:
 
 An idea is context that is still becoming useful: a product problem, experiment, design constraint,
 research note, or implementation direction. It receives the same Markdown storage, search, tags,
-links, and backlinks as a prompt.
+links, and backlinks as a prompt. Scratch that you do not want to file yet belongs in
+[Blackhole](/docs/blackhole), not in a throwaway idea.
 
 Ideas also have two specialized behaviors: blank-line-separated bubbles and project linking.
 

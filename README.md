@@ -103,11 +103,12 @@ A vault is just a directory:
   .sudonotes/index.db        # search index — a cache, rebuilt on launch
   .sudonotes/settings.json   # whether AI is on for this vault
   .sudonotes/github.json     # whether closed issues delete their bubble
+  .sudonotes/blackhole.md    # scratch dump — not a note, created on first save
 ```
 
-Deleting `.sudonotes/` costs you nothing but the index and that one preference,
-which returns to its default of on. Your notes are the `.md` files; nothing else
-in the vault is load-bearing. No credentials are ever written there.
+Deleting `.sudonotes/` drops the index (rebuilt on launch), the AI preference
+(back to on), and the Blackhole dump. Prompts and ideas are the `.md` files
+under `prompts/` and `ideas/`. No credentials are ever written there.
 
 Each note is Markdown with a small YAML frontmatter block (`id`, `title`, `tags`, `created`, `updated`). Edit them in any editor you like; sudonotes picks up external changes automatically.
 

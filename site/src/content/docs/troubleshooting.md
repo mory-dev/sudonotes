@@ -5,7 +5,7 @@ section: reference
 order: 30
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - app/src/store.ts
   - app/src-tauri/src/lib.rs
@@ -48,7 +48,8 @@ files blindly. Copy the folder first when filesystem damage is possible.
 4. Remove only `<vault>/.sudonotes/index.db`.
 5. Reopen and search for a known phrase.
 
-The database is a cache. Removing note Markdown is not part of this repair.
+The database is a cache. Removing note Markdown is not part of this repair. Leave
+`.sudonotes/blackhole.md` in place; that file is the scratch dump, not the index.
 
 ## An external edit does not appear
 

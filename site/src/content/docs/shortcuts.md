@@ -5,7 +5,7 @@ section: find
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-26"
+lastReviewed: "2026-09-06"
 sources:
   - app/src/App.tsx
   - app/src/components/Editor.tsx
@@ -14,6 +14,7 @@ sources:
 related:
   - search-and-navigation
   - interface
+  - blackhole
   - collections
 searchTerms:
   - hotkeys
@@ -31,9 +32,9 @@ appropriate key for the platform.
 
 | Shortcut | Action |
 | --- | --- |
-| <kbd>Mod</kbd> + <kbd>K</kbd> | Search every prompt and idea |
+| <kbd>Mod</kbd> + <kbd>K</kbd> | Search every prompt and idea; does not include Blackhole |
 | <kbd>Mod</kbd> + <kbd>F</kbd> | Search every prompt and idea; does not open browser find |
-| <kbd>Mod</kbd> + <kbd>N</kbd> | Create a note of the type currently in view |
+| <kbd>Mod</kbd> + <kbd>N</kbd> | Create a note of the type currently in view. From Blackhole this creates a prompt |
 | <kbd>Mod</kbd> + <kbd>S</kbd> | Flush the pending automatic save |
 | <kbd>Mod</kbd> + <kbd>+</kbd> | Increase interface scale, up to 160% |
 | <kbd>Mod</kbd> + <kbd>-</kbd> | Decrease interface scale, down to 70% |
@@ -47,7 +48,7 @@ browser find-next. They are not sudonotes shortcuts.
 
 | Shortcut | Action |
 | --- | --- |
-| <kbd>Mod</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | Find within the open note or prompt collection |
+| <kbd>Mod</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | Find within the open note, prompt collection, or Blackhole dump |
 | <kbd>Enter</kbd> in find | Next match |
 | <kbd>Shift</kbd> + <kbd>Enter</kbd> in find | Previous match |
 | <kbd>Esc</kbd> in find | Close find |

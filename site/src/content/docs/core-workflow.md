@@ -5,7 +5,7 @@ section: start
 order: 30
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - app/src/store.ts
   - app/src/components/Editor.tsx
@@ -13,6 +13,7 @@ sources:
 related:
   - prompts
   - ideas
+  - blackhole
   - search-and-navigation
 searchTerms:
   - usage
@@ -25,10 +26,12 @@ searchTerms:
 Create the note in the section that matches what you have:
 
 - a **prompt** is text you intend to run or reuse;
-- an **idea** is context, a possibility, a problem, or a plan still taking shape.
+- an **idea** is context, a possibility, a problem, or a plan still taking shape;
+- **Blackhole** is the dump when you do not want to file anything yet.
 
 Press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>N</kbd> to create another note of the type currently in
-view. A title and useful body matter more than choosing every tag immediately.
+view. From Blackhole that still creates a prompt, and leaves the dump. A title and useful body
+matter more than choosing every tag immediately.
 
 ## 2. Add the smallest useful structure
 

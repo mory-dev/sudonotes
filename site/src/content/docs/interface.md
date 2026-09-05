@@ -5,7 +5,7 @@ section: start
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-16"
+lastReviewed: "2026-09-06"
 sources:
   - app/src/App.tsx
   - app/src/components/Sidebar.tsx
@@ -14,6 +14,7 @@ sources:
   - app/src/components/StatusBar.tsx
 related:
   - getting-started
+  - blackhole
   - search-and-navigation
   - settings
 searchTerms:
@@ -32,7 +33,10 @@ use context about the note on the right.
 
 ### Sidebar
 
-The sidebar separates **Prompts** and **Ideas**. Each section can create a note and shows both
+Above both sections is **Blackhole**, one scratch page. It is not a list of notes and has no add
+button. Selecting it opens a dump editor with no right panel. See [Blackhole](/docs/blackhole).
+
+The sidebar then separates **Prompts** and **Ideas**. Each section can create a note and shows both
 top-level notes and collections. Select a row to open it. Dragging reorders items within the list;
 press <kbd>Esc</kbd> to cancel a drag.
 

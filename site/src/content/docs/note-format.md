@@ -5,13 +5,14 @@ section: reference
 order: 10
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-16"
+lastReviewed: "2026-09-06"
 sources:
   - core/src/note.rs
   - app/src-tauri/src/note.rs
   - app/src-tauri/src/lib.rs
 related:
   - vault-format
+  - blackhole
   - links-and-backlinks
   - placeholders
 searchTerms:
@@ -138,6 +139,11 @@ becomes `untitled`. Collisions receive a unique path rather than overwriting ano
 
 The title `ideas`, in any letter case, is special-cased to the stem `IDEAS` so a project mirror uses
 the conventional uppercase name.
+
+## Blackhole is not a note
+
+The sidebar dump is plain Markdown at `.sudonotes/blackhole.md` with no frontmatter, id, or title.
+It is not scanned with prompts and ideas. See [Blackhole](/docs/blackhole).
 
 ## Atomic writes
 

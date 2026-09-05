@@ -5,13 +5,14 @@ section: data
 order: 30
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - app/src-tauri/src/watcher.rs
   - app/src/store.ts
   - app/src-tauri/src/vault.rs
 related:
   - vault-format
+  - blackhole
   - backups-and-recovery
   - troubleshooting
 searchTerms:
@@ -25,7 +26,9 @@ searchTerms:
 ## Edit with another application
 
 Open any note under `prompts/` or `ideas/` in VS Code, vim, Obsidian, Notepad, or another Markdown
-editor. Save the file and the vault watcher refreshes the list and search index.
+editor. Save the file and the vault watcher refreshes the list and search index. The
+[Blackhole](/docs/blackhole) dump is `.sudonotes/blackhole.md` and can be edited the same way; it is
+not a note and is not reindexed.
 
 If the same note is open in sudonotes with no pending edit, its body reloads. If sudonotes has an
 unsaved buffer for that note, it leaves the buffer alone rather than clobbering what you typed.
@@ -36,8 +39,8 @@ Place `.md` files under the correct content root. Files without frontmatter use 
 title and receive the normal header on the first sudonotes write. Keep collection children in a
 subdirectory next to their parent file.
 
-Do not put arbitrary Markdown under `.sudonotes/`; that directory is for app-owned cache and
-settings data.
+Do not put arbitrary Markdown under `.sudonotes/` besides `blackhole.md`; that directory is for
+app-owned cache, settings, and the single dump file.
 
 ## Use Git
 

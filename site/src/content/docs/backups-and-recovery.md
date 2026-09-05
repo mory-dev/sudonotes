@@ -5,13 +5,14 @@ section: data
 order: 20
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-16"
+lastReviewed: "2026-09-06"
 sources:
   - app/src-tauri/src/backup.rs
   - app/src/components/Settings.tsx
   - app/src-tauri/src/lib.rs
 related:
   - vault-format
+  - blackhole
   - settings
   - troubleshooting
 searchTerms:
@@ -46,9 +47,11 @@ ideas/**/*.md
 README.txt
 ```
 
-The search index and settings are intentionally excluded because they are not needed to recover
-notes. If one source note cannot be read during a snapshot, the backup continues with the readable
-notes; check the reported note count after a manual run.
+The search index, settings, and [Blackhole](/docs/blackhole) dump
+(`.sudonotes/blackhole.md`) are intentionally excluded. Recover notes from the archive; copy the
+dump file with the vault if that scratch page matters. If one source note cannot be read during a
+snapshot, the backup continues with the readable notes; check the reported note count after a
+manual run.
 
 ## Find the backup folder
 
@@ -102,7 +105,8 @@ Use this path if the app will not start or you need to inspect an archive before
 2. Rename the copy from `.bak` to `.zip`.
 3. Create a new empty folder.
 4. Extract the ZIP into that folder—not over the old vault.
-5. Confirm that `prompts/` and `ideas/` contain the expected Markdown.
+5. Confirm that `prompts/` and `ideas/` contain the expected Markdown. The Blackhole dump is not
+   in the archive; copy `.sudonotes/blackhole.md` from the original vault if you still need it.
 6. Open the folder as a vault in sudonotes.
 
 Windows Explorer, Finder, and ordinary ZIP tools can read the archive after the rename. Nothing in

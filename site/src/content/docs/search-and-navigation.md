@@ -5,7 +5,7 @@ section: find
 order: 10
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - app/src/components/SearchPalette.tsx
   - app/src/components/Editor.tsx
@@ -14,6 +14,7 @@ related:
   - shortcuts
   - links-and-backlinks
   - vault-format
+  - blackhole
 searchTerms:
   - Ctrl F
   - Ctrl K
@@ -29,8 +30,9 @@ Press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>K</kbd> or <kbd>Ctrl</kbd>/<kbd>Cmd<
 is deliberately not used.
 
 Type a title, body phrase, tag, or project-related term. Search uses SQLite FTS5 across prompts and
-ideas and ranks title matches strongly. Results can also show note type, collection, linked-project
-icon, tags, and selected model when available.
+ideas and ranks title matches strongly. The [Blackhole](/docs/blackhole) dump is not in that index.
+Results can also show note type, collection, linked-project icon, tags, and selected model when
+available.
 
 The query waits briefly while you type, then returns up to 50 results. A slower old request cannot
 replace a newer query.
@@ -53,8 +55,8 @@ exclusive database filter.
 ## Find inside the open note
 
 Press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>. The find bar searches only the
-current editor document, highlights case-insensitive non-overlapping matches, and shows the current
-position and total.
+current editor document — an open note, a prompt collection, or the Blackhole dump — highlights
+case-insensitive non-overlapping matches, and shows the current position and total.
 
 - <kbd>Enter</kbd> moves to the next match.
 - <kbd>Shift</kbd> + <kbd>Enter</kbd> moves to the previous match.

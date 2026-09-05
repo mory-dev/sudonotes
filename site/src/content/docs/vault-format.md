@@ -5,13 +5,14 @@ section: data
 order: 10
 status: shipped
 appliesTo: desktop
-lastReviewed: "2026-08-09"
+lastReviewed: "2026-09-06"
 sources:
   - app/src-tauri/src/vault.rs
   - app/src-tauri/src/note.rs
   - core/src/note.rs
 related:
   - note-format
+  - blackhole
   - external-editing-and-sync
   - backups-and-recovery
 searchTerms:
@@ -37,23 +38,27 @@ does not need sudonotes to be read.
 │   └── offline-alert-queue.md
 └── .sudonotes/
     ├── index.db
-    └── settings.json
+    ├── settings.json
+    └── blackhole.md
 ```
 
 `prompts/` and `ideas/` are the content roots. A Markdown file with a same-named subdirectory heads
 a collection; the files inside are its children.
 
 `.sudonotes/index.db` is an FTS5 cache rebuilt from the Markdown. `.sudonotes/settings.json` stores
-whether AI assistance is enabled for this vault.
+whether AI assistance is enabled for this vault. `.sudonotes/blackhole.md` is the
+[Blackhole](/docs/blackhole) scratch dump — plain Markdown, not a note, and not scanned under
+`prompts/` or `ideas/`.
 
 ## What is load-bearing?
 
-The `.md` files under `prompts/` and `ideas/`. Everything required to read the title, tags,
-relationships, models, project link, and body is in those files.
+The `.md` files under `prompts/` and `ideas/`, plus `.sudonotes/blackhole.md` if you use the dump.
+Everything required to read a note’s title, tags, relationships, models, project link, and body is
+in the note files.
 
 It is safe to remove `.sudonotes/index.db` while the app is closed; search rebuilds on the next open.
-Removing the whole `.sudonotes/` directory also resets the per-vault AI preference to its default of
-on. It does not remove a note.
+Removing the whole `.sudonotes/` directory resets the per-vault AI preference to its default of on
+and deletes the Blackhole dump. It does not remove prompts or ideas.
 
 <div class="callout warning">
   <strong class="callout-title">Do not treat a safe-to-rebuild cache as a backup.</strong>
