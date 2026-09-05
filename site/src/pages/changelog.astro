@@ -4,6 +4,20 @@ import Base from "../layouts/Base.astro";
 /** Releases, newest first. Dates are the actual tag dates — nothing backdated. */
 const releases = [
   {
+    version: "0.4.1",
+    date: "2026-09-05",
+    changes: [
+      "Fixed a bug that could write one note's text into another note's file. A note's identity used to live beside its text rather than in it, so while you switched notes the two could disagree for an instant — and a save in that window landed on the wrong note, replacing its contents. If you have seen a note mirroring an unrelated one, this was why. Please update.",
+      "Edits are no longer dropped when the editor and the sidebar briefly disagree about which note is open. The save is now filed under the note the text itself belongs to, so it always lands somewhere correct instead of being discarded.",
+      "A note write is now refused unless the file on disk still holds the body the edit was made against. Nothing is overwritten on trust; if the note changed underneath you, sudonotes reloads it and tells you rather than saving over it.",
+      "Undo history is checked against the note it belongs to before it is restored. A stale or mismatched history is discarded instead of being layered onto the current text, which is what previously let a single undo bring back another note's content and save it.",
+      "The version history now archives a note whose body is replaced, not only one that gets shorter — a same-size replacement used to leave nothing to recover.",
+      "Unsaved edits are tracked per note, so editing a second note before the first has saved no longer discards the first note's changes.",
+      "Closing the window now waits for the save in progress to finish instead of exiting mid-write.",
+      "One-off effect of this release: undo history from before the update is cleared on first launch, because histories written by the affected versions cannot be proven to belong to the note they are filed under.",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-09-02",
     changes: [
