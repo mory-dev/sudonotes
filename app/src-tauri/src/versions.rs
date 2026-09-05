@@ -20,20 +20,52 @@ const VERSIONS_DIR: &str = "versions";
 /// clearing a two-line note is ordinary editing.
 const MIN_BODY_BYTES: usize = 200;
 
-/// How much of a body a single save may drop before it is archived first.
+/// How much of a body a single save may leave behind before it is archived
+/// first.
 const KEEP_RATIO: f64 = 0.5;
 
 /// Snapshots kept per note, newest first. Markdown is tiny; this is generous.
 const KEEP_PER_NOTE: usize = 20;
 
+/// How much of `before` still stands in `after`, measured as the text left
+/// untouched at the two ends.
+///
+/// Editing works inwards from the edges: typing, pasting and deleting a section
+/// all leave most of the note either side of the change. A replacement leaves
+/// neither, so this separates the two without diffing.
+fn retained_bytes(before: &str, after: &str) -> usize {
+    let a = before.as_bytes();
+    let b = after.as_bytes();
+    let limit = a.len().min(b.len());
+
+    let mut prefix = 0;
+    while prefix < limit && a[prefix] == b[prefix] {
+        prefix += 1;
+    }
+
+    let mut suffix = 0;
+    while suffix < limit - prefix && a[a.len() - 1 - suffix] == b[b.len() - 1 - suffix] {
+        suffix += 1;
+    }
+
+    prefix + suffix
+}
+
 /// Whether replacing `before` with `after` discards enough of the note to be
 /// worth keeping the old text.
+///
+/// This used to compare lengths alone, which only noticed a note getting
+/// shorter. A cross-note overwrite swaps one body for another of much the same
+/// size, so it slipped through and the note it replaced was unrecoverable.
+/// Judging by how much of the old text survives catches a replacement whatever
+/// its length, while leaving ordinary editing alone.
 pub fn is_destructive(before: &str, after: &str) -> bool {
     let before = before.trim();
+    let after = after.trim();
     if before.len() < MIN_BODY_BYTES {
         return false;
     }
-    (after.trim().len() as f64) < (before.len() as f64) * KEEP_RATIO
+    (retained_bytes(before, after) as f64) < (before.len() as f64) * KEEP_RATIO
 }
 
 fn versions_dir(vault_root: &Path, id: &str) -> PathBuf {
@@ -109,6 +141,43 @@ mod tests {
     #[test]
     fn losing_most_of_a_long_note_is_destructive() {
         assert!(is_destructive(&body(75), &body(3)));
+    }
+
+    #[test]
+    fn editing_in_the_middle_is_not_destructive() {
+        let before = format!("{}CHANGE ME\n{}", body(20), body(20));
+        let after = format!("{}rewritten line\n{}", body(20), body(20));
+        assert!(!is_destructive(&before, &after));
+    }
+
+    #[test]
+    fn appending_is_not_destructive() {
+        let before = body(40);
+        let after = format!("{}{}", body(40), body(5));
+        assert!(!is_destructive(&before, &after));
+    }
+
+    #[test]
+    fn swapping_in_a_different_note_of_the_same_size_is_destructive() {
+        // The regression this guards: a cross-note overwrite replaces a body
+        // with an unrelated one of comparable length. Judged on length alone it
+        // looked like an ordinary save, so nothing was archived and the
+        // original text was lost for good.
+        let before = "one note's own ideas\n".repeat(40);
+        let after = "a completely different note\n".repeat(30);
+        assert!(before.trim().len() > MIN_BODY_BYTES);
+        assert!(
+            (after.trim().len() as f64) > (before.trim().len() as f64) * KEEP_RATIO,
+            "sizes must be close enough that the old length-only check passed",
+        );
+        assert!(is_destructive(&before, &after));
+    }
+
+    #[test]
+    fn wholesale_replacement_by_a_longer_note_is_destructive() {
+        let before = "original material\n".repeat(30);
+        let after = "substituted material that is longer\n".repeat(40);
+        assert!(is_destructive(&before, &after));
     }
 
     #[test]
