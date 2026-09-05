@@ -1,6 +1,6 @@
 name: sudonotes
 base: core22
-version: '0.4.0'
+version: '0.4.1'
 summary: Lightweight, local-first notebook for AI prompts, templates & linked ideas
 description: |
   sudonotes is a lightweight, local-first notebook designed specifically for organizing
