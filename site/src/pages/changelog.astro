@@ -14,7 +14,7 @@ const releases = [
       "The version history now archives a note whose body is replaced, not only one that gets shorter — a same-size replacement used to leave nothing to recover.",
       "Unsaved edits are tracked per note, so editing a second note before the first has saved no longer discards the first note's changes.",
       "Closing the window now waits for the save in progress to finish instead of exiting mid-write.",
-      "One-off effect of this release: undo history from before the update is cleared on first launch, because histories written by the affected versions cannot be proven to belong to the note they are filed under.",
+      "One-off effect of this release: undo history recorded before the update is discarded the first time you open each note, because a history written by the affected versions cannot be proven to belong to the note it is filed under. Notes themselves are untouched; only the undo stack starts fresh.",
     ],
   },
   {
