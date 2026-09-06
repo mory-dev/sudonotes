@@ -1,0 +1,167 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getAllPosts } from "../../lib/blog";
+
+export const prerender = true;
+
+const posts = getAllPosts();
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "Blog",
+  "name": "sudonotes Blog",
+  "description": "Engineering articles, local-first architecture notes, and guides on AI prompt management.",
+  "url": "https://sudonotes.com/blog",
+  "blogPost": posts.map(post => ({
+    "@type": "BlogPosting",
+    "headline": post.title,
+    "description": post.description,
+    "datePublished": post.date,
+    "url": `https://sudonotes.com/blog/${post.slug}`,
+    "author": {
+      "@type": "Organization",
+      "name": post.author
+    }
+  }))
+};
+---
+
+<Base
+  title="Blog — sudonotes"
+  description="Engineering articles, local-first architecture notes, and guides on AI prompt management, markdown notebooks, and developer workflows."
+  breadcrumbs={[
+    { label: "Home", href: "/" },
+    { label: "Blog" }
+  ]}
+>
+  <script is:inline type="application/ld+json" set:html={JSON.stringify(structuredData)} />
+
+  <div class="page blog-index">
+    <header class="blog-header">
+      <p class="eyebrow">Engineering & Articles</p>
+      <h1>Notes on local-first AI tooling</h1>
+      <p class="lede">
+        Deep dives into prompt engineering architecture, plain-text note synchronization, and local developer workflows.
+      </p>
+    </header>
+
+    <div class="blog-grid">
+      {posts.map((post) => (
+        <article class="blog-card">
+          <div class="blog-card-meta">
+            <time datetime={post.date}>
+              {new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </time>
+            <span>•</span>
+            <span>{post.author}</span>
+          </div>
+
+          <h2>
+            <a href={`/blog/${post.slug}`}>{post.title}</a>
+          </h2>
+
+          <p>{post.description}</p>
+
+          <div class="blog-card-tags">
+            {post.tags.map((tag) => (
+              <span class="tag-chip">#{tag}</span>
+            ))}
+          </div>
+
+          <a class="read-more" href={`/blog/${post.slug}`}>
+            Read article &rarr;
+          </a>
+        </article>
+      ))}
+    </div>
+  </div>
+</Base>
+
+<style>
+  .blog-index {
+    max-width: var(--page);
+    margin: 0 auto;
+    padding: 48px 20px 96px;
+  }
+  .blog-header {
+    margin-bottom: 48px;
+    max-width: var(--measure);
+  }
+  .eyebrow {
+    color: var(--accent);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+  }
+  .lede {
+    font-size: 1.15rem;
+    color: var(--muted);
+    margin-top: 14px;
+    line-height: 1.6;
+  }
+  .blog-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .blog-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: border-color 0.2s;
+  }
+  .blog-card:hover {
+    border-color: var(--border-hover, var(--border));
+  }
+  .blog-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .blog-card h2 {
+    font-size: 1.5rem;
+    line-height: 1.3;
+  }
+  .blog-card h2 a {
+    color: var(--text);
+    text-decoration: none;
+  }
+  .blog-card h2 a:hover {
+    color: var(--accent);
+  }
+  .blog-card p {
+    color: var(--muted);
+    font-size: 0.98rem;
+    line-height: 1.6;
+  }
+  .blog-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .tag-chip {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 3px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+  }
+  .read-more {
+    align-self: flex-start;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-top: 6px;
+  }
+</style>

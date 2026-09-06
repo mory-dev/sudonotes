@@ -1,0 +1,16 @@
+# sudonotes
+
+> sudonotes is a free, MIT-licensed, local-first notebook for AI prompts and developer ideas. It stores notes as plain Markdown files in a local folder with bidirectional linking, model tracking, and zero account requirements or cloud telemetry.
+
+## Blog & Engineering Articles
+
+- [Local-First Prompt Management: Architecting Developer Notebooks for AI Engineering](https://sudonotes.com/blog/local-first-prompt-management-developer-notebooks): Why AI developers are replacing cloud prompt databases with local-first plain text Markdown notebooks, file system synchronization, and local inference.
+- [Blog Overview](https://sudonotes.com/blog): Engineering guides, architecture breakdowns, and local AI workflows.
+
+## Key Pages
+
+- [Homepage](https://sudonotes.com/): Product overview, features, and local workflow illustration.
+- [Documentation](https://sudonotes.com/docs): Guides, vault formats, shortcuts, backups, and recovery.
+- [Download](https://sudonotes.com/download): Desktop installers for Windows, macOS, and Linux.
+- [Open Source](https://sudonotes.com/open-source): MIT repository, contributions, and architecture notes.
+- [RSS Feed](https://sudonotes.com/rss.xml): RSS 2.0 feed of all published engineering articles.

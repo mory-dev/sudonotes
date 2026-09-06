@@ -1,0 +1,268 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getAllPosts, getPostBySlug } from "../../lib/blog";
+
+export const prerender = true;
+
+export function getStaticPaths() {
+  const posts = getAllPosts();
+  return posts.map((post) => ({
+    params: { slug: post.slug },
+    props: { post },
+  }));
+}
+
+const { post: initialPost } = Astro.props;
+const { slug } = Astro.params;
+const post = initialPost || getPostBySlug(slug as string);
+
+if (!post) {
+  return Astro.redirect('/404');
+}
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": post.title,
+  "description": post.description,
+  "datePublished": post.date,
+  ...(post.updated ? { "dateModified": post.updated } : {}),
+  "url": `https://sudonotes.com/blog/${post.slug}`,
+  "author": {
+    "@type": "Organization",
+    "name": post.author,
+    "url": "https://sudonotes.com"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "sudonotes",
+    "url": "https://sudonotes.com"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": `https://sudonotes.com/blog/${post.slug}`
+  }
+};
+---
+
+<Base
+  title={`${post.title} — sudonotes`}
+  description={post.description}
+  type="article"
+  breadcrumbs={[
+    { label: "Home", href: "/" },
+    { label: "Blog", href: "/blog" },
+    { label: post.title }
+  ]}
+>
+  <script is:inline type="application/ld+json" set:html={JSON.stringify(structuredData)} />
+
+  <article class="page blog-post">
+    <header class="post-header">
+      <div class="post-meta">
+        <time datetime={post.date}>
+          {new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+        </time>
+        <span>•</span>
+        <span class="post-author">{post.author}</span>
+        {post.updated && (
+          <>
+            <span>•</span>
+            <span class="post-updated">Updated {new Date(post.updated).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+          </>
+        )}
+      </div>
+
+      <h1>{post.title}</h1>
+
+      <p class="post-lede">{post.description}</p>
+
+      {post.tags && post.tags.length > 0 && (
+        <div class="post-tags">
+          {post.tags.map((tag) => (
+            <span class="tag-chip">#{tag}</span>
+          ))}
+        </div>
+      )}
+    </header>
+
+    <div class="prose" set:html={post.contentHtml} />
+
+    <footer class="post-footer">
+      <div class="author-card">
+        <div>
+          <h3>About {post.author}</h3>
+          <p>
+            sudonotes is a local-first notebook for AI prompts, ideas, and plain Markdown files with zero vendor lock-in.
+          </p>
+        </div>
+        <a class="all-posts-btn" href="/blog">
+          All articles &rarr;
+        </a>
+      </div>
+    </footer>
+  </article>
+</Base>
+
+<style>
+  .blog-post {
+    max-width: var(--measure);
+    margin: 0 auto;
+    padding: 48px 20px 96px;
+  }
+  .post-header {
+    margin-bottom: 40px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+  }
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin-bottom: 16px;
+  }
+  .post-author {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .post-updated {
+    font-size: 0.8rem;
+    font-style: italic;
+  }
+  .post-header h1 {
+    font-size: clamp(2rem, 4.5vw, 2.75rem);
+    line-height: 1.18;
+    margin-bottom: 18px;
+  }
+  .post-lede {
+    font-size: 1.15rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .post-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 18px;
+  }
+  .tag-chip {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 3px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+  }
+
+  /* Article prose */
+  .prose :global(h2) {
+    font-size: 1.65rem;
+    margin: 48px 0 18px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  .prose :global(h3) {
+    font-size: 1.2rem;
+    margin: 32px 0 12px;
+  }
+  .prose :global(p) {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    margin-bottom: 22px;
+    color: var(--text);
+  }
+  .prose :global(ul.prose-ul),
+  .prose :global(ol.prose-ol) {
+    margin: 0 0 24px;
+    padding-left: 24px;
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+  .prose :global(li) {
+    margin-bottom: 8px;
+  }
+  .prose :global(.code-block) {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin: 24px 0;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+  .prose :global(.table-wrapper) {
+    overflow-x: auto;
+    margin: 28px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .prose :global(.prose-table) {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+    text-align: left;
+  }
+  .prose :global(.prose-table th) {
+    background: var(--panel-2);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .prose :global(.prose-table td) {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .prose :global(.prose-table tr:last-child td) {
+    border-bottom: none;
+  }
+  .prose :global(.inline-code) {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+
+  .post-footer {
+    margin-top: 64px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+  }
+  .author-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .author-card h3 {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+  }
+  .author-card p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: 0;
+  }
+  .all-posts-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
+    font-size: 0.88rem;
+    border-radius: var(--radius);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+</style>
